@@ -1,15 +1,7 @@
 -- ============================================================================
 -- LES P'TITS PRONOS D'HUGO — Installation complète de la base
--- ----------------------------------------------------------------------------
--- Fichier généré : concaténation des migrations 0001 à 0005, dans l'ordre.
---
--- À exécuter UNE SEULE FOIS, dans Supabase :
---   Dashboard → SQL Editor → New query → coller ce fichier → Run
---
--- Généré le 22/08/2026. Ne pas modifier à la main : régénérer avec
---   ./scripts/build-apply-all.sh
+-- Généré le 22/08/2026 — ne pas modifier à la main.
 -- ============================================================================
-
 
 -- ▼▼▼ 0001_schema.sql ▼▼▼
 
@@ -32,10 +24,18 @@ create extension if not exists "citext";
 -- 1. IDENTITÉ & GROUPES
 -- ============================================================================
 
-create type avatar_kind as enum ('emoji', 'photo', 'club');
-create type member_role as enum ('player', 'admin');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'avatar_kind') then
+    create type avatar_kind as enum ('emoji', 'photo', 'club');
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'member_role') then
+    create type member_role as enum ('player', 'admin');
+  end if;
+end $$;
 
-create table profiles (
+create table if not exists profiles (
   id            uuid primary key references auth.users(id) on delete cascade,
   first_name    text not null,
   display_name  text not null,
@@ -49,7 +49,7 @@ create table profiles (
 
 comment on table profiles is 'Profil applicatif adossé à auth.users. Le rôle vit dans group_members, jamais dans le jeton client.';
 
-create table groups (
+create table if not exists groups (
   id              uuid primary key default gen_random_uuid(),
   name            text not null,
   invite_code     citext not null unique,
@@ -58,7 +58,7 @@ create table groups (
   created_at      timestamptz not null default now()
 );
 
-create table group_members (
+create table if not exists group_members (
   group_id   uuid not null references groups(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
   role       member_role not null default 'player',
@@ -66,13 +66,15 @@ create table group_members (
   primary key (group_id, user_id)
 );
 
-create index on group_members (user_id);
+create index if not exists idx_group_members_user_id on group_members (user_id);
 
 -- ============================================================================
 -- 2. RÉFÉRENTIEL SPORTIF (générique)
 -- ============================================================================
 
-create type fixture_status as enum (
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'fixture_status') then
+    create type fixture_status as enum (
   'scheduled',   -- à venir
   'live',        -- en cours
   'finished',    -- terminé, score susceptible d'être corrigé
@@ -80,11 +82,21 @@ create type fixture_status as enum (
   'postponed',   -- reporté
   'cancelled'    -- annulé
 );
+  end if;
+end $$;
 
-create type round_status as enum ('upcoming', 'open', 'locked', 'settled');
-create type season_status as enum ('draft', 'active', 'closed');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'round_status') then
+    create type round_status as enum ('upcoming', 'open', 'locked', 'settled');
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'season_status') then
+    create type season_status as enum ('draft', 'active', 'closed');
+  end if;
+end $$;
 
-create table sports (
+create table if not exists sports (
   id             uuid primary key default gen_random_uuid(),
   code           text not null unique,            -- 'rugby', 'football', 'basket'
   name           text not null,
@@ -93,7 +105,7 @@ create table sports (
   created_at     timestamptz not null default now()
 );
 
-create table competitions (
+create table if not exists competitions (
   id         uuid primary key default gen_random_uuid(),
   sport_id   uuid not null references sports(id) on delete restrict,
   code       text not null unique,                -- 'top14', 'prod2', 'ligue1'
@@ -104,7 +116,7 @@ create table competitions (
   created_at timestamptz not null default now()
 );
 
-create table seasons (
+create table if not exists seasons (
   id             uuid primary key default gen_random_uuid(),
   competition_id uuid not null references competitions(id) on delete cascade,
   label          text not null,                   -- '2026/2027'
@@ -115,7 +127,7 @@ create table seasons (
   unique (competition_id, label)
 );
 
-create table rounds (
+create table if not exists rounds (
   id         uuid primary key default gen_random_uuid(),
   season_id  uuid not null references seasons(id) on delete cascade,
   number     integer not null,
@@ -129,7 +141,7 @@ create table rounds (
   unique (season_id, number)
 );
 
-create table teams (
+create table if not exists teams (
   id             uuid primary key default gen_random_uuid(),
   sport_id       uuid not null references sports(id) on delete restrict,
   name           text not null,
@@ -143,17 +155,21 @@ create table teams (
   unique (sport_id, code)
 );
 
-alter table profiles
-  add constraint profiles_favourite_team_fk
-  foreign key (favourite_team_id) references teams(id) on delete set null;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_favourite_team_fk') then
+    alter table profiles
+      add constraint profiles_favourite_team_fk
+      foreign key (favourite_team_id) references teams(id) on delete set null;
+  end if;
+end $$;
 
-create table season_teams (
+create table if not exists season_teams (
   season_id uuid not null references seasons(id) on delete cascade,
   team_id   uuid not null references teams(id) on delete cascade,
   primary key (season_id, team_id)
 );
 
-create table fixtures (
+create table if not exists fixtures (
   id            uuid primary key default gen_random_uuid(),
   round_id      uuid not null references rounds(id) on delete cascade,
   home_team_id  uuid not null references teams(id) on delete restrict,
@@ -176,13 +192,13 @@ create table fixtures (
   )
 );
 
-create index on fixtures (round_id);
-create index on fixtures (kickoff_at);
-create index on fixtures (status);
+create index if not exists idx_fixtures_round_id on fixtures (round_id);
+create index if not exists idx_fixtures_kickoff_at on fixtures (kickoff_at);
+create index if not exists idx_fixtures_status on fixtures (status);
 
 -- Correspondance entre nos identifiants et ceux des fournisseurs de données.
 -- C'est ce qui permet de changer d'API sans rien casser.
-create table external_refs (
+create table if not exists external_refs (
   id          uuid primary key default gen_random_uuid(),
   provider    text not null,                      -- 'espn', 'apisports', 'thesportsdb'
   entity_type text not null,                      -- 'team', 'fixture', 'competition', 'season'
@@ -198,11 +214,15 @@ create table external_refs (
 -- 3. RÈGLES DU JEU (versionnées, jamais en dur)
 -- ============================================================================
 
-create type match_outcome as enum ('home', 'draw', 'away');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'match_outcome') then
+    create type match_outcome as enum ('home', 'draw', 'away');
+  end if;
+end $$;
 
 -- Un barème est une version datée. Changer les règles en cours de saison
 -- crée une nouvelle version : l'historique n'est pas réécrit.
-create table scoring_rulesets (
+create table if not exists scoring_rulesets (
   id            uuid primary key default gen_random_uuid(),
   season_id     uuid not null references seasons(id) on delete cascade,
   version       integer not null,
@@ -235,7 +255,7 @@ Structure attendue :
 }
 $$;
 
-create table margin_buckets (
+create table if not exists margin_buckets (
   id         uuid primary key default gen_random_uuid(),
   ruleset_id uuid not null references scoring_rulesets(id) on delete cascade,
   position   integer not null,
@@ -249,7 +269,7 @@ create table margin_buckets (
 -- 4. PRONOSTICS & POINTS
 -- ============================================================================
 
-create table predictions (
+create table if not exists predictions (
   id                uuid primary key default gen_random_uuid(),
   user_id           uuid not null references profiles(id) on delete cascade,
   fixture_id        uuid not null references fixtures(id) on delete cascade,
@@ -269,10 +289,10 @@ create table predictions (
   )
 );
 
-create index on predictions (fixture_id);
+create index if not exists idx_predictions_fixture_id on predictions (fixture_id);
 
 -- Historique de toute modification d'un pronostic (y compris par l'admin).
-create table prediction_audit (
+create table if not exists prediction_audit (
   id            uuid primary key default gen_random_uuid(),
   prediction_id uuid not null references predictions(id) on delete cascade,
   before        jsonb,
@@ -283,7 +303,7 @@ create table prediction_audit (
 );
 
 -- Résultat du calcul. Recalculable à volonté, jamais écrit par un joueur.
-create table prediction_scores (
+create table if not exists prediction_scores (
   prediction_id   uuid primary key references predictions(id) on delete cascade,
   points          integer not null default 0,
   breakdown       jsonb not null default '{}'::jsonb,  -- pourquoi ces points
@@ -293,7 +313,7 @@ create table prediction_scores (
 );
 
 -- Duels, corrections manuelles, bonus admin : tout ce qui n'est pas un prono.
-create table point_adjustments (
+create table if not exists point_adjustments (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   season_id  uuid not null references seasons(id) on delete cascade,
@@ -307,7 +327,7 @@ create table point_adjustments (
 );
 
 -- Classement figé à la clôture d'une journée (le classement live est calculé à la volée).
-create table standings_snapshots (
+create table if not exists standings_snapshots (
   id         uuid primary key default gen_random_uuid(),
   season_id  uuid not null references seasons(id) on delete cascade,
   round_id   uuid references rounds(id) on delete cascade,
@@ -318,7 +338,7 @@ create table standings_snapshots (
 );
 
 -- Classement sportif réel de la compétition (indépendant du classement des joueurs).
-create table competition_standings (
+create table if not exists competition_standings (
   id              uuid primary key default gen_random_uuid(),
   season_id       uuid not null references seasons(id) on delete cascade,
   team_id         uuid not null references teams(id) on delete cascade,
@@ -336,7 +356,6 @@ create table competition_standings (
   unique (season_id, team_id)
 );
 
-
 -- ▼▼▼ 0002_game_systems.sql ▼▼▼
 
 -- ============================================================================
@@ -351,9 +370,13 @@ create table competition_standings (
 -- 5. QUESTIONS BONUS
 -- ============================================================================
 
-create type question_status as enum ('draft', 'open', 'closed', 'settled');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'question_status') then
+    create type question_status as enum ('draft', 'open', 'closed', 'settled');
+  end if;
+end $$;
 
-create table bonus_questions (
+create table if not exists bonus_questions (
   id          uuid primary key default gen_random_uuid(),
   season_id   uuid not null references seasons(id) on delete cascade,
   round_id    uuid references rounds(id) on delete cascade,   -- null = question de saison
@@ -370,7 +393,7 @@ create table bonus_questions (
   created_at  timestamptz not null default now()
 );
 
-create table bonus_answers (
+create table if not exists bonus_answers (
   id          uuid primary key default gen_random_uuid(),
   question_id uuid not null references bonus_questions(id) on delete cascade,
   user_id     uuid not null references profiles(id) on delete cascade,
@@ -380,14 +403,14 @@ create table bonus_answers (
   unique (question_id, user_id)
 );
 
-create table bonus_results (
+create table if not exists bonus_results (
   question_id   uuid primary key references bonus_questions(id) on delete cascade,
   correct_answer jsonb not null,
   settled_at    timestamptz not null default now(),
   settled_by    uuid references profiles(id)
 );
 
-create table bonus_scores (
+create table if not exists bonus_scores (
   question_id uuid not null references bonus_questions(id) on delete cascade,
   user_id     uuid not null references profiles(id) on delete cascade,
   points      integer not null default 0,
@@ -400,7 +423,7 @@ create table bonus_scores (
 -- 6. GAMIFICATION : badges, séries, tokens, pouvoirs
 -- ============================================================================
 
-create table badges (
+create table if not exists badges (
   id          uuid primary key default gen_random_uuid(),
   code        text not null unique,
   name        text not null,
@@ -411,7 +434,7 @@ create table badges (
   created_at  timestamptz not null default now()
 );
 
-create table user_badges (
+create table if not exists user_badges (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   badge_id   uuid not null references badges(id) on delete cascade,
@@ -421,7 +444,7 @@ create table user_badges (
   unique (user_id, badge_id, season_id)
 );
 
-create table streaks (
+create table if not exists streaks (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references profiles(id) on delete cascade,
   season_id     uuid not null references seasons(id) on delete cascade,
@@ -432,9 +455,13 @@ create table streaks (
   unique (user_id, season_id, kind)
 );
 
-create type token_status as enum ('available', 'used', 'expired');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'token_status') then
+    create type token_status as enum ('available', 'used', 'expired');
+  end if;
+end $$;
 
-create table tokens (
+create table if not exists tokens (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references profiles(id) on delete cascade,
   season_id   uuid not null references seasons(id) on delete cascade,
@@ -444,7 +471,7 @@ create table tokens (
   used_at     timestamptz
 );
 
-create table powers (
+create table if not exists powers (
   id         uuid primary key default gen_random_uuid(),
   code       text not null unique,  -- 'duel' | 'joker' | 'spy' | 'oracle' | 'sabotage'
   name       text not null,
@@ -455,9 +482,13 @@ create table powers (
   created_at timestamptz not null default now()
 );
 
-create type power_usage_state as enum ('declared', 'accepted', 'resolved', 'cancelled');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'power_usage_state') then
+    create type power_usage_state as enum ('declared', 'accepted', 'resolved', 'cancelled');
+  end if;
+end $$;
 
-create table power_usages (
+create table if not exists power_usages (
   id           uuid primary key default gen_random_uuid(),
   token_id     uuid not null unique references tokens(id) on delete restrict,
   power_id     uuid not null references powers(id) on delete restrict,
@@ -479,7 +510,7 @@ comment on column power_usages.token_id is 'Unique : un token ne peut jamais êt
 
 -- Table en écriture seule. Le fil social, les badges et les notifications
 -- sont trois lecteurs de ce même flux : une seule logique, pas trois.
-create table events (
+create table if not exists events (
   id         uuid primary key default gen_random_uuid(),
   kind       text not null,     -- 'exact_score', 'leader_change', 'overtake',
                                 -- 'round_settled', 'badge_earned', 'admin_action'…
@@ -492,10 +523,10 @@ create table events (
   created_at timestamptz not null default now()
 );
 
-create index on events (season_id, created_at desc);
-create index on events (kind);
+create index if not exists idx_events_season_id_created_at_desc on events (season_id, created_at desc);
+create index if not exists idx_events_kind on events (kind);
 
-create table feed_posts (
+create table if not exists feed_posts (
   id         uuid primary key default gen_random_uuid(),
   group_id   uuid not null references groups(id) on delete cascade,
   event_id   uuid references events(id) on delete cascade,  -- null = publication humaine
@@ -505,9 +536,9 @@ create table feed_posts (
   created_at timestamptz not null default now()
 );
 
-create index on feed_posts (group_id, created_at desc);
+create index if not exists idx_feed_posts_group_id_created_at_desc on feed_posts (group_id, created_at desc);
 
-create table reactions (
+create table if not exists reactions (
   post_id    uuid not null references feed_posts(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
   emoji      text not null,
@@ -515,7 +546,7 @@ create table reactions (
   primary key (post_id, user_id, emoji)
 );
 
-create table comments (
+create table if not exists comments (
   id         uuid primary key default gen_random_uuid(),
   post_id    uuid not null references feed_posts(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
@@ -524,7 +555,7 @@ create table comments (
   created_at timestamptz not null default now()
 );
 
-create table notifications (
+create table if not exists notifications (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   kind       text not null,
@@ -536,9 +567,9 @@ create table notifications (
   created_at timestamptz not null default now()
 );
 
-create index on notifications (user_id, created_at desc);
+create index if not exists idx_notifications_user_id_created_at_desc on notifications (user_id, created_at desc);
 
-create table push_subscriptions (
+create table if not exists push_subscriptions (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   endpoint   text not null unique,
@@ -548,7 +579,7 @@ create table push_subscriptions (
   last_used_at timestamptz
 );
 
-create table notification_preferences (
+create table if not exists notification_preferences (
   user_id      uuid not null references profiles(id) on delete cascade,
   kind         text not null,
   channel      text not null default 'push',   -- 'push' | 'in_app'
@@ -564,7 +595,7 @@ create table notification_preferences (
 
 -- Journal d'administration. Immuable : aucune politique UPDATE ni DELETE
 -- n'est accordée, même à l'admin (cf. 0003_rls.sql).
-create table admin_actions (
+create table if not exists admin_actions (
   id          uuid primary key default gen_random_uuid(),
   admin_id    uuid references profiles(id) on delete set null,
   action      text not null,        -- 'fixture.score_corrected', 'points.adjusted'…
@@ -576,9 +607,9 @@ create table admin_actions (
   created_at  timestamptz not null default now()
 );
 
-create index on admin_actions (created_at desc);
+create index if not exists idx_admin_actions_created_at_desc on admin_actions (created_at desc);
 
-create table sync_runs (
+create table if not exists sync_runs (
   id           uuid primary key default gen_random_uuid(),
   provider     text not null,
   kind         text not null,       -- 'calendar' | 'live' | 'standings'
@@ -590,16 +621,15 @@ create table sync_runs (
   error        text
 );
 
-create index on sync_runs (started_at desc);
+create index if not exists idx_sync_runs_started_at_desc on sync_runs (started_at desc);
 
 -- Tout réglage applicatif vit ici : aucune valeur métier codée en dur.
-create table app_settings (
+create table if not exists app_settings (
   key        text primary key,
   value      jsonb not null,
   updated_by uuid references profiles(id),
   updated_at timestamptz not null default now()
 );
-
 
 -- ▼▼▼ 0003_rls.sql ▼▼▼
 
@@ -693,6 +723,7 @@ begin
     'competition_standings','badges','powers','app_settings','sync_runs'
   ]
   loop
+    execute format('drop policy if exists %I on public.%I', t || '_read', t);
     execute format(
       'create policy %I on public.%I for select to authenticated using (public.is_member())',
       t || '_read', t);
@@ -703,18 +734,22 @@ end $$;
 -- Profils & groupes
 -- ---------------------------------------------------------------------------
 
+drop policy if exists profiles_read on profiles;
 create policy profiles_read on profiles
   for select to authenticated using (public.is_member());
 
 -- Un joueur modifie son profil, jamais son rôle (le rôle vit dans group_members).
+drop policy if exists profiles_update_self on profiles;
 create policy profiles_update_self on profiles
   for update to authenticated
   using (id = auth.uid())
   with check (id = auth.uid());
 
+drop policy if exists groups_read on groups;
 create policy groups_read on groups
   for select to authenticated using (public.is_member());
 
+drop policy if exists group_members_read on group_members;
 create policy group_members_read on group_members
   for select to authenticated using (public.is_member());
 
@@ -723,6 +758,7 @@ create policy group_members_read on group_members
 -- ---------------------------------------------------------------------------
 
 -- Je vois toujours les miens ; ceux des autres uniquement après verrouillage.
+drop policy if exists predictions_read on predictions;
 create policy predictions_read on predictions
   for select to authenticated
   using (
@@ -731,6 +767,7 @@ create policy predictions_read on predictions
   );
 
 -- Je ne peux créer un pronostic que pour moi, et seulement avant le verrouillage.
+drop policy if exists predictions_insert_self on predictions;
 create policy predictions_insert_self on predictions
   for insert to authenticated
   with check (
@@ -740,6 +777,7 @@ create policy predictions_insert_self on predictions
   );
 
 -- Je ne peux modifier que le mien, et seulement avant le verrouillage.
+drop policy if exists predictions_update_self on predictions;
 create policy predictions_update_self on predictions
   for update to authenticated
   using (user_id = auth.uid() and not public.fixture_is_locked(fixture_id))
@@ -748,9 +786,11 @@ create policy predictions_update_self on predictions
 -- Aucune politique DELETE : un pronostic ne se supprime pas côté client.
 
 -- Les points sont visibles de tous, mais écrits uniquement par le serveur.
+drop policy if exists prediction_scores_read on prediction_scores;
 create policy prediction_scores_read on prediction_scores
   for select to authenticated using (public.is_member());
 
+drop policy if exists prediction_audit_read on prediction_audit;
 create policy prediction_audit_read on prediction_audit
   for select to authenticated using (public.is_member());
 
@@ -760,9 +800,11 @@ create policy prediction_audit_read on prediction_audit
 -- Aucune politique d'écriture, y compris pour l'admin : seul le serveur écrit,
 -- et le journal ne peut être ni modifié ni effacé.
 
+drop policy if exists point_adjustments_read on point_adjustments;
 create policy point_adjustments_read on point_adjustments
   for select to authenticated using (public.is_member());
 
+drop policy if exists admin_actions_read on admin_actions;
 create policy admin_actions_read on admin_actions
   for select to authenticated using (public.is_member());
 
@@ -770,10 +812,12 @@ create policy admin_actions_read on admin_actions
 -- Questions bonus — même règle de secret que les pronostics
 -- ---------------------------------------------------------------------------
 
+drop policy if exists bonus_questions_read on bonus_questions;
 create policy bonus_questions_read on bonus_questions
   for select to authenticated
   using (public.is_member() and (status <> 'draft' or public.is_admin()));
 
+drop policy if exists bonus_answers_read on bonus_answers;
 create policy bonus_answers_read on bonus_answers
   for select to authenticated
   using (
@@ -785,6 +829,7 @@ create policy bonus_answers_read on bonus_answers
     )
   );
 
+drop policy if exists bonus_answers_write on bonus_answers;
 create policy bonus_answers_write on bonus_answers
   for insert to authenticated
   with check (
@@ -798,6 +843,7 @@ create policy bonus_answers_write on bonus_answers
     )
   );
 
+drop policy if exists bonus_answers_update on bonus_answers;
 create policy bonus_answers_update on bonus_answers
   for update to authenticated
   using (
@@ -810,9 +856,11 @@ create policy bonus_answers_update on bonus_answers
   )
   with check (user_id = auth.uid());
 
+drop policy if exists bonus_results_read on bonus_results;
 create policy bonus_results_read on bonus_results
   for select to authenticated using (public.is_member());
 
+drop policy if exists bonus_scores_read on bonus_scores;
 create policy bonus_scores_read on bonus_scores
   for select to authenticated using (public.is_member());
 
@@ -820,15 +868,19 @@ create policy bonus_scores_read on bonus_scores
 -- Gamification : lecture pour tous, attribution par le serveur
 -- ---------------------------------------------------------------------------
 
+drop policy if exists user_badges_read on user_badges;
 create policy user_badges_read on user_badges
   for select to authenticated using (public.is_member());
 
+drop policy if exists streaks_read on streaks;
 create policy streaks_read on streaks
   for select to authenticated using (public.is_member());
 
+drop policy if exists tokens_read on tokens;
 create policy tokens_read on tokens
   for select to authenticated using (public.is_member());
 
+drop policy if exists power_usages_read on power_usages;
 create policy power_usages_read on power_usages
   for select to authenticated using (public.is_member());
 
@@ -839,37 +891,47 @@ create policy power_usages_read on power_usages
 -- Social
 -- ---------------------------------------------------------------------------
 
+drop policy if exists events_read on events;
 create policy events_read on events
   for select to authenticated using (public.is_member());
 
+drop policy if exists feed_posts_read on feed_posts;
 create policy feed_posts_read on feed_posts
   for select to authenticated
   using (public.is_member() and (not is_hidden or public.is_admin()));
 
+drop policy if exists feed_posts_insert on feed_posts;
 create policy feed_posts_insert on feed_posts
   for insert to authenticated
   with check (author_id = auth.uid() and event_id is null);
 
+drop policy if exists feed_posts_update_own on feed_posts;
 create policy feed_posts_update_own on feed_posts
   for update to authenticated
   using (author_id = auth.uid()) with check (author_id = auth.uid());
 
+drop policy if exists reactions_read on reactions;
 create policy reactions_read on reactions
   for select to authenticated using (public.is_member());
 
+drop policy if exists reactions_write on reactions;
 create policy reactions_write on reactions
   for insert to authenticated with check (user_id = auth.uid());
 
+drop policy if exists reactions_delete on reactions;
 create policy reactions_delete on reactions
   for delete to authenticated using (user_id = auth.uid());
 
+drop policy if exists comments_read on comments;
 create policy comments_read on comments
   for select to authenticated
   using (public.is_member() and (not is_hidden or public.is_admin()));
 
+drop policy if exists comments_write on comments;
 create policy comments_write on comments
   for insert to authenticated with check (user_id = auth.uid());
 
+drop policy if exists comments_update_own on comments;
 create policy comments_update_own on comments
   for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -878,21 +940,24 @@ create policy comments_update_own on comments
 -- Notifications : strictement personnelles
 -- ---------------------------------------------------------------------------
 
+drop policy if exists notifications_read_own on notifications;
 create policy notifications_read_own on notifications
   for select to authenticated using (user_id = auth.uid());
 
+drop policy if exists notifications_update_own on notifications;
 create policy notifications_update_own on notifications
   for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+drop policy if exists push_subs_own on push_subscriptions;
 create policy push_subs_own on push_subscriptions
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+drop policy if exists notif_prefs_own on notification_preferences;
 create policy notif_prefs_own on notification_preferences
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
-
 
 -- ▼▼▼ 0004_seed_reference.sql ▼▼▼
 
@@ -1044,7 +1109,6 @@ insert into powers (code, name, emoji, description, config, is_active) values
    '{"declare_before":"round_lock","visible_to_target":true}'::jsonb,
    false)
 on conflict (code) do nothing;
-
 
 -- ▼▼▼ 0005_top14_2026_2027.sql ▼▼▼
 
@@ -1247,4 +1311,3 @@ where not exists (
   select 1 from fixtures f
   where f.round_id = r.id and f.home_team_id = h.id and f.away_team_id = a.id
 );
-

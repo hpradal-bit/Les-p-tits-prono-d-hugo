@@ -17,10 +17,18 @@ create extension if not exists "citext";
 -- 1. IDENTITÉ & GROUPES
 -- ============================================================================
 
-create type avatar_kind as enum ('emoji', 'photo', 'club');
-create type member_role as enum ('player', 'admin');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'avatar_kind') then
+    create type avatar_kind as enum ('emoji', 'photo', 'club');
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'member_role') then
+    create type member_role as enum ('player', 'admin');
+  end if;
+end $$;
 
-create table profiles (
+create table if not exists profiles (
   id            uuid primary key references auth.users(id) on delete cascade,
   first_name    text not null,
   display_name  text not null,
@@ -34,7 +42,7 @@ create table profiles (
 
 comment on table profiles is 'Profil applicatif adossé à auth.users. Le rôle vit dans group_members, jamais dans le jeton client.';
 
-create table groups (
+create table if not exists groups (
   id              uuid primary key default gen_random_uuid(),
   name            text not null,
   invite_code     citext not null unique,
@@ -43,7 +51,7 @@ create table groups (
   created_at      timestamptz not null default now()
 );
 
-create table group_members (
+create table if not exists group_members (
   group_id   uuid not null references groups(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
   role       member_role not null default 'player',
@@ -51,13 +59,15 @@ create table group_members (
   primary key (group_id, user_id)
 );
 
-create index on group_members (user_id);
+create index if not exists idx_group_members_user_id on group_members (user_id);
 
 -- ============================================================================
 -- 2. RÉFÉRENTIEL SPORTIF (générique)
 -- ============================================================================
 
-create type fixture_status as enum (
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'fixture_status') then
+    create type fixture_status as enum (
   'scheduled',   -- à venir
   'live',        -- en cours
   'finished',    -- terminé, score susceptible d'être corrigé
@@ -65,11 +75,21 @@ create type fixture_status as enum (
   'postponed',   -- reporté
   'cancelled'    -- annulé
 );
+  end if;
+end $$;
 
-create type round_status as enum ('upcoming', 'open', 'locked', 'settled');
-create type season_status as enum ('draft', 'active', 'closed');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'round_status') then
+    create type round_status as enum ('upcoming', 'open', 'locked', 'settled');
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'season_status') then
+    create type season_status as enum ('draft', 'active', 'closed');
+  end if;
+end $$;
 
-create table sports (
+create table if not exists sports (
   id             uuid primary key default gen_random_uuid(),
   code           text not null unique,            -- 'rugby', 'football', 'basket'
   name           text not null,
@@ -78,7 +98,7 @@ create table sports (
   created_at     timestamptz not null default now()
 );
 
-create table competitions (
+create table if not exists competitions (
   id         uuid primary key default gen_random_uuid(),
   sport_id   uuid not null references sports(id) on delete restrict,
   code       text not null unique,                -- 'top14', 'prod2', 'ligue1'
@@ -89,7 +109,7 @@ create table competitions (
   created_at timestamptz not null default now()
 );
 
-create table seasons (
+create table if not exists seasons (
   id             uuid primary key default gen_random_uuid(),
   competition_id uuid not null references competitions(id) on delete cascade,
   label          text not null,                   -- '2026/2027'
@@ -100,7 +120,7 @@ create table seasons (
   unique (competition_id, label)
 );
 
-create table rounds (
+create table if not exists rounds (
   id         uuid primary key default gen_random_uuid(),
   season_id  uuid not null references seasons(id) on delete cascade,
   number     integer not null,
@@ -114,7 +134,7 @@ create table rounds (
   unique (season_id, number)
 );
 
-create table teams (
+create table if not exists teams (
   id             uuid primary key default gen_random_uuid(),
   sport_id       uuid not null references sports(id) on delete restrict,
   name           text not null,
@@ -128,17 +148,21 @@ create table teams (
   unique (sport_id, code)
 );
 
-alter table profiles
-  add constraint profiles_favourite_team_fk
-  foreign key (favourite_team_id) references teams(id) on delete set null;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_favourite_team_fk') then
+    alter table profiles
+      add constraint profiles_favourite_team_fk
+      foreign key (favourite_team_id) references teams(id) on delete set null;
+  end if;
+end $$;
 
-create table season_teams (
+create table if not exists season_teams (
   season_id uuid not null references seasons(id) on delete cascade,
   team_id   uuid not null references teams(id) on delete cascade,
   primary key (season_id, team_id)
 );
 
-create table fixtures (
+create table if not exists fixtures (
   id            uuid primary key default gen_random_uuid(),
   round_id      uuid not null references rounds(id) on delete cascade,
   home_team_id  uuid not null references teams(id) on delete restrict,
@@ -161,13 +185,13 @@ create table fixtures (
   )
 );
 
-create index on fixtures (round_id);
-create index on fixtures (kickoff_at);
-create index on fixtures (status);
+create index if not exists idx_fixtures_round_id on fixtures (round_id);
+create index if not exists idx_fixtures_kickoff_at on fixtures (kickoff_at);
+create index if not exists idx_fixtures_status on fixtures (status);
 
 -- Correspondance entre nos identifiants et ceux des fournisseurs de données.
 -- C'est ce qui permet de changer d'API sans rien casser.
-create table external_refs (
+create table if not exists external_refs (
   id          uuid primary key default gen_random_uuid(),
   provider    text not null,                      -- 'espn', 'apisports', 'thesportsdb'
   entity_type text not null,                      -- 'team', 'fixture', 'competition', 'season'
@@ -183,11 +207,15 @@ create table external_refs (
 -- 3. RÈGLES DU JEU (versionnées, jamais en dur)
 -- ============================================================================
 
-create type match_outcome as enum ('home', 'draw', 'away');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'match_outcome') then
+    create type match_outcome as enum ('home', 'draw', 'away');
+  end if;
+end $$;
 
 -- Un barème est une version datée. Changer les règles en cours de saison
 -- crée une nouvelle version : l'historique n'est pas réécrit.
-create table scoring_rulesets (
+create table if not exists scoring_rulesets (
   id            uuid primary key default gen_random_uuid(),
   season_id     uuid not null references seasons(id) on delete cascade,
   version       integer not null,
@@ -220,7 +248,7 @@ Structure attendue :
 }
 $$;
 
-create table margin_buckets (
+create table if not exists margin_buckets (
   id         uuid primary key default gen_random_uuid(),
   ruleset_id uuid not null references scoring_rulesets(id) on delete cascade,
   position   integer not null,
@@ -234,7 +262,7 @@ create table margin_buckets (
 -- 4. PRONOSTICS & POINTS
 -- ============================================================================
 
-create table predictions (
+create table if not exists predictions (
   id                uuid primary key default gen_random_uuid(),
   user_id           uuid not null references profiles(id) on delete cascade,
   fixture_id        uuid not null references fixtures(id) on delete cascade,
@@ -254,10 +282,10 @@ create table predictions (
   )
 );
 
-create index on predictions (fixture_id);
+create index if not exists idx_predictions_fixture_id on predictions (fixture_id);
 
 -- Historique de toute modification d'un pronostic (y compris par l'admin).
-create table prediction_audit (
+create table if not exists prediction_audit (
   id            uuid primary key default gen_random_uuid(),
   prediction_id uuid not null references predictions(id) on delete cascade,
   before        jsonb,
@@ -268,7 +296,7 @@ create table prediction_audit (
 );
 
 -- Résultat du calcul. Recalculable à volonté, jamais écrit par un joueur.
-create table prediction_scores (
+create table if not exists prediction_scores (
   prediction_id   uuid primary key references predictions(id) on delete cascade,
   points          integer not null default 0,
   breakdown       jsonb not null default '{}'::jsonb,  -- pourquoi ces points
@@ -278,7 +306,7 @@ create table prediction_scores (
 );
 
 -- Duels, corrections manuelles, bonus admin : tout ce qui n'est pas un prono.
-create table point_adjustments (
+create table if not exists point_adjustments (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   season_id  uuid not null references seasons(id) on delete cascade,
@@ -292,7 +320,7 @@ create table point_adjustments (
 );
 
 -- Classement figé à la clôture d'une journée (le classement live est calculé à la volée).
-create table standings_snapshots (
+create table if not exists standings_snapshots (
   id         uuid primary key default gen_random_uuid(),
   season_id  uuid not null references seasons(id) on delete cascade,
   round_id   uuid references rounds(id) on delete cascade,
@@ -303,7 +331,7 @@ create table standings_snapshots (
 );
 
 -- Classement sportif réel de la compétition (indépendant du classement des joueurs).
-create table competition_standings (
+create table if not exists competition_standings (
   id              uuid primary key default gen_random_uuid(),
   season_id       uuid not null references seasons(id) on delete cascade,
   team_id         uuid not null references teams(id) on delete cascade,

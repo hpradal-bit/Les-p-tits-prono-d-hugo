@@ -10,9 +10,13 @@
 -- 5. QUESTIONS BONUS
 -- ============================================================================
 
-create type question_status as enum ('draft', 'open', 'closed', 'settled');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'question_status') then
+    create type question_status as enum ('draft', 'open', 'closed', 'settled');
+  end if;
+end $$;
 
-create table bonus_questions (
+create table if not exists bonus_questions (
   id          uuid primary key default gen_random_uuid(),
   season_id   uuid not null references seasons(id) on delete cascade,
   round_id    uuid references rounds(id) on delete cascade,   -- null = question de saison
@@ -29,7 +33,7 @@ create table bonus_questions (
   created_at  timestamptz not null default now()
 );
 
-create table bonus_answers (
+create table if not exists bonus_answers (
   id          uuid primary key default gen_random_uuid(),
   question_id uuid not null references bonus_questions(id) on delete cascade,
   user_id     uuid not null references profiles(id) on delete cascade,
@@ -39,14 +43,14 @@ create table bonus_answers (
   unique (question_id, user_id)
 );
 
-create table bonus_results (
+create table if not exists bonus_results (
   question_id   uuid primary key references bonus_questions(id) on delete cascade,
   correct_answer jsonb not null,
   settled_at    timestamptz not null default now(),
   settled_by    uuid references profiles(id)
 );
 
-create table bonus_scores (
+create table if not exists bonus_scores (
   question_id uuid not null references bonus_questions(id) on delete cascade,
   user_id     uuid not null references profiles(id) on delete cascade,
   points      integer not null default 0,
@@ -59,7 +63,7 @@ create table bonus_scores (
 -- 6. GAMIFICATION : badges, séries, tokens, pouvoirs
 -- ============================================================================
 
-create table badges (
+create table if not exists badges (
   id          uuid primary key default gen_random_uuid(),
   code        text not null unique,
   name        text not null,
@@ -70,7 +74,7 @@ create table badges (
   created_at  timestamptz not null default now()
 );
 
-create table user_badges (
+create table if not exists user_badges (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   badge_id   uuid not null references badges(id) on delete cascade,
@@ -80,7 +84,7 @@ create table user_badges (
   unique (user_id, badge_id, season_id)
 );
 
-create table streaks (
+create table if not exists streaks (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references profiles(id) on delete cascade,
   season_id     uuid not null references seasons(id) on delete cascade,
@@ -91,9 +95,13 @@ create table streaks (
   unique (user_id, season_id, kind)
 );
 
-create type token_status as enum ('available', 'used', 'expired');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'token_status') then
+    create type token_status as enum ('available', 'used', 'expired');
+  end if;
+end $$;
 
-create table tokens (
+create table if not exists tokens (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references profiles(id) on delete cascade,
   season_id   uuid not null references seasons(id) on delete cascade,
@@ -103,7 +111,7 @@ create table tokens (
   used_at     timestamptz
 );
 
-create table powers (
+create table if not exists powers (
   id         uuid primary key default gen_random_uuid(),
   code       text not null unique,  -- 'duel' | 'joker' | 'spy' | 'oracle' | 'sabotage'
   name       text not null,
@@ -114,9 +122,13 @@ create table powers (
   created_at timestamptz not null default now()
 );
 
-create type power_usage_state as enum ('declared', 'accepted', 'resolved', 'cancelled');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'power_usage_state') then
+    create type power_usage_state as enum ('declared', 'accepted', 'resolved', 'cancelled');
+  end if;
+end $$;
 
-create table power_usages (
+create table if not exists power_usages (
   id           uuid primary key default gen_random_uuid(),
   token_id     uuid not null unique references tokens(id) on delete restrict,
   power_id     uuid not null references powers(id) on delete restrict,
@@ -138,7 +150,7 @@ comment on column power_usages.token_id is 'Unique : un token ne peut jamais êt
 
 -- Table en écriture seule. Le fil social, les badges et les notifications
 -- sont trois lecteurs de ce même flux : une seule logique, pas trois.
-create table events (
+create table if not exists events (
   id         uuid primary key default gen_random_uuid(),
   kind       text not null,     -- 'exact_score', 'leader_change', 'overtake',
                                 -- 'round_settled', 'badge_earned', 'admin_action'…
@@ -151,10 +163,10 @@ create table events (
   created_at timestamptz not null default now()
 );
 
-create index on events (season_id, created_at desc);
-create index on events (kind);
+create index if not exists idx_events_season_id_created_at_desc on events (season_id, created_at desc);
+create index if not exists idx_events_kind on events (kind);
 
-create table feed_posts (
+create table if not exists feed_posts (
   id         uuid primary key default gen_random_uuid(),
   group_id   uuid not null references groups(id) on delete cascade,
   event_id   uuid references events(id) on delete cascade,  -- null = publication humaine
@@ -164,9 +176,9 @@ create table feed_posts (
   created_at timestamptz not null default now()
 );
 
-create index on feed_posts (group_id, created_at desc);
+create index if not exists idx_feed_posts_group_id_created_at_desc on feed_posts (group_id, created_at desc);
 
-create table reactions (
+create table if not exists reactions (
   post_id    uuid not null references feed_posts(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
   emoji      text not null,
@@ -174,7 +186,7 @@ create table reactions (
   primary key (post_id, user_id, emoji)
 );
 
-create table comments (
+create table if not exists comments (
   id         uuid primary key default gen_random_uuid(),
   post_id    uuid not null references feed_posts(id) on delete cascade,
   user_id    uuid not null references profiles(id) on delete cascade,
@@ -183,7 +195,7 @@ create table comments (
   created_at timestamptz not null default now()
 );
 
-create table notifications (
+create table if not exists notifications (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   kind       text not null,
@@ -195,9 +207,9 @@ create table notifications (
   created_at timestamptz not null default now()
 );
 
-create index on notifications (user_id, created_at desc);
+create index if not exists idx_notifications_user_id_created_at_desc on notifications (user_id, created_at desc);
 
-create table push_subscriptions (
+create table if not exists push_subscriptions (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references profiles(id) on delete cascade,
   endpoint   text not null unique,
@@ -207,7 +219,7 @@ create table push_subscriptions (
   last_used_at timestamptz
 );
 
-create table notification_preferences (
+create table if not exists notification_preferences (
   user_id      uuid not null references profiles(id) on delete cascade,
   kind         text not null,
   channel      text not null default 'push',   -- 'push' | 'in_app'
@@ -223,7 +235,7 @@ create table notification_preferences (
 
 -- Journal d'administration. Immuable : aucune politique UPDATE ni DELETE
 -- n'est accordée, même à l'admin (cf. 0003_rls.sql).
-create table admin_actions (
+create table if not exists admin_actions (
   id          uuid primary key default gen_random_uuid(),
   admin_id    uuid references profiles(id) on delete set null,
   action      text not null,        -- 'fixture.score_corrected', 'points.adjusted'…
@@ -235,9 +247,9 @@ create table admin_actions (
   created_at  timestamptz not null default now()
 );
 
-create index on admin_actions (created_at desc);
+create index if not exists idx_admin_actions_created_at_desc on admin_actions (created_at desc);
 
-create table sync_runs (
+create table if not exists sync_runs (
   id           uuid primary key default gen_random_uuid(),
   provider     text not null,
   kind         text not null,       -- 'calendar' | 'live' | 'standings'
@@ -249,10 +261,10 @@ create table sync_runs (
   error        text
 );
 
-create index on sync_runs (started_at desc);
+create index if not exists idx_sync_runs_started_at_desc on sync_runs (started_at desc);
 
 -- Tout réglage applicatif vit ici : aucune valeur métier codée en dur.
-create table app_settings (
+create table if not exists app_settings (
   key        text primary key,
   value      jsonb not null,
   updated_by uuid references profiles(id),
