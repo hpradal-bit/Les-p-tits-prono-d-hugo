@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   LES P'TITS PRONOS D'HUGO — Design system
+   --------------------------------------------------------------------------
+   Direction : sport premium × réseau social privé. Jamais « casino ».
+   Les trois couleurs de résultat (raté / bon vainqueur / parfait) sont
+   modifiables depuis l'espace admin : elles sont injectées à l'exécution
+   par-dessus les valeurs par défaut définies ici.
+   ========================================================================== */
+
+:root {
+  /* --- Fonds et texte --------------------------------------------------- */
+  --ground:        #F2F4F0;   /* craie, très légère dominante verte */
+  --surface:       #FFFFFF;
+  --surface-sunk:  #EAEEE7;
+  --ink:           #101A14;
+  --ink-muted:     #56685C;
+  --ink-faint:     #83978A;
+  --line:          #D9E0D6;
+  --line-strong:   #BCC7B8;
+
+  /* --- Identité --------------------------------------------------------- */
+  --pine:          #14663F;   /* vert terrain : couleur de marque */
+  --pine-soft:     #E1EEE6;
+  --leather:       #A66B22;   /* cuir de ballon : accent secondaire */
+  --leather-soft:  #F6EBDA;
+
+  /* --- Code couleur du jeu (configurable en admin) ---------------------- */
+  --result-wrong:      #C0392B;   /* 🔴 mauvais pronostic */
+  --result-wrong-soft: #F8E6E3;
+  --result-winner:     #C79A2A;   /* 🥇 bon vainqueur */
+  --result-winner-soft:#F9F0D8;
+  --result-perfect:    #2E7D52;   /* 🟢 résultat parfait */
+  --result-perfect-soft:#E2F1E8;
+
+  /* --- État live -------------------------------------------------------- */
+  --live:          #D6453C;
+  --live-soft:     #FBE7E5;
+
+  /* --- Élévation -------------------------------------------------------- */
+  --shadow-card:   0 1px 2px rgb(16 26 20 / 0.05), 0 8px 24px -18px rgb(16 26 20 / 0.35);
+  --shadow-lift:   0 2px 6px rgb(16 26 20 / 0.08), 0 16px 40px -24px rgb(16 26 20 / 0.45);
+
+  /* --- Rayons ----------------------------------------------------------- */
+  --radius-card:   14px;
+  --radius-pill:   999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:        #0C110E;
+    --surface:       #141B17;
+    --surface-sunk:  #101713;
+    --ink:           #E7EEE8;
+    --ink-muted:     #94A499;
+    --ink-faint:     #6D7D73;
+    --line:          #242F28;
+    --line-strong:   #35443A;
+
+    --pine:          #4FB183;
+    --pine-soft:     #112620;
+    --leather:       #D3A25C;
+    --leather-soft:  #241B0F;
+
+    --result-wrong:      #E5817A;
+    --result-wrong-soft: #2A1614;
+    --result-winner:     #DCB84F;
+    --result-winner-soft:#241E0D;
+    --result-perfect:    #5FC392;
+    --result-perfect-soft:#12241A;
+
+    --live:          #F0736A;
+    --live-soft:     #2B1512;
+
+    --shadow-card:   0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
+    --shadow-lift:   0 2px 8px rgb(0 0 0 / 0.5), 0 20px 50px -28px rgb(0 0 0 / 0.95);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:        #0C110E;
+  --surface:       #141B17;
+  --surface-sunk:  #101713;
+  --ink:           #E7EEE8;
+  --ink-muted:     #94A499;
+  --ink-faint:     #6D7D73;
+  --line:          #242F28;
+  --line-strong:   #35443A;
+  --pine:          #4FB183;
+  --pine-soft:     #112620;
+  --leather:       #D3A25C;
+  --leather-soft:  #241B0F;
+  --result-wrong:      #E5817A;
+  --result-wrong-soft: #2A1614;
+  --result-winner:     #DCB84F;
+  --result-winner-soft:#241E0D;
+  --result-perfect:    #5FC392;
+  --result-perfect-soft:#12241A;
+  --live:          #F0736A;
+  --live-soft:     #2B1512;
+  --shadow-card:   0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
+  --shadow-lift:   0 2px 8px rgb(0 0 0 / 0.5), 0 20px 50px -28px rgb(0 0 0 / 0.95);
+}
+
+/* --------------------------------------------------------------------------
+   Exposition des jetons à Tailwind (bg-surface, text-ink, border-line…)
+   -------------------------------------------------------------------------- */
+@theme inline {
+  --color-ground:         var(--ground);
+  --color-surface:        var(--surface);
+  --color-surface-sunk:   var(--surface-sunk);
+  --color-ink:            var(--ink);
+  --color-ink-muted:      var(--ink-muted);
+  --color-ink-faint:      var(--ink-faint);
+  --color-line:           var(--line);
+  --color-line-strong:    var(--line-strong);
+  --color-pine:           var(--pine);
+  --color-pine-soft:      var(--pine-soft);
+  --color-leather:        var(--leather);
+  --color-leather-soft:   var(--leather-soft);
+  --color-wrong:          var(--result-wrong);
+  --color-wrong-soft:     var(--result-wrong-soft);
+  --color-winner:         var(--result-winner);
+  --color-winner-soft:    var(--result-winner-soft);
+  --color-perfect:        var(--result-perfect);
+  --color-perfect-soft:   var(--result-perfect-soft);
+  --color-live:           var(--live);
+  --color-live-soft:      var(--live-soft);
+
+  --font-display: var(--font-display), "Helvetica Neue", Arial, sans-serif;
+  --font-sans:    var(--font-sans-body), system-ui, sans-serif;
+  --font-mono:    var(--font-mono-data), ui-monospace, monospace;
+
+  --radius-card:  var(--radius-card);
+  --shadow-card:  var(--shadow-card);
+  --shadow-lift:  var(--shadow-lift);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+html {
+  -webkit-text-size-adjust: 100%;
+  /* L'app est une PWA : pas de rebond élastique sur le fond. */
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans-body), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Encoches et barre gestuelle iOS */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+:focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Les chiffres s'alignent partout : scores, points, classements. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
