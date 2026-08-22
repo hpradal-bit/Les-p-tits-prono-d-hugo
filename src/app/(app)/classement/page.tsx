@@ -1,0 +1,243 @@
+/**
+ * Écran de classement des joueurs.
+ *
+ * Trois vues (journée · général · forme) et deux portées (live · officiel),
+ * toutes servies par le même moteur : `src/lib/standings/engine`. L'état vit
+ * dans l'URL, l'écran reste un composant serveur.
+ */
+
+import Link from "next/link";
+import { z } from "zod";
+import { Card, Label } from "@/components/ui";
+import { createClient } from "@/lib/supabase/server";
+import {
+  DEFAULT_FORM_WINDOW,
+  computeStandings,
+  playedRounds,
+  type StandingsKind,
+  type StandingsScope,
+} from "@/lib/standings/engine";
+import {
+  loadActiveSeason,
+  loadRoundFixtures,
+  loadStandingsData,
+  type RoundFixture,
+} from "@/lib/standings/queries";
+import { Podium } from "./_components/podium";
+import { StandingsList } from "./_components/standings-list";
+import { RoundFixtures } from "./_components/round-fixtures";
+import { Segmented, RoundPicker } from "./_components/controls";
+
+export const metadata = { title: "Classement" };
+
+/** Toute entrée est validée côté serveur, y compris les paramètres d'URL. */
+const QuerySchema = z.object({
+  vue: z.enum(["general", "journee", "forme"]).catch("general"),
+  portee: z.enum(["live", "officiel"]).catch("live"),
+  journee: z.coerce.number().int().min(1).max(99).nullable().catch(null),
+});
+
+type View = z.infer<typeof QuerySchema>["vue"];
+type Reach = z.infer<typeof QuerySchema>["portee"];
+
+const KIND_OF: Record<View, StandingsKind> = {
+  general: "overall",
+  journee: "round",
+  forme: "form",
+};
+
+const SCOPE_OF: Record<Reach, StandingsScope> = {
+  live: "live",
+  officiel: "official",
+};
+
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function buildHref(params: { vue: View; portee: Reach; journee?: number | null }): string {
+  const search = new URLSearchParams();
+  if (params.vue !== "general") search.set("vue", params.vue);
+  if (params.portee !== "live") search.set("portee", params.portee);
+  if (params.vue === "journee" && params.journee) {
+    search.set("journee", String(params.journee));
+  }
+  const query = search.toString();
+  return query ? `/classement?${query}` : "/classement";
+}
+
+export default async function ClassementPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const raw = await searchParams;
+  const query = QuerySchema.parse({
+    vue: firstValue(raw.vue),
+    portee: firstValue(raw.portee),
+    journee: firstValue(raw.journee),
+  });
+
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+
+  const season = await loadActiveSeason(sb);
+  if (!season) {
+    return (
+      <PageShell title="Classement" subtitle="Aucune saison active">
+        <Card className="p-5 text-sm text-ink-muted">
+          Aucune saison n&apos;est ouverte pour le moment. Le classement apparaîtra dès que
+          l&apos;administrateur aura activé la saison.
+        </Card>
+      </PageShell>
+    );
+  }
+
+  const data = await loadStandingsData(sb, season);
+  const scope = SCOPE_OF[query.portee];
+  const kind = KIND_OF[query.vue];
+  const played = playedRounds(data.rounds, data.entries, scope);
+
+  // Journée demandée : celle de l'URL si elle a été jouée, sinon la dernière.
+  const askedRound =
+    query.vue === "journee" && query.journee
+      ? (played.find((r) => {
+          const detail = data.roundsDetail.find((d) => d.id === r.id);
+          return detail?.number === query.journee;
+        })?.id ?? null)
+      : null;
+
+  const table = computeStandings(data, {
+    kind,
+    scope,
+    roundId: askedRound,
+  });
+
+  const referenceIndex = played.findIndex((r) => r.id === table.referenceRoundId);
+  const referenceRound = referenceIndex >= 0 ? played[referenceIndex] : null;
+  const countedRounds = data.rounds.filter((r) => table.roundIds.includes(r.id));
+
+  const viewOptions = (["journee", "general", "forme"] as View[]).map((value) => ({
+    value,
+    label: value === "journee" ? "Journée" : value === "general" ? "Général" : "Forme",
+    href: buildHref({
+      vue: value,
+      portee: query.portee,
+      journee: value === "journee" ? (referenceRound ? roundNumber(data, referenceRound.id) : null) : null,
+    }),
+  }));
+
+  const reachOptions = (["live", "officiel"] as Reach[]).map((value) => ({
+    value,
+    label: value === "live" ? "Live" : "Officiel",
+    href: buildHref({ vue: query.vue, portee: value, journee: query.journee }),
+  }));
+
+  // Les matchs de la journée affichée : la porte d'entrée du Match Center.
+  let fixtures: RoundFixture[] = [];
+  if (query.vue === "journee" && referenceRound) {
+    fixtures = await loadRoundFixtures(sb, referenceRound.id);
+  }
+
+  return (
+    <PageShell title="Classement" subtitle={`Top 14 · Saison ${season.label}`}>
+      <div className="flex flex-col gap-3">
+        <Segmented options={viewOptions} current={query.vue} label="Type de classement" />
+        <Segmented options={reachOptions} current={query.portee} label="Portée du classement" />
+        <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
+          {query.portee === "live"
+            ? "Live : tous les matchs joués comptent, y compris ceux en cours."
+            : "Officiel : seuls les résultats définitifs comptent."}
+        </p>
+      </div>
+
+      {query.vue === "journee" && referenceRound && (
+        <RoundPicker
+          name={referenceRound.name}
+          previousHref={
+            referenceIndex > 0
+              ? buildHref({
+                  vue: "journee",
+                  portee: query.portee,
+                  journee: roundNumber(data, played[referenceIndex - 1].id),
+                })
+              : null
+          }
+          nextHref={
+            referenceIndex >= 0 && referenceIndex < played.length - 1
+              ? buildHref({
+                  vue: "journee",
+                  portee: query.portee,
+                  journee: roundNumber(data, played[referenceIndex + 1].id),
+                })
+              : null
+          }
+        />
+      )}
+
+      {table.referenceRoundId === null ? (
+        <Card className="p-5 text-sm leading-relaxed text-ink-muted">
+          {query.portee === "officiel"
+            ? "Aucun résultat n'est encore officiel. Le classement officiel s'ouvrira dès la validation des premiers matchs."
+            : "Le classement s'ouvrira dès les premiers résultats de la saison."}
+        </Card>
+      ) : (
+        <>
+          <Podium rows={table.rows} />
+          <StandingsList rows={table.rows} viewerId={user?.id ?? null} />
+          <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
+            {query.vue === "general" && countedRounds.length > 0 &&
+              `Cumul de ${countedRounds[0].name} à ${countedRounds[countedRounds.length - 1].name}.`}
+            {query.vue === "forme" && countedRounds.length > 0 &&
+              `Les ${DEFAULT_FORM_WINDOW} dernières journées : ${countedRounds[0].name} → ${countedRounds[countedRounds.length - 1].name}.`}
+            {query.vue === "journee" && referenceRound && `Points marqués sur la ${referenceRound.name}.`}
+            {" L'évolution se lit par rapport à la journée précédente."}
+          </p>
+        </>
+      )}
+
+      {fixtures.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <Label>Les matchs de la journée</Label>
+          <RoundFixtures fixtures={fixtures} />
+        </section>
+      )}
+
+      <Link
+        href="/classement/top14"
+        className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 text-sm font-semibold text-pine shadow-[var(--shadow-card)] transition hover:bg-surface-sunk"
+      >
+        Voir le classement réel du Top 14 →
+      </Link>
+    </PageShell>
+  );
+}
+
+function roundNumber(
+  data: { rounds: Array<{ id: string; number: number }> },
+  roundId: string,
+): number | null {
+  return data.rounds.find((r) => r.id === roundId)?.number ?? null;
+}
+
+function PageShell({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-1">
+        <Label>{subtitle}</Label>
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">{title}</h1>
+      </header>
+      {children}
+    </div>
+  );
+}
