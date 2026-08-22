@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
+    "db:verify": "./scripts/verify-migrations.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
