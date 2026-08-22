@@ -29,10 +29,10 @@
   /* --- Code couleur du jeu (configurable en admin) ---------------------- */
   --result-wrong:      #C0392B;   /* 🔴 mauvais pronostic */
   --result-wrong-soft: #F8E6E3;
-  --result-winner:     #C79A2A;   /* 🥇 bon vainqueur */
-  --result-winner-soft:#F9F0D8;
-  --result-perfect:    #2E7D52;   /* 🟢 résultat parfait */
-  --result-perfect-soft:#E2F1E8;
+  --result-winner:     #2E7D52;   /* 🟢 bon vainqueur */
+  --result-winner-soft:#E2F1E8;
+  --result-perfect:    #B08214;   /* 👌 score exact */
+  --result-perfect-soft:#F9F0D8;
 
   /* --- État live -------------------------------------------------------- */
   --live:          #D6453C;
@@ -65,10 +65,10 @@
 
     --result-wrong:      #E5817A;
     --result-wrong-soft: #2A1614;
-    --result-winner:     #DCB84F;
-    --result-winner-soft:#241E0D;
-    --result-perfect:    #5FC392;
-    --result-perfect-soft:#12241A;
+    --result-winner:     #5FC392;
+    --result-winner-soft:#12241A;
+    --result-perfect:    #E3C15C;
+    --result-perfect-soft:#241E0D;
 
     --live:          #F0736A;
     --live-soft:     #2B1512;
@@ -93,10 +93,10 @@
   --leather-soft:  #241B0F;
   --result-wrong:      #E5817A;
   --result-wrong-soft: #2A1614;
-  --result-winner:     #DCB84F;
-  --result-winner-soft:#241E0D;
-  --result-perfect:    #5FC392;
-  --result-perfect-soft:#12241A;
+  --result-winner:     #5FC392;
+  --result-winner-soft:#12241A;
+  --result-perfect:    #E3C15C;
+  --result-perfect-soft:#241E0D;
   --live:          #F0736A;
   --live-soft:     #2B1512;
   --shadow-card:   0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
