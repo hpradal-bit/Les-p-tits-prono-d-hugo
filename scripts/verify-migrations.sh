@@ -11,12 +11,17 @@ PGDATA=${PGDATA:-/tmp/pgdata-pronos}
 PGPORT=${PGPORT:-5433}
 export PATH="$PGBIN:$PATH"
 
-cleanup() { pg_ctl -D "$PGDATA" stop >/dev/null 2>&1 || true; }
+cleanup() { if [ "$(id -u)" = "0" ]; then su postgres -c "PATH=$PGBIN:\$PATH pg_ctl -D $PGDATA stop" >/dev/null 2>&1 || true; else pg_ctl -D "$PGDATA" stop >/dev/null 2>&1 || true; fi; }
 trap cleanup EXIT
 
-rm -rf "$PGDATA"
-initdb -D "$PGDATA" -A trust -U postgres >/dev/null
-pg_ctl -D "$PGDATA" -o "-p $PGPORT -k /tmp" -l /tmp/pg-pronos.log start >/dev/null
+# PostgreSQL refuse de démarrer en root : on bascule sur l'utilisateur postgres
+# quand c'est nécessaire.
+run() { if [ "$(id -u)" = "0" ]; then su postgres -c "PATH=$PGBIN:\$PATH $1"; else eval "$1"; fi; }
+
+rm -rf "$PGDATA"; mkdir -p "$PGDATA"
+[ "$(id -u)" = "0" ] && chown postgres "$PGDATA"
+run "initdb -D $PGDATA -A trust -U postgres" >/dev/null
+run "pg_ctl -D $PGDATA -o '-p $PGPORT -k /tmp' -l /tmp/pg-pronos.log start" >/dev/null
 sleep 2
 
 psql -h /tmp -p "$PGPORT" -U postgres -q -c "create database pronos;"
