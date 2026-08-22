@@ -1,0 +1,71 @@
+import type { Fixture, MatchOutcome, Round, Ruleset, Uuid } from "@/lib/types";
+import type { ExactAttempt, ExactScoreBudget, ExactScoreVerdict } from "./exact-score";
+
+/** Ce que le joueur a saisi sur un match, tel que l'écran le manipule. */
+export interface PredictionDraft {
+  outcome: MatchOutcome | null;
+  marginBucketId: Uuid | null;
+  marginValue: number | null;
+  exactHomeScore: number | null;
+  exactAwayScore: number | null;
+}
+
+/** Un match de la journée, prêt à être affiché. */
+export interface JourneyFixture {
+  fixture: Fixture;
+  /** Mon pronostic, s'il existe. Jamais celui des autres avant verrouillage. */
+  draft: PredictionDraft | null;
+  /** Ce pronostic a-t-il été posé automatiquement au verrouillage ? */
+  isAuto: boolean;
+  /** Verrouillé selon l'horloge du serveur au moment du rendu. */
+  isLocked: boolean;
+  /** Le score exact est-il ouvert sur ce match, à l'ouverture de l'écran ? */
+  exactScore: ExactScoreVerdict;
+  /** Mois du coup d'envoi dans le fuseau du jeu — sert au découpage du quota. */
+  monthKey: string;
+}
+
+/** Combien de matchs chacun a joués — sans rien révéler du contenu. */
+export interface ParticipationRow {
+  userId: Uuid;
+  firstName: string;
+  displayName: string;
+  avatarKind: "emoji" | "photo" | "club";
+  avatarValue: string;
+  played: number;
+  total: number;
+  missing: number;
+}
+
+/** Tout ce dont l'écran « Ma journée » a besoin, en un seul objet. */
+export interface JourneyBoard {
+  userId: Uuid;
+  seasonId: Uuid;
+  round: Round;
+  /** Les journées voisines, pour la navigation. */
+  previousRound: { id: Uuid; number: number; name: string } | null;
+  nextRound: { id: Uuid; number: number; name: string } | null;
+  fixtures: JourneyFixture[];
+  /** Le barème en vigueur : tranches, quotas, points. Rien n'est en dur à l'écran. */
+  ruleset: Ruleset;
+  /** Budget de scores exacts sur la période en cours. */
+  exactScoreBudget: ExactScoreBudget;
+  /**
+   * Les scores exacts déjà tentés HORS de cette journée. L'écran y ajoute ceux
+   * de la journée en cours pour recalculer le quota à chaque frappe, sans
+   * repasser par le serveur.
+   */
+  otherAttempts: ExactAttempt[];
+  /** Combien de matchs il me reste à jouer, parmi ceux encore ouverts. */
+  remainingToPlay: number;
+  /** Nombre de matchs encore ouverts à la saisie. */
+  openCount: number;
+  /** Prochain verrouillage de la journée, ISO 8601, ou null si tout est fermé. */
+  nextLockAt: string | null;
+  /** Au moins un horaire n'est pas encore confirmé par la LNR. */
+  hasProvisionalKickoffs: boolean;
+  participation: ParticipationRow[];
+  timeZone: string;
+  /** Horloge du serveur au moment du rendu, ISO 8601. */
+  serverNow: string;
+}
