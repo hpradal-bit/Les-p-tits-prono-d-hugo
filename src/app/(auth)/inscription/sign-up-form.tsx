@@ -5,7 +5,7 @@ import { signUp } from "@/lib/auth/actions";
 import { IDLE } from "@/lib/auth/action-state";
 import { Alert, Field, Input, SubmitButton } from "../_components/form";
 
-export function SignUpForm() {
+export function SignUpForm({ defaultInviteCode = "" }: { defaultInviteCode?: string }) {
   const [state, action] = useActionState(signUp, IDLE);
   const errors = state.fieldErrors ?? {};
 
@@ -16,7 +16,7 @@ export function SignUpForm() {
       <Field
         label="Code d'invitation"
         htmlFor="inviteCode"
-        hint="Hugo te l'a donné. Sans lui, pas d'entrée."
+        hint={defaultInviteCode ? "Déjà rempli par ton lien d'invitation." : "Hugo te l'a donné. Sans lui, pas d'entrée."}
         errors={errors.inviteCode}
       >
         <Input
@@ -27,6 +27,7 @@ export function SignUpForm() {
           autoCapitalize="characters"
           spellCheck={false}
           placeholder="TOP14-2026"
+          defaultValue={defaultInviteCode}
           invalid={Boolean(errors.inviteCode?.length)}
         />
       </Field>

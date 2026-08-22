@@ -1,5 +1,6 @@
 "use server";
 
+import { isAdminEmail } from "./admin-emails";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -149,10 +150,14 @@ export async function signUp(_prev: ActionState, formData: FormData): Promise<Ac
     return failure("La création du profil a échoué. Réessaie dans un instant.");
   }
 
+  /* Le rôle n'est pas saisi par le joueur : il est déduit de son adresse.
+     Les adresses administratrices sont déclarées dans ADMIN_EMAILS, côté
+     serveur. Personne ne peut se promouvoir en bidouillant le formulaire, et
+     Hugo n'a aucune requête à lancer à la main après son inscription. */
   const { error: memberError } = await admin.from("group_members").insert({
     group_id: group.id,
     user_id: userId,
-    role: "player",
+    role: isAdminEmail(email) ? "admin" : "player",
   });
   if (memberError) {
     await admin.from("profiles").delete().eq("id", userId);

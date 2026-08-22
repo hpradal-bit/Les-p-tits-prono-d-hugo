@@ -5,7 +5,13 @@ import { SignUpForm } from "./sign-up-form";
 
 export const metadata: Metadata = { title: "Inscription" };
 
-export default function InscriptionPage() {
+export default async function InscriptionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>;
+}) {
+  // Le lien d'invitation porte le code : /inscription?code=XXXX
+  const { code } = await searchParams;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
@@ -19,7 +25,7 @@ export default function InscriptionPage() {
       </div>
 
       <Card className="p-6">
-        <SignUpForm />
+        <SignUpForm defaultInviteCode={code ?? ""} />
       </Card>
 
       <p className="text-center text-[14px] text-ink-muted">

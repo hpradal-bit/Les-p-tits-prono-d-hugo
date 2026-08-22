@@ -14,24 +14,39 @@ Trois étapes, dans cet ordre. Compter 20 minutes.
 Ce fichier regroupe les migrations 0001 à 0005. Il ne s'exécute qu'**une seule
 fois**. Les migrations suivantes (0010 et au-delà) s'appliqueront une par une.
 
-### Créer le groupe et le premier administrateur
+### Choisir le code d'invitation
 
-Toujours dans le SQL Editor, après avoir créé ton compte depuis l'application :
+Le groupe est créé automatiquement par le script, avec le code de départ
+`TOP14-2026`. Ce code est visible dans le dépôt : **change-le avant d'inviter
+qui que ce soit.** Une ligne dans le SQL Editor :
 
 ```sql
--- 1. Le groupe et son code d'invitation
-insert into groups (name, invite_code)
-values ('Les p''tits pronos', 'TOP14');
-
--- 2. Te déclarer administrateur (remplacer l'adresse)
-insert into group_members (group_id, user_id, role)
-select g.id, u.id, 'admin'
-from groups g, auth.users u
-where g.invite_code = 'TOP14' and u.email = 'hpradal@gmail.com';
+update groups set invite_code = 'TON-CODE' where invite_code = 'TOP14-2026';
 ```
 
-Les cinq autres joueurs s'inscrivent ensuite avec le code `TOP14` et sont
-rattachés automatiquement, en tant que joueurs.
+C'est le seul SQL que tu auras à lancer.
+
+### Comment les joueurs entrent
+
+Chacun est autonome : tu envoies **un lien**, il fait le reste.
+
+```
+https://ton-app.vercel.app/inscription?code=TON-CODE
+```
+
+Le code est déjà rempli à l'ouverture du lien. Le joueur choisit son prénom,
+son avatar, un mot de passe, et il est dans le groupe. Pas de courriel de
+confirmation, pas de validation de ta part, rien à faire de ton côté.
+
+### Qui est administrateur
+
+Personne n'a besoin d'être promu à la main. Les droits d'administration sont
+attribués à l'inscription, à partir de la variable `ADMIN_EMAILS` renseignée
+sur Vercel (voir l'étape 2). L'adresse qui y figure devient administratrice au
+moment où elle s'inscrit — que ce soit avant ou après les autres joueurs.
+
+Plusieurs adresses possibles, séparées par des virgules. Un joueur ne peut pas
+se promouvoir : la variable n'existe que côté serveur.
 
 ---
 

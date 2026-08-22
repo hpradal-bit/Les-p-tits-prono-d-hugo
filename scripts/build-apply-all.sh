@@ -6,7 +6,7 @@ set -euo pipefail
   echo "-- LES P'TITS PRONOS D'HUGO — Installation complète de la base"
   echo "-- Généré le $(date +%d/%m/%Y) — ne pas modifier à la main."
   echo "-- ============================================================================"
-  for f in supabase/migrations/000[1-5]_*.sql; do
+  for f in supabase/migrations/*.sql; do
     printf '\n-- ▼▼▼ %s ▼▼▼\n\n' "$(basename "$f")"
     cat "$f"
   done
