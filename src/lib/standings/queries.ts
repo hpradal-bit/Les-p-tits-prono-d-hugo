@@ -1,0 +1,594 @@
+/**
+ * Lecture des données du classement et du Match Center.
+ *
+ * Serveur uniquement, et toujours avec le client soumis à RLS : c'est la base
+ * qui décide de ce qui est visible. Les jointures sont volontairement faites
+ * en mémoire — 6 joueurs, 91 matchs par saison : quelques centaines de lignes.
+ */
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  FixtureStatus,
+  MatchOutcome,
+  RoundStatus,
+  ScoreLevel,
+  Team,
+  Uuid,
+} from "@/lib/types";
+import type {
+  AdjustmentEntry,
+  BonusEntry,
+  PlayerRef,
+  RoundRef,
+  ScoreEntry,
+  StandingsInput,
+} from "./engine";
+import { explainScore, levelFromBreakdown, parseBreakdown } from "./breakdown";
+
+export interface SeasonRef {
+  id: Uuid;
+  label: string;
+}
+
+export interface RoundInfo extends RoundRef {
+  status: RoundStatus;
+}
+
+/** La saison en cours. Sans saison active, il n'y a rien à classer. */
+export async function loadActiveSeason(sb: SupabaseClient): Promise<SeasonRef | null> {
+  const { data, error } = await sb
+    .from("seasons")
+    .select("id, label, starts_on")
+    .eq("status", "active")
+    .order("starts_on", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = data?.[0] as { id: string; label: string } | undefined;
+  return row ? { id: row.id, label: row.label } : null;
+}
+
+interface RawScoreRow {
+  prediction_id: string;
+  points: number | null;
+  breakdown: unknown;
+  is_official: boolean | null;
+  predictions: { user_id: string; fixture_id: string } | null;
+}
+
+interface RawFixtureRow {
+  id: string;
+  round_id: string;
+  status: FixtureStatus;
+  kickoff_at: string;
+}
+
+interface RawBonusRow {
+  user_id: string;
+  points: number | null;
+  bonus_questions: { season_id: string; round_id: string | null } | null;
+}
+
+interface RawProfileRow {
+  id: string;
+  first_name: string;
+  display_name: string;
+  avatar_kind: PlayerRef["avatarKind"];
+  avatar_value: string;
+}
+
+/** Supabase renvoie une relation « vers un » comme objet, parfois comme tableau. */
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function toPlayer(row: RawProfileRow): PlayerRef {
+  return {
+    userId: row.id,
+    firstName: row.first_name,
+    displayName: row.display_name,
+    avatarKind: row.avatar_kind,
+    avatarValue: row.avatar_value,
+  };
+}
+
+const PROFILE_COLUMNS = "id, first_name, display_name, avatar_kind, avatar_value";
+const TEAM_COLUMNS =
+  "id, code, name, short_name, city, logo_url, primary_color, secondary_color";
+
+export interface StandingsData extends StandingsInput {
+  season: SeasonRef;
+  roundsDetail: RoundInfo[];
+}
+
+/**
+ * Tout ce dont le moteur a besoin. Le filtrage live/officiel n'a pas lieu ici :
+ * on charge une fois, le moteur applique la portée demandée.
+ */
+export async function loadStandingsData(
+  sb: SupabaseClient,
+  season: SeasonRef,
+): Promise<StandingsData> {
+  const [roundsRes, profilesRes, adjustmentsRes] = await Promise.all([
+    sb
+      .from("rounds")
+      .select("id, number, name, status")
+      .eq("season_id", season.id)
+      .order("number"),
+    sb.from("profiles").select(PROFILE_COLUMNS).eq("is_active", true).order("first_name"),
+    sb
+      .from("point_adjustments")
+      .select("user_id, round_id, delta")
+      .eq("season_id", season.id),
+  ]);
+
+  if (roundsRes.error) throw roundsRes.error;
+  if (profilesRes.error) throw profilesRes.error;
+  if (adjustmentsRes.error) throw adjustmentsRes.error;
+
+  const roundsDetail: RoundInfo[] = (
+    (roundsRes.data ?? []) as Array<{
+      id: string;
+      number: number;
+      name: string;
+      status: RoundStatus;
+    }>
+  ).map((r) => ({ id: r.id, number: r.number, name: r.name, status: r.status }));
+
+  const roundIds = roundsDetail.map((r) => r.id);
+  const players: PlayerRef[] = ((profilesRes.data ?? []) as RawProfileRow[]).map(toPlayer);
+
+  const [fixturesRes, scoresRes, bonusRes] = await Promise.all([
+    roundIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : sb.from("fixtures").select("id, round_id, status, kickoff_at").in("round_id", roundIds),
+    sb
+      .from("prediction_scores")
+      .select(
+        "prediction_id, points, breakdown, is_official, predictions!inner(user_id, fixture_id)",
+      ),
+    sb
+      .from("bonus_scores")
+      .select("user_id, points, bonus_questions!inner(season_id, round_id)"),
+  ]);
+
+  if (fixturesRes.error) throw fixturesRes.error;
+  if (scoresRes.error) throw scoresRes.error;
+  if (bonusRes.error) throw bonusRes.error;
+
+  const fixtures = new Map<string, RawFixtureRow>();
+  for (const f of (fixturesRes.data ?? []) as unknown as RawFixtureRow[]) {
+    fixtures.set(f.id, f);
+  }
+
+  const entries: ScoreEntry[] = [];
+  for (const row of (scoresRes.data ?? []) as unknown as RawScoreRow[]) {
+    const prediction = one(row.predictions);
+    if (!prediction) continue;
+    const fixture = fixtures.get(prediction.fixture_id);
+    if (!fixture) continue; // match d'une autre saison
+    entries.push({
+      userId: prediction.user_id,
+      roundId: fixture.round_id,
+      fixtureId: fixture.id,
+      kickoffAt: fixture.kickoff_at,
+      fixtureStatus: fixture.status,
+      points: row.points ?? 0,
+      level: levelFromBreakdown(parseBreakdown(row.breakdown)),
+    });
+  }
+
+  const adjustments: AdjustmentEntry[] = (
+    (adjustmentsRes.data ?? []) as Array<{
+      user_id: string;
+      round_id: string | null;
+      delta: number;
+    }>
+  ).map((a) => ({ userId: a.user_id, roundId: a.round_id, delta: a.delta }));
+
+  const bonuses: BonusEntry[] = [];
+  for (const row of (bonusRes.data ?? []) as unknown as RawBonusRow[]) {
+    const question = one(row.bonus_questions);
+    if (!question || question.season_id !== season.id) continue;
+    bonuses.push({
+      userId: row.user_id,
+      roundId: question.round_id,
+      points: row.points ?? 0,
+    });
+  }
+
+  return {
+    season,
+    players,
+    rounds: roundsDetail.map((r) => ({ id: r.id, number: r.number, name: r.name })),
+    roundsDetail,
+    entries,
+    adjustments,
+    bonuses,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Classement sportif réel de la compétition                                  */
+/* -------------------------------------------------------------------------- */
+
+interface RawTeamRow {
+  id: string;
+  code: string;
+  name: string;
+  short_name: string;
+  city: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+}
+
+function toTeam(row: RawTeamRow): Team {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    shortName: row.short_name,
+    city: row.city,
+    logoUrl: row.logo_url,
+    primaryColor: row.primary_color,
+    secondaryColor: row.secondary_color,
+  };
+}
+
+export interface CompetitionStandingRow {
+  position: number;
+  team: Team;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  bonusOffensive: number;
+  bonusDefensive: number;
+  points: number;
+  updatedAt: string;
+}
+
+export async function loadCompetitionStandings(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<CompetitionStandingRow[]> {
+  const { data, error } = await sb
+    .from("competition_standings")
+    .select(
+      "team_id, position, played, won, drawn, lost, points_for, points_against, bonus_offensive, bonus_defensive, points, updated_at",
+    )
+    .eq("season_id", seasonId)
+    .order("position");
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{
+    team_id: string;
+    position: number;
+    played: number;
+    won: number;
+    drawn: number;
+    lost: number;
+    points_for: number;
+    points_against: number;
+    bonus_offensive: number;
+    bonus_defensive: number;
+    points: number;
+    updated_at: string;
+  }>;
+  if (rows.length === 0) return [];
+
+  const { data: teamRows, error: teamError } = await sb
+    .from("teams")
+    .select(TEAM_COLUMNS)
+    .in(
+      "id",
+      rows.map((r) => r.team_id),
+    );
+  if (teamError) throw teamError;
+
+  const teams = new Map<string, Team>();
+  for (const t of (teamRows ?? []) as unknown as RawTeamRow[]) teams.set(t.id, toTeam(t));
+
+  return rows
+    .filter((r) => teams.has(r.team_id))
+    .map((r) => ({
+      position: r.position,
+      team: teams.get(r.team_id)!,
+      played: r.played,
+      won: r.won,
+      drawn: r.drawn,
+      lost: r.lost,
+      pointsFor: r.points_for,
+      pointsAgainst: r.points_against,
+      bonusOffensive: r.bonus_offensive,
+      bonusDefensive: r.bonus_defensive,
+      points: r.points,
+      updatedAt: r.updated_at,
+    }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Matchs d'une journée (passerelle vers le Match Center)                     */
+/* -------------------------------------------------------------------------- */
+
+export interface RoundFixture {
+  id: Uuid;
+  homeTeam: Team;
+  awayTeam: Team;
+  kickoffAt: string;
+  kickoffConfirmed: boolean;
+  status: FixtureStatus;
+  homeScore: number | null;
+  awayScore: number | null;
+  minute: number | null;
+}
+
+export async function loadRoundFixtures(
+  sb: SupabaseClient,
+  roundId: Uuid,
+): Promise<RoundFixture[]> {
+  const { data, error } = await sb
+    .from("fixtures")
+    .select(
+      "id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, status, home_score, away_score, minute",
+    )
+    .eq("round_id", roundId)
+    .order("kickoff_at");
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    home_team_id: string;
+    away_team_id: string;
+    kickoff_at: string;
+    kickoff_confirmed: boolean | null;
+    status: FixtureStatus;
+    home_score: number | null;
+    away_score: number | null;
+    minute: number | null;
+  }>;
+  if (rows.length === 0) return [];
+
+  const teamIds = [...new Set(rows.flatMap((r) => [r.home_team_id, r.away_team_id]))];
+  const { data: teamRows, error: teamError } = await sb
+    .from("teams")
+    .select(TEAM_COLUMNS)
+    .in("id", teamIds);
+  if (teamError) throw teamError;
+
+  const teams = new Map<string, Team>();
+  for (const t of (teamRows ?? []) as unknown as RawTeamRow[]) teams.set(t.id, toTeam(t));
+
+  return rows
+    .filter((r) => teams.has(r.home_team_id) && teams.has(r.away_team_id))
+    .map((r) => ({
+      id: r.id,
+      homeTeam: teams.get(r.home_team_id)!,
+      awayTeam: teams.get(r.away_team_id)!,
+      kickoffAt: r.kickoff_at,
+      kickoffConfirmed: r.kickoff_confirmed ?? false,
+      status: r.status,
+      homeScore: r.home_score,
+      awayScore: r.away_score,
+      minute: r.minute,
+    }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Match Center                                                               */
+/* -------------------------------------------------------------------------- */
+
+export interface MatchFixture {
+  id: Uuid;
+  roundId: Uuid;
+  roundName: string;
+  roundNumber: number;
+  homeTeam: Team;
+  awayTeam: Team;
+  kickoffAt: string;
+  kickoffConfirmed: boolean;
+  locksAt: string;
+  status: FixtureStatus;
+  homeScore: number | null;
+  awayScore: number | null;
+  minute: number | null;
+  venue: string | null;
+}
+
+export interface MatchPrediction {
+  player: PlayerRef;
+  outcome: MatchOutcome;
+  marginBucketLabel: string | null;
+  marginValue: number | null;
+  exactHomeScore: number | null;
+  exactAwayScore: number | null;
+  isAuto: boolean;
+  /** `null` tant que le pronostic n'a pas été noté. */
+  score: { points: number; level: ScoreLevel; reason: string } | null;
+}
+
+export interface MatchCenterData {
+  fixture: MatchFixture;
+  /** Les pronostics du groupe. Vide tant que le match n'est pas verrouillé. */
+  predictions: MatchPrediction[];
+  /** Le pronostic du joueur connecté, visible même avant le verrouillage. */
+  mine: MatchPrediction | null;
+  isLocked: boolean;
+}
+
+export async function loadMatchCenter(
+  sb: SupabaseClient,
+  fixtureId: Uuid,
+  viewerId: Uuid | null,
+): Promise<MatchCenterData | null> {
+  const { data: fixtureRow, error } = await sb
+    .from("fixtures")
+    .select(
+      "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute, venue",
+    )
+    .eq("id", fixtureId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!fixtureRow) return null;
+
+  const raw = fixtureRow as {
+    id: string;
+    round_id: string;
+    home_team_id: string;
+    away_team_id: string;
+    kickoff_at: string;
+    kickoff_confirmed: boolean | null;
+    locks_at: string;
+    status: FixtureStatus;
+    home_score: number | null;
+    away_score: number | null;
+    minute: number | null;
+    venue: string | null;
+  };
+
+  const [teamsRes, roundRes, predictionsRes] = await Promise.all([
+    sb.from("teams").select(TEAM_COLUMNS).in("id", [raw.home_team_id, raw.away_team_id]),
+    sb.from("rounds").select("id, number, name").eq("id", raw.round_id).maybeSingle(),
+    sb
+      .from("predictions")
+      .select(
+        "id, user_id, outcome, margin_bucket_id, margin_value, exact_home_score, exact_away_score, is_auto",
+      )
+      .eq("fixture_id", fixtureId),
+  ]);
+
+  if (teamsRes.error) throw teamsRes.error;
+  if (roundRes.error) throw roundRes.error;
+  if (predictionsRes.error) throw predictionsRes.error;
+
+  const teams = new Map<string, Team>();
+  for (const t of (teamsRes.data ?? []) as unknown as RawTeamRow[]) teams.set(t.id, toTeam(t));
+  const homeTeam = teams.get(raw.home_team_id);
+  const awayTeam = teams.get(raw.away_team_id);
+  if (!homeTeam || !awayTeam) return null;
+
+  const round = roundRes.data as { id: string; number: number; name: string } | null;
+
+  const fixture: MatchFixture = {
+    id: raw.id,
+    roundId: raw.round_id,
+    roundName: round?.name ?? "",
+    roundNumber: round?.number ?? 0,
+    homeTeam,
+    awayTeam,
+    kickoffAt: raw.kickoff_at,
+    kickoffConfirmed: raw.kickoff_confirmed ?? false,
+    locksAt: raw.locks_at,
+    status: raw.status,
+    homeScore: raw.home_score,
+    awayScore: raw.away_score,
+    minute: raw.minute,
+    venue: raw.venue,
+  };
+
+  const predictionRows = (predictionsRes.data ?? []) as Array<{
+    id: string;
+    user_id: string;
+    outcome: MatchOutcome;
+    margin_bucket_id: string | null;
+    margin_value: number | null;
+    exact_home_score: number | null;
+    exact_away_score: number | null;
+    is_auto: boolean;
+  }>;
+
+  const bucketIds = [
+    ...new Set(
+      predictionRows.map((p) => p.margin_bucket_id).filter((id): id is string => id !== null),
+    ),
+  ];
+  const userIds = [...new Set(predictionRows.map((p) => p.user_id))];
+  const predictionIds = predictionRows.map((p) => p.id);
+
+  const [bucketsRes, profilesRes, scoresRes] = await Promise.all([
+    bucketIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : sb.from("margin_buckets").select("id, label").in("id", bucketIds),
+    userIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : sb.from("profiles").select(PROFILE_COLUMNS).in("id", userIds),
+    predictionIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : sb
+          .from("prediction_scores")
+          .select("prediction_id, points, breakdown")
+          .in("prediction_id", predictionIds),
+  ]);
+
+  if (bucketsRes.error) throw bucketsRes.error;
+  if (profilesRes.error) throw profilesRes.error;
+  if (scoresRes.error) throw scoresRes.error;
+
+  const buckets = new Map<string, string>();
+  for (const b of (bucketsRes.data ?? []) as Array<{ id: string; label: string }>) {
+    buckets.set(b.id, b.label);
+  }
+
+  const profiles = new Map<string, PlayerRef>();
+  for (const p of (profilesRes.data ?? []) as RawProfileRow[]) {
+    profiles.set(p.id, toPlayer(p));
+  }
+
+  const scores = new Map<string, { points: number; breakdown: unknown }>();
+  for (const s of (scoresRes.data ?? []) as Array<{
+    prediction_id: string;
+    points: number | null;
+    breakdown: unknown;
+  }>) {
+    scores.set(s.prediction_id, { points: s.points ?? 0, breakdown: s.breakdown });
+  }
+
+  const predictions: MatchPrediction[] = predictionRows.map((p) => {
+    const rawScore = scores.get(p.id);
+    const breakdown = rawScore ? parseBreakdown(rawScore.breakdown) : null;
+    return {
+      player: profiles.get(p.user_id) ?? {
+        userId: p.user_id,
+        firstName: "Joueur",
+        displayName: "Joueur",
+        avatarKind: "emoji" as const,
+        avatarValue: "🏉",
+      },
+      outcome: p.outcome,
+      marginBucketLabel: p.margin_bucket_id ? (buckets.get(p.margin_bucket_id) ?? null) : null,
+      marginValue: p.margin_value,
+      exactHomeScore: p.exact_home_score,
+      exactAwayScore: p.exact_away_score,
+      isAuto: p.is_auto,
+      score:
+        rawScore && breakdown
+          ? {
+              points: rawScore.points,
+              level: levelFromBreakdown(breakdown),
+              reason: explainScore(breakdown),
+            }
+          : null,
+    };
+  });
+
+  predictions.sort((a, b) => {
+    const pa = a.score?.points ?? -1;
+    const pb = b.score?.points ?? -1;
+    if (pa !== pb) return pb - pa;
+    return a.player.firstName.localeCompare(b.player.firstName, "fr");
+  });
+
+  const isLocked = new Date(fixture.locksAt).getTime() <= Date.now();
+
+  return {
+    fixture,
+    // Avant le verrouillage, RLS ne renvoie que le pronostic du joueur connecté.
+    // On ne l'affiche pas dans la liste du groupe : ce serait mentir sur le secret.
+    predictions: isLocked ? predictions : [],
+    mine: viewerId ? (predictions.find((p) => p.player.userId === viewerId) ?? null) : null,
+    isLocked,
+  };
+}
