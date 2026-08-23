@@ -9,6 +9,7 @@
 
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { ServiceWorkerRegistrar } from "./_components/service-worker";
 import { BottomNav } from "./_components/bottom-nav";
 
 // L'application lit toujours des données propres au joueur connecté.
@@ -42,6 +43,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
       {/* pb-24 : la barre de navigation ne doit jamais masquer le contenu. */}
       <main className="flex-1 px-4 pb-28 pt-6 sm:px-6">{children}</main>
+      <ServiceWorkerRegistrar />
       <BottomNav isAdmin={isAdmin} />
     </div>
   );

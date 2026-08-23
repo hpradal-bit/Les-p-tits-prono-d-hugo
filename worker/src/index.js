@@ -96,6 +96,8 @@ async function maybeRunLive(env, now, force) {
   }
 
   const result = await callSync(env, "live");
+  // Chaque cycle est aussi l'occasion de voir si un verrouillage approche.
+  await callSync(env, "dispatch", "push");
   if (result.body && typeof result.body.nextCheckAt === "string") {
     await state.put(KV_NEXT_LIVE, result.body.nextCheckAt);
   } else {
@@ -150,12 +152,12 @@ async function maybeRunDaily(env, now, force) {
 
 // --- Appel des routes --------------------------------------------------------
 
-async function callSync(env, kind) {
+async function callSync(env, kind, prefix = "sync") {
   const base = (env.APP_URL ?? "").replace(/\/$/, "");
   if (!base) throw new Error("APP_URL non configurée");
   if (!env.SYNC_SECRET) throw new Error("SYNC_SECRET non configurée");
 
-  const response = await fetch(`${base}/api/sync/${kind}`, {
+  const response = await fetch(`${base}/api/${prefix}/${kind}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -172,7 +174,7 @@ async function callSync(env, kind) {
   }
 
   if (!response.ok) {
-    console.error(`[worker] /api/sync/${kind} → HTTP ${response.status}`, body);
+    console.error(`[worker] /api/${prefix}/${kind} → HTTP ${response.status}`, body);
   }
   return { status: response.status, body };
 }
