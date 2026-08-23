@@ -1,0 +1,40 @@
+# ============================================================================
+# Planificateur de synchronisation — Cloudflare Worker
+# ----------------------------------------------------------------------------
+# Offre gratuite : 100 000 requêtes par jour, cron compris. On en consomme 288
+# (un réveil toutes les 5 minutes), dont une poignée seulement déclenche un
+# appel réel à l'application.
+#
+# Déploiement :
+#   cd worker
+#   npx wrangler kv namespace create SYNC_STATE      # une seule fois
+#   # reporter l'identifiant renvoyé dans [[kv_namespaces]] ci-dessous
+#   npx wrangler secret put SYNC_SECRET              # même valeur que sur Vercel
+#   npx wrangler deploy
+# ============================================================================
+
+name = "pronos-sync"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Réveil toutes les 5 minutes. Le Worker décide ensuite s'il y a lieu d'appeler
+# quoi que ce soit : hors fenêtre de match, il ne fait rien.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+# L'application déployée. À remplacer par l'URL Vercel du projet.
+APP_URL = "https://ptits-pronos.vercel.app"
+# Heure UTC du passage quotidien (calendrier + classement). 4 h UTC = 6 h à
+# Paris en été : les matchs de la veille sont terminés et corrigés.
+DAILY_HOUR_UTC = "4"
+
+# État du planificateur : prochaine vérification du direct, date du dernier
+# passage quotidien. Sans cet espace de noms, le Worker fonctionne quand même,
+# mais en cadence horaire fixe.
+# [[kv_namespaces]]
+# binding = "SYNC_STATE"
+# id = "à renseigner après `wrangler kv namespace create SYNC_STATE`"
+
+# SYNC_SECRET n'est jamais écrit ici : c'est un secret Wrangler.
+#   npx wrangler secret put SYNC_SECRET
