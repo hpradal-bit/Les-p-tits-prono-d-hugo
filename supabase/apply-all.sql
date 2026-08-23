@@ -1358,12 +1358,16 @@ on conflict (key) do nothing;
 --      update group_members set role = 'admin' where user_id = (
 --        select id from profiles where display_name = 'Hugo');
 
+-- Le garde-fou porte sur « un groupe existe-t-il déjà ? », et non sur le code
+-- lui-même : Hugo change son code d'invitation depuis l'admin, et une relance
+-- du script ne doit pas en profiter pour recréer un second groupe.
 insert into groups (name, invite_code, active_season_id)
 select 'Les p''tits pronos d''Hugo', 'TOP14-2026', se.id
 from seasons se
 join competitions c on c.id = se.competition_id
-where c.code = 'top14' and se.label = '2026/2027'
-on conflict (invite_code) do nothing;
+where c.code = 'top14'
+  and se.label = '2026/2027'
+  and not exists (select 1 from groups);
 
 -- ---------------------------------------------------------------------------
 -- 3. Fraîcheur de profiles.updated_at
