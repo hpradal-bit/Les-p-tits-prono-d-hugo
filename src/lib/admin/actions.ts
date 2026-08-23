@@ -11,9 +11,13 @@ import {
   type RecomputeSummary,
 } from "@/lib/scoring/persist";
 import type { Uuid } from "@/lib/types";
-import { loadPublicKey } from "@/lib/push/send";
+import { loadSettings } from "@/lib/settings";
+import { loadPublicKey, sendToUser } from "@/lib/push/send";
+import { enqueue, type EnqueueOutcome } from "@/lib/push/notify";
+import { scheduleFor } from "@/lib/push/schedule";
+import { describeQuiet, readRules, rulesToRows, validateRules } from "@/lib/push/rules";
 import { requireAdmin, AdminError } from "./auth";
-import { logAdminAction, MissingReasonError } from "./log";
+import { logAdminAction, MissingReasonError, normalizeReason } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
 import { currentSeasonId } from "./queries";
 
@@ -1170,6 +1174,296 @@ export async function updateVapidKey(
       before
         ? "Clé enregistrée. Les joueurs devront réactiver leurs notifications : les anciens abonnements ne valent plus."
         : "Clé enregistrée. Les notifications sont disponibles depuis l'écran Réglages.",
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Notifications — annonces, test, garde-fous
+
+   Trois actions, trois portées distinctes :
+
+     · le **test** ne parle qu'à l'administrateur et court-circuite tout — file,
+       plafond, heures de silence. C'est un diagnostic : il doit sonner tout de
+       suite, ou dire précisément pourquoi il n'a pas sonné.
+     · l'**annonce** passe par la file, donc respecte les heures de silence et
+       les joueurs qui ont coupé. Elle ignore le seul plafond quotidien, qui
+       existe pour brider l'automatique, pas la parole de l'organisation.
+     · les **garde-fous** ne font que réécrire `app_settings`.
+   --------------------------------------------------------------------------- */
+
+const announcementSchema = z.object({
+  title: z.string().trim().min(3, "Trois caractères minimum.").max(80, "80 caractères maximum."),
+  body: z.string().trim().min(3, "Trois caractères minimum.").max(300, "300 caractères maximum."),
+  url: z.string().trim().max(200).optional(),
+  reason: z.string(),
+});
+
+const rulesSchema = z.object({
+  enabled: z.coerce.boolean(),
+  maxPerDay: z.coerce.number(),
+  quietFrom: z.string().trim(),
+  quietTo: z.string().trim(),
+  timeZone: z.string().trim(),
+  reason: z.string(),
+});
+
+/** Les joueurs actifs du groupe — les destinataires d'une annonce. */
+async function activeMemberIds(admin: SupabaseClient, groupId: Uuid): Promise<Uuid[]> {
+  const { data, error } = await admin
+    .from("group_members")
+    .select("user_id, profiles:user_id (is_active)")
+    .eq("group_id", groupId);
+  if (error) throw error;
+
+  return (data ?? [])
+    .filter((m) => {
+      const p = (Array.isArray(m.profiles) ? m.profiles[0] : m.profiles) as
+        | { is_active?: boolean }
+        | null;
+      return p?.is_active !== false;
+    })
+    .map((m) => m.user_id as Uuid);
+}
+
+/**
+ * Envoie une notification à l'administrateur, tout de suite.
+ *
+ * Volontairement hors de la file : le but est de répondre à « est-ce que ça
+ * marche vraiment ? », et une réponse qui arrive au prochain passage du
+ * planificateur ne répond à rien.
+ */
+export async function sendTestNotification(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const reason = normalizeReason(formData.get("reason"));
+    const admin = createAdminClient();
+
+    if (!(await loadPublicKey(admin))) {
+      return adminFail("Aucune clé publique enregistrée : renseigne-la avant de tester.");
+    }
+    if (!process.env.VAPID_PRIVATE_KEY) {
+      return adminFail("La clé privée manque côté serveur (variable VAPID_PRIVATE_KEY chez Vercel).");
+    }
+
+    const { count } = await admin
+      .from("push_subscriptions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", ctx.userId)
+      .is("revoked_at", null);
+
+    if ((count ?? 0) === 0) {
+      return adminFail(
+        "Aucun appareil abonné pour toi. Va dans Réglages, active l'interrupteur, puis reviens.",
+      );
+    }
+
+    const result = await sendToUser(admin, ctx.userId, {
+      title: "Test des notifications",
+      body: "Si tu lis ceci, tout fonctionne. Bonne saison 🏉",
+      url: "/reglages",
+      kind: "announcement",
+      tag: "test",
+    });
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.test_sent",
+      entityType: "app_setting",
+      entityId: null,
+      before: null,
+      after: { sent: result.sent, failed: result.failed, revoked: result.revoked },
+      reason,
+    });
+
+    if (result.sent > 0) {
+      return adminOk(
+        `Message parti vers ${result.sent} appareil${result.sent > 1 ? "s" : ""}. Il devrait s'afficher dans quelques secondes.`,
+        result.revoked > 0
+          ? { details: [`${result.revoked} abonnement périmé a été retiré au passage.`] }
+          : {},
+      );
+    }
+
+    return adminFail("Aucun appareil n'a accepté le message.", {
+      details:
+        result.errors.length > 0
+          ? result.errors
+          : ["Le service de push n'a rien renvoyé d'exploitable."],
+    });
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+/**
+ * Écrit un message et l'envoie à tout le groupe.
+ *
+ * Le compte rendu distingue chaque sort possible : une annonce avalée par les
+ * réglages d'un joueur doit se voir, sinon l'administrateur croit avoir parlé
+ * dans le vide — ou pire, croit avoir été entendu.
+ */
+export async function sendAnnouncement(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = announcementSchema.safeParse({
+      title: formData.get("title"),
+      body: formData.get("body"),
+      url: formData.get("url") ?? undefined,
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return adminFail("Message incomplet.", { fieldErrors: fieldErrorsOf(parsed.error) });
+    }
+    const { title, body, url, reason } = parsed.data;
+
+    const admin = createAdminClient();
+    const settings = await loadSettings(admin);
+    const rules = readRules(settings);
+
+    if (!rules.enabled) {
+      return adminFail(
+        "Les notifications du groupe sont éteintes : rallume-les avant d'envoyer une annonce.",
+      );
+    }
+
+    const members = await activeMemberIds(admin, ctx.groupId);
+    // Un horodatage dans la clé : deux annonces de suite ne se dédoublonnent pas.
+    const stamp = new Date().toISOString();
+    const tally: Record<EnqueueOutcome, number> = {
+      queued: 0, duplicate: 0, off: 0, muted: 0, capped: 0,
+    };
+
+    for (const userId of members) {
+      const outcome = await enqueue(
+        admin,
+        {
+          userId,
+          kind: "announcement",
+          title,
+          body,
+          url: url && url.length > 0 ? url : "/",
+          dedupeKey: `announcement:${ctx.userId}:${stamp}`,
+        },
+        // Une annonce est délibérée et rare : le plafond du jour, qui protège
+        // du bruit automatique, ne doit pas l'étouffer.
+        { ignoreDailyCap: true },
+      );
+      tally[outcome] += 1;
+    }
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.announcement_sent",
+      entityType: "app_setting",
+      entityId: null,
+      before: null,
+      after: { title, body, recipients: tally.queued, muted: tally.muted },
+      reason,
+      event: { payload: { title } },
+    });
+
+    // Les heures de silence peuvent décaler l'envoi : autant le dire tout de suite.
+    const departure = scheduleFor(new Date(), {
+      from: rules.quietFrom, to: rules.quietTo, timeZone: rules.timeZone,
+    });
+    const delayed = departure.getTime() - Date.now() > 60_000;
+
+    if (tally.queued === 0) {
+      return adminFail("Personne ne recevra ce message.", {
+        details: [
+          tally.muted > 0
+            ? `${tally.muted} joueur${tally.muted > 1 ? "s ont" : " a"} coupé les notifications ou ce type de message.`
+            : "Aucun joueur actif à qui écrire.",
+        ],
+      });
+    }
+
+    const details: string[] = [];
+    if (delayed) {
+      details.push(
+        `Heures de silence en cours : départ prévu à ${new Intl.DateTimeFormat("fr-FR", {
+          hour: "2-digit", minute: "2-digit", timeZone: rules.timeZone,
+        }).format(departure)}.`,
+      );
+    }
+    if (tally.muted > 0) {
+      details.push(`${tally.muted} joueur${tally.muted > 1 ? "s" : ""} ne le recevra pas (notifications coupées).`);
+    }
+
+    revalidatePath("/admin/push-settings");
+    return adminOk(
+      `Message mis en file pour ${tally.queued} joueur${tally.queued > 1 ? "s" : ""}.`,
+      details.length > 0 ? { details } : {},
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+/** Les garde-fous du groupe : interrupteur, plafond, heures de silence. */
+export async function updateNotificationRules(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = rulesSchema.safeParse({
+      enabled: formData.get("enabled") === "on" || formData.get("enabled") === "true",
+      maxPerDay: formData.get("maxPerDay"),
+      quietFrom: formData.get("quietFrom"),
+      quietTo: formData.get("quietTo"),
+      timeZone: formData.get("timeZone"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return adminFail("Réglages invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
+    }
+    const { reason, ...input } = parsed.data;
+
+    // La validation métier vit dans une fonction pure, donc testable — et la
+    // même que celle qui décrit les règles à l'écran.
+    const errors = validateRules(input);
+    if (Object.keys(errors).length > 0) {
+      return adminFail("Réglages invalides.", {
+        fieldErrors: Object.fromEntries(Object.entries(errors).map(([k, v]) => [k, [v]])),
+      });
+    }
+
+    const admin = createAdminClient();
+    const before = readRules(await loadSettings(admin));
+
+    const { error } = await admin.from("app_settings").upsert(
+      rulesToRows(input).map((r) => ({ ...r, updated_by: ctx.userId })),
+      { onConflict: "key" },
+    );
+    if (error) throw error;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.rules_changed",
+      entityType: "app_setting",
+      entityId: null,
+      before,
+      after: input,
+      reason,
+    });
+
+    revalidatePath("/admin/push-settings");
+    revalidatePath("/reglages");
+
+    return adminOk(
+      input.enabled
+        ? `Réglages enregistrés : ${input.maxPerDay} message${input.maxPerDay > 1 ? "s" : ""} par jour au plus, ${describeQuiet(input)}.`
+        : "Notifications éteintes pour tout le groupe. Plus rien ne partira, même une annonce.",
     );
   } catch (error) {
     return handle(error);

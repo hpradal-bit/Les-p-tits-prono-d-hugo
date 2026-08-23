@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Card, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings, setting } from "@/lib/settings";
+import { readRules } from "@/lib/push/rules";
 import { getViewer } from "@/lib/auth/session";
 import { NotificationSwitch } from "./notification-switch";
 
@@ -25,9 +26,8 @@ export default async function ReglagesPage() {
   const sb = await createClient();
   const settings = await loadSettings(sb);
   const catalog = setting<CatalogEntry[]>(settings, "notifications.types", []);
-  const quietFrom = setting<string>(settings, "notifications.quiet_from", "22:00");
-  const quietTo = setting<string>(settings, "notifications.quiet_to", "08:00");
-  const maxPerDay = setting<number>(settings, "notifications.max_per_day", 3);
+  const rules = readRules(settings);
+  const { quietFrom, quietTo, maxPerDay } = rules;
   const vapid = setting<string>(settings, "push_notifications.vapid_public_key", "");
 
   return (
@@ -40,7 +40,14 @@ export default async function ReglagesPage() {
       </header>
 
       <Card className="p-4">
-        {vapid ? (
+        {!rules.enabled ? (
+          // Laisser activer un interrupteur qui ne déclenche rien serait pire
+          // que de ne rien afficher : le joueur croirait avoir raté quelque chose.
+          <p className="text-[13px] text-ink-faint">
+            Les notifications sont suspendues pour tout le groupe. Rien ne partira tant que
+            l&apos;organisation ne les aura pas rallumées.
+          </p>
+        ) : vapid ? (
           <NotificationSwitch vapidPublicKey={vapid} />
         ) : (
           <p className="text-[13px] text-ink-faint">

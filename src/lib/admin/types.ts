@@ -26,6 +26,9 @@ export const ADMIN_ACTIONS = {
   "settings.updated": "Réglage modifié",
   "group.invite_code_changed": "Code d'invitation modifié",
   "push.vapid_key_changed": "Clé de notifications modifiée",
+  "push.test_sent": "Notification de test envoyée",
+  "push.announcement_sent": "Message envoyé au groupe",
+  "push.rules_changed": "Règles de notification modifiées",
 
   "player.created": "Joueur ajouté",
   "player.deactivated": "Joueur désactivé",
@@ -114,6 +117,19 @@ export const FIELD_LABELS: Record<string, string> = {
   players: "Joueurs",
   round: "Journée",
   fixture: "Match",
+  enabled: "Notifications actives",
+  maxPerDay: "Messages par jour",
+  quietFrom: "Début du silence",
+  quietTo: "Fin du silence",
+  timeZone: "Fuseau horaire",
+  title: "Titre",
+  body: "Message",
+  recipients: "Destinataires",
+  muted: "Coupés",
+  sent: "Envoyés",
+  failed: "Échecs",
+  revoked: "Abonnements retirés",
+  key_suffix: "Fin de clé",
 };
 
 export function fieldLabel(key: string): string {

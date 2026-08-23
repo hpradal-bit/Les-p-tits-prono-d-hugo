@@ -60,6 +60,11 @@ export interface DeliveryResult {
   sent: number;
   revoked: number;
   failed: number;
+  /**
+   * Ce que le service de push a répondu quand il a refusé. Sans ça, un test
+   * qui échoue ne dit rien de plus que « ça n'a pas marché ».
+   */
+  errors: string[];
 }
 
 /**
@@ -74,7 +79,7 @@ export async function sendToUser(
   userId: string,
   payload: PushPayload,
 ): Promise<DeliveryResult> {
-  const result: DeliveryResult = { sent: 0, revoked: 0, failed: 0 };
+  const result: DeliveryResult = { sent: 0, revoked: 0, failed: 0, errors: [] };
   if (!(await configure(admin))) return result;
 
   const { data: subs } = await admin
@@ -107,6 +112,7 @@ export async function sendToUser(
           .update({ revoked_at: new Date().toISOString(), last_error: message })
           .eq("id", sub.id);
         result.revoked += 1;
+        result.errors.push(`abonnement expiré (${status})`);
       } else {
         // Échec passager : on garde l'abonnement et on compte le raté.
         const { data: current } = await admin
@@ -116,6 +122,7 @@ export async function sendToUser(
           .update({ failure_count: (current?.failure_count ?? 0) + 1, last_error: message })
           .eq("id", sub.id);
         result.failed += 1;
+        result.errors.push(status ? `${status} — ${message}` : message);
       }
     }
   }

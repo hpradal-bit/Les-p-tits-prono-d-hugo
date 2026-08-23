@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSettings, setting } from "@/lib/settings";
 import { sendToUser, type PushPayload } from "./send";
 import { scheduleFor, dayKey } from "./schedule";
+import { readRules } from "./rules";
 
 /**
  * Mise en file et envoi des notifications.
@@ -21,7 +22,24 @@ export interface NotificationRequest {
   dedupeKey: string;
 }
 
+export interface EnqueueOptions {
+  /** Réservé aux annonces écrites à la main depuis l'espace admin. */
+  ignoreDailyCap?: boolean;
+}
+
+/**
+ * Le sort réservé à une notification :
+ *   · `queued`    — en file, partira à l'heure indiquée
+ *   · `duplicate` — déjà en file, on ne double pas
+ *   · `off`       — l'interrupteur général du groupe est éteint
+ *   · `muted`     — ce joueur, ou ce type de message, est coupé
+ *   · `capped`    — plafond quotidien atteint
+ */
+export type EnqueueOutcome = "queued" | "duplicate" | "off" | "muted" | "capped";
+
 interface Prefs {
+  /** L'interrupteur général du groupe, réglé depuis l'espace admin. */
+  groupEnabled: boolean;
   pushEnabled: boolean;
   quietFrom: string;
   quietTo: string;
@@ -32,6 +50,7 @@ interface Prefs {
 
 async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> {
   const settings = await loadSettings(admin);
+  const rules = readRules(settings);
 
   const { data: own } = await admin
     .from("notification_settings")
@@ -42,12 +61,15 @@ async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> 
   type CatalogEntry = { kind: string; wired?: boolean };
   const catalog = setting<CatalogEntry[]>(settings, "notifications.types", []);
 
+  // Les heures de silence du joueur l'emportent sur celles du groupe : le
+  // réglage général est un défaut, pas une contrainte.
   return {
+    groupEnabled: rules.enabled,
     pushEnabled: own?.push_enabled ?? true,
-    quietFrom: own?.quiet_from ?? setting<string>(settings, "notifications.quiet_from", "22:00"),
-    quietTo: own?.quiet_to ?? setting<string>(settings, "notifications.quiet_to", "08:00"),
-    timeZone: setting<string>(settings, "notifications.timezone", "Europe/Paris"),
-    maxPerDay: setting<number>(settings, "notifications.max_per_day", 3),
+    quietFrom: own?.quiet_from ?? rules.quietFrom,
+    quietTo: own?.quiet_to ?? rules.quietTo,
+    timeZone: rules.timeZone,
+    maxPerDay: rules.maxPerDay,
     wiredKinds: new Set(catalog.filter((c) => c.wired).map((c) => c.kind)),
   };
 }
@@ -59,9 +81,13 @@ async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> 
 export async function enqueue(
   admin: SupabaseClient,
   request: NotificationRequest,
-): Promise<"queued" | "duplicate" | "muted" | "capped"> {
+  options: EnqueueOptions = {},
+): Promise<EnqueueOutcome> {
   const prefs = await loadPrefs(admin, request.userId);
 
+  // L'interrupteur général de l'espace admin passe avant tout le reste : à
+  // « éteint », le groupe entier est muet, même pour une annonce.
+  if (!prefs.groupEnabled) return "off";
   // Le vrai bouton « tout couper » court-circuite tout le reste.
   if (!prefs.pushEnabled) return "muted";
   if (!prefs.wiredKinds.has(request.kind)) return "muted";
@@ -78,12 +104,17 @@ export async function enqueue(
   const now = new Date();
   const today = dayKey(now, prefs.timeZone);
 
-  const { count } = await admin
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", request.userId)
-    .gte("created_at", `${today}T00:00:00Z`);
-  if ((count ?? 0) >= prefs.maxPerDay) return "capped";
+  // Le plafond protège des notifications *automatiques*. Une annonce écrite à
+  // la main par l'administration est rare et délibérée : elle peut passer
+  // outre, mais jamais outre les heures de silence ni un joueur qui a coupé.
+  if (!options.ignoreDailyCap) {
+    const { count } = await admin
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", request.userId)
+      .gte("created_at", `${today}T00:00:00Z`);
+    if ((count ?? 0) >= prefs.maxPerDay) return "capped";
+  }
 
   const scheduled = scheduleFor(now, {
     from: prefs.quietFrom, to: prefs.quietTo, timeZone: prefs.timeZone,
