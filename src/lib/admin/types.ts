@@ -25,6 +25,7 @@ export const ADMIN_ACTIONS = {
   "ruleset.margin_bucket_changed": "Tranche d'écart modifiée",
   "settings.updated": "Réglage modifié",
   "group.invite_code_changed": "Code d'invitation modifié",
+  "push.vapid_key_changed": "Clé de notifications modifiée",
 
   "player.created": "Joueur ajouté",
   "player.deactivated": "Joueur désactivé",

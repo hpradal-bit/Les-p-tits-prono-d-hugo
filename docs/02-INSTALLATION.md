@@ -62,7 +62,7 @@ se promouvoir : la variable n'existe que côté serveur.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | même écran → clé `anon public` — publique par nature |
 | `SUPABASE_SERVICE_ROLE_KEY` | même écran → clé `service_role` — **secrète, serveur uniquement** |
 | `SYNC_SECRET` | à inventer (une longue chaîne au hasard) |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` |
+| `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` — la moitié privée de la paire. La moitié publique s'enregistre depuis Administration → Notifications, pas ici. |
 | `APISPORTS_KEY` | facultatif, source de secours |
 
 3. Déployer.

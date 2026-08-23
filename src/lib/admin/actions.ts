@@ -11,6 +11,7 @@ import {
   type RecomputeSummary,
 } from "@/lib/scoring/persist";
 import type { Uuid } from "@/lib/types";
+import { loadPublicKey } from "@/lib/push/send";
 import { requireAdmin, AdminError } from "./auth";
 import { logAdminAction, MissingReasonError } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
@@ -1106,23 +1107,70 @@ export async function revertAdjustment(
   }
 }
 
+/**
+ * Une clé publique VAPID est un point de courbe P-256 non compressé, encodé en
+ * base64url : 65 octets, donc 87 caractères, et un premier octet `0x04` qui se
+ * lit « B » une fois encodé. On vérifie la forme plutôt que d'accepter
+ * n'importe quoi : une clé mal collée laisserait les notifications
+ * silencieusement mortes, sans rien à l'écran pour le dire.
+ */
+const vapidSchema = z.object({
+  vapidKey: z
+    .string()
+    .trim()
+    .regex(/^B[A-Za-z0-9_-]{86}$/, "Clé publique VAPID invalide."),
+  reason: z.string(),
+});
+
 export async function updateVapidKey(
-  _state: AdminActionState,
+  _prev: AdminActionState,
   formData: FormData,
 ): Promise<AdminActionState> {
   try {
-    await requireAdmin();
-    const vapidKey = (formData.get("vapidKey") as string || "").trim();
+    const ctx = await requireAdmin();
+    const parsed = vapidSchema.safeParse({
+      vapidKey: formData.get("vapidKey"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return adminFail(
+        "Clé publique VAPID invalide : 87 caractères commençant par « B ».",
+        { fieldErrors: fieldErrorsOf(parsed.error) },
+      );
+    }
+    const { vapidKey, reason } = parsed.data;
 
     const admin = createAdminClient();
+    const before = await loadPublicKey(admin);
+    if (before === vapidKey) return adminOk("Cette clé est déjà enregistrée.");
+
     const { error } = await admin
       .from("app_settings")
-      .upsert({ key: "push_notifications.vapid_public_key", value: vapidKey }, {
-        onConflict: "key",
-      });
+      .upsert(
+        { key: "push_notifications.vapid_public_key", value: vapidKey, updated_by: ctx.userId },
+        { onConflict: "key" },
+      );
     if (error) throw error;
 
-    return adminOk("Clé VAPID enregistrée. Les notifications seront disponibles au prochain rechargement.");
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.vapid_key_changed",
+      entityType: "app_setting",
+      entityId: null,
+      // La clé est publique, mais la journaliser entière n'apprend rien : on
+      // garde de quoi reconnaître laquelle a remplacé laquelle.
+      before: { key_suffix: before ? before.slice(-8) : null },
+      after: { key_suffix: vapidKey.slice(-8) },
+      reason,
+    });
+
+    revalidatePath("/reglages");
+    revalidatePath("/admin/push-settings");
+    return adminOk(
+      before
+        ? "Clé enregistrée. Les joueurs devront réactiver leurs notifications : les anciens abonnements ne valent plus."
+        : "Clé enregistrée. Les notifications sont disponibles depuis l'écran Réglages.",
+    );
   } catch (error) {
     return handle(error);
   }

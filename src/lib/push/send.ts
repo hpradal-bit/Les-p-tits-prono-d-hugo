@@ -7,18 +7,45 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * une adresse d'abonnement, on y dépose un message chiffré.
  */
 
-let configured = false;
+/**
+ * La dernière clé publique passée à web-push. On mémorise la valeur, pas un
+ * simple booléen : l'admin peut changer la clé en base, et une instance encore
+ * chaude doit repartir sur la nouvelle plutôt que sur celle du premier envoi.
+ */
+let configuredWith: string | null = null;
 
-/** Renvoie false si les clés VAPID ne sont pas renseignées : on n'échoue pas, on s'abstient. */
-export function configure(): boolean {
-  if (configured) return true;
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+/**
+ * Renvoie false si les clés VAPID ne sont pas renseignées : on n'échoue pas,
+ * on s'abstient.
+ *
+ * La clé **publique** vit en base (`app_settings`), pas dans une variable
+ * `NEXT_PUBLIC_*` : compilée dans le build, elle obligeait à vider le cache de
+ * Vercel à chaque changement. La clé **privée** reste une variable serveur —
+ * elle ne doit jamais partir vers un navigateur (règle n° 4, même esprit).
+ */
+export async function configure(admin: SupabaseClient): Promise<boolean> {
   const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!privateKey) return false;
+
+  const publicKey = await loadPublicKey(admin);
+  if (!publicKey) return false;
+
+  if (configuredWith === publicKey) return true;
+
   const subject = process.env.VAPID_SUBJECT ?? "mailto:contact@example.com";
-  if (!publicKey || !privateKey) return false;
   webpush.setVapidDetails(subject, publicKey, privateKey);
-  configured = true;
+  configuredWith = publicKey;
   return true;
+}
+
+/** La clé publique telle que l'espace admin l'a enregistrée. */
+export async function loadPublicKey(admin: SupabaseClient): Promise<string> {
+  const { data } = await admin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "push_notifications.vapid_public_key")
+    .maybeSingle();
+  return typeof data?.value === "string" ? data.value.trim() : "";
 }
 
 export interface PushPayload {
@@ -48,7 +75,7 @@ export async function sendToUser(
   payload: PushPayload,
 ): Promise<DeliveryResult> {
   const result: DeliveryResult = { sent: 0, revoked: 0, failed: 0 };
-  if (!configure()) return result;
+  if (!(await configure(admin))) return result;
 
   const { data: subs } = await admin
     .from("push_subscriptions")
