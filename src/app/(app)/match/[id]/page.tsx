@@ -1,3 +1,4 @@
+import Link from "next/link";
 /**
  * Match Center : le score, le statut, et surtout ce que chaque joueur avait
  * pronostiqué, avec les points obtenus et la raison.
@@ -108,6 +109,14 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
           </p>
         )}
       </section>
-    </div>
+        {data.mine?.score && (
+        <Link
+          href={`/match/${data.fixture.id}/points`}
+          className="rounded-full border border-line-strong py-3.5 text-center text-[15px] font-bold text-ink"
+        >
+          Pourquoi {data.mine.score.points} point{data.mine.score.points > 1 ? "s" : ""} ?
+        </Link>
+      )}
+      </div>
   );
 }

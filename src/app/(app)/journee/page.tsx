@@ -39,6 +39,9 @@ export default async function JourneePage({
             {board.round.name} · Top 14
           </span>
           <h1 className="font-display text-[32px] leading-none text-ink">Ce week-end</h1>
+          <Link href="/regles" className="mt-0.5 w-fit text-[12.5px] font-semibold text-clay underline">
+            Comment on joue ?
+          </Link>
         </div>
         <PlayerAvatar
           player={{
