@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/matchs", label: "Matchs" },
   { href: "/admin/bareme", label: "Barème" },
   { href: "/admin/joueurs", label: "Joueurs" },
+  { href: "/admin/push-settings", label: "Notifications" },
   { href: "/admin/journal", label: "Journal" },
 ];
 

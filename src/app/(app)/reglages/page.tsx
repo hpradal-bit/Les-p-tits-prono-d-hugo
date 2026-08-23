@@ -28,7 +28,7 @@ export default async function ReglagesPage() {
   const quietFrom = setting<string>(settings, "notifications.quiet_from", "22:00");
   const quietTo = setting<string>(settings, "notifications.quiet_to", "08:00");
   const maxPerDay = setting<number>(settings, "notifications.max_per_day", 3);
-  const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+  const vapid = setting<string>(settings, "push_notifications.vapid_public_key", "");
 
   return (
     <div className="flex flex-col gap-3.5">

@@ -1105,3 +1105,25 @@ export async function revertAdjustment(
     return handle(error);
   }
 }
+
+export async function updateVapidKey(
+  _state: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    await requireAdmin();
+    const vapidKey = (formData.get("vapidKey") as string || "").trim();
+
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("app_settings")
+      .upsert({ key: "push_notifications.vapid_public_key", value: vapidKey }, {
+        onConflict: "key",
+      });
+    if (error) throw error;
+
+    return adminOk("Clé VAPID enregistrée. Les notifications seront disponibles au prochain rechargement.");
+  } catch (error) {
+    return handle(error);
+  }
+}
