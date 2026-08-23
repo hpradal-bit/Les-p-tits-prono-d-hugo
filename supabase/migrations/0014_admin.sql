@@ -55,19 +55,19 @@ begin
 end;
 $$;
 
-create trigger admin_actions_no_update
+create or replace trigger admin_actions_no_update
   before update on admin_actions
   for each row execute function public.forbid_rewrite();
 
-create trigger admin_actions_no_delete
+create or replace trigger admin_actions_no_delete
   before delete on admin_actions
   for each row execute function public.forbid_rewrite();
 
-create trigger point_adjustments_no_update
+create or replace trigger point_adjustments_no_update
   before update on point_adjustments
   for each row execute function public.forbid_rewrite();
 
-create trigger point_adjustments_no_delete
+create or replace trigger point_adjustments_no_delete
   before delete on point_adjustments
   for each row execute function public.forbid_rewrite();
 
@@ -77,21 +77,29 @@ create trigger point_adjustments_no_delete
 -- « Toute action d'administration écrit dans admin_actions, avec une raison. »
 -- La règle est dans CLAUDE.md ; on la fait respecter par la base.
 
-alter table admin_actions
-  add constraint admin_actions_reason_required
-  check (reason is not null and length(btrim(reason)) >= 3);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'admin_actions_reason_required') then
+    alter table admin_actions add constraint admin_actions_reason_required check (reason is not null and length(btrim(reason)) >= 3);
+  end if;
+end $$;
 
-alter table admin_actions
-  add constraint admin_actions_action_not_blank
-  check (length(btrim(action)) > 0);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'admin_actions_action_not_blank') then
+    alter table admin_actions add constraint admin_actions_action_not_blank check (length(btrim(action)) > 0);
+  end if;
+end $$;
 
-alter table point_adjustments
-  add constraint point_adjustments_reason_required
-  check (length(btrim(reason)) >= 3);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'point_adjustments_reason_required') then
+    alter table point_adjustments add constraint point_adjustments_reason_required check (length(btrim(reason)) >= 3);
+  end if;
+end $$;
 
-alter table point_adjustments
-  add constraint point_adjustments_delta_not_zero
-  check (delta <> 0);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'point_adjustments_delta_not_zero') then
+    alter table point_adjustments add constraint point_adjustments_delta_not_zero check (delta <> 0);
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- 4. Index de consultation

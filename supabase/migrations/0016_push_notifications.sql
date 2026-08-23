@@ -41,7 +41,7 @@ create index if not exists push_subscriptions_active_idx
 
 -- Une ligne par joueur. `push_enabled = false`, c'est le vrai bouton
 -- « tout couper » : il court-circuite toutes les préférences par type.
-create table notification_settings (
+create table if not exists notification_settings (
   user_id      uuid primary key references profiles(id) on delete cascade,
   push_enabled boolean not null default true,
   quiet_from   time,          -- null = on suit app_settings.notifications.quiet_from
@@ -76,10 +76,10 @@ comment on column notifications.scheduled_for is
   'Instant d''envoi souhaité. Une notification tombant dans les heures de '
   'silence est reportée au matin plutôt que supprimée.';
 
-create unique index notifications_dedupe_idx
+create unique index if not exists notifications_dedupe_idx
   on notifications (user_id, dedupe_key) where dedupe_key is not null;
 
-create index notifications_pending_idx
+create index if not exists notifications_pending_idx
   on notifications (scheduled_for) where sent_at is null and failed_at is null;
 
 -- ---------------------------------------------------------------------------
@@ -89,6 +89,7 @@ create index notifications_pending_idx
 alter table notification_settings enable row level security;
 alter table notification_settings force row level security;
 
+drop policy if exists notif_settings_own on notification_settings;
 create policy notif_settings_own on notification_settings
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
