@@ -1926,3 +1926,350 @@ comment on table sync_runs is
   'Journal des synchronisations. Lecture ouverte aux membres : c''est ce qui '
   'permet de répondre à « pourquoi le score n''a pas bougé ? ». Écriture '
   'réservée au serveur.';
+
+-- ▼▼▼ 0014_admin.sql ▼▼▼
+
+-- ============================================================================
+-- LES P'TITS PRONOS D'HUGO — Espace d'administration
+-- ----------------------------------------------------------------------------
+-- Cette migration ne crée aucune table : le schéma de la vague 0 suffit.
+-- Elle rend le journal d'administration réellement infalsifiable et le rend
+-- lisible par les joueurs, parce que c'est là-dessus que repose la confiance
+-- du groupe (cf. docs/00-AUDIT.md, point 18).
+--
+--   1. `admin_actions` et `point_adjustments` deviennent append-only, y compris
+--      pour la clé de service. Aucune ligne ne peut être réécrite ni effacée.
+--   2. Une raison est obligatoire au niveau de la base, pas seulement du code.
+--   3. Le journal est lisible par tous les joueurs quand le réglage
+--      `admin_log.public` est vrai — l'admin, lui, le voit toujours.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Lecture d'un réglage booléen depuis les politiques RLS
+-- ---------------------------------------------------------------------------
+-- app_settings est soumis à RLS : une politique ne peut pas l'interroger
+-- directement. On passe par une fonction `security definer`.
+
+create or replace function public.setting_bool(k text, fallback boolean)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select nullif(value #>> '{}', '')::boolean from app_settings where key = k),
+    fallback
+  );
+$$;
+
+comment on function public.setting_bool(text, boolean) is
+  'Lit un réglage booléen de app_settings depuis une politique RLS. Renvoie la valeur de repli si la clé est absente.';
+
+-- ---------------------------------------------------------------------------
+-- 2. Immuabilité : le journal et les ajustements ne se réécrivent pas
+-- ---------------------------------------------------------------------------
+-- L'absence de politique UPDATE/DELETE protège les joueurs, mais pas la clé de
+-- service, qui contourne RLS. Un déclencheur, lui, s'applique à tout le monde.
+-- Corriger un ajustement se fait en écrivant l'ajustement inverse : la
+-- reconstruction du classement à partir des données brutes reste possible.
+
+create or replace function public.forbid_rewrite()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception
+    'La table %.% est en écriture seule : % interdit. Corriger en ajoutant une nouvelle ligne.',
+    tg_table_schema, tg_table_name, tg_op
+    using errcode = 'restrict_violation';
+end;
+$$;
+
+create trigger admin_actions_no_update
+  before update on admin_actions
+  for each row execute function public.forbid_rewrite();
+
+create trigger admin_actions_no_delete
+  before delete on admin_actions
+  for each row execute function public.forbid_rewrite();
+
+create trigger point_adjustments_no_update
+  before update on point_adjustments
+  for each row execute function public.forbid_rewrite();
+
+create trigger point_adjustments_no_delete
+  before delete on point_adjustments
+  for each row execute function public.forbid_rewrite();
+
+-- ---------------------------------------------------------------------------
+-- 3. Une raison, toujours
+-- ---------------------------------------------------------------------------
+-- « Toute action d'administration écrit dans admin_actions, avec une raison. »
+-- La règle est dans CLAUDE.md ; on la fait respecter par la base.
+
+alter table admin_actions
+  add constraint admin_actions_reason_required
+  check (reason is not null and length(btrim(reason)) >= 3);
+
+alter table admin_actions
+  add constraint admin_actions_action_not_blank
+  check (length(btrim(action)) > 0);
+
+alter table point_adjustments
+  add constraint point_adjustments_reason_required
+  check (length(btrim(reason)) >= 3);
+
+alter table point_adjustments
+  add constraint point_adjustments_delta_not_zero
+  check (delta <> 0);
+
+-- ---------------------------------------------------------------------------
+-- 4. Index de consultation
+-- ---------------------------------------------------------------------------
+
+create index if not exists admin_actions_entity_idx
+  on admin_actions (entity_type, entity_id);
+
+create index if not exists admin_actions_admin_idx
+  on admin_actions (admin_id, created_at desc);
+
+create index if not exists point_adjustments_season_user_idx
+  on point_adjustments (season_id, user_id);
+
+create index if not exists point_adjustments_round_idx
+  on point_adjustments (round_id);
+
+-- ---------------------------------------------------------------------------
+-- 5. Le journal est public — mais le réglage peut le refermer
+-- ---------------------------------------------------------------------------
+-- La politique de 0003 ouvrait le journal à tout membre sans condition. On la
+-- remplace par une politique qui respecte `admin_log.public`, tout en gardant
+-- l'accès permanent à l'administration.
+
+drop policy if exists admin_actions_read on admin_actions;
+
+create policy admin_actions_read on admin_actions
+  for select to authenticated
+  using (
+    public.is_admin()
+    or (public.is_member() and public.setting_bool('admin_log.public', true))
+  );
+
+-- Les ajustements de points restent visibles de tous, sans condition : ils
+-- pèsent sur le classement, les cacher n'aurait aucun sens.
+
+-- ---------------------------------------------------------------------------
+-- 6. Réglages de l'espace admin
+-- ---------------------------------------------------------------------------
+
+insert into app_settings (key, value) values
+  -- Statut appliqué par défaut à un score saisi à la main.
+  ('admin.manual_result_status',  '"official"'::jsonb),
+  -- Raison pré-remplie du formulaire de saisie manuelle.
+  ('admin.manual_result_reason',  '"Saisie manuelle : résultat officiel LNR"'::jsonb),
+  -- Nombre de lignes affichées par page dans le journal.
+  ('admin.journal_page_size',     '50'::jsonb),
+  -- Recalcul automatique des points après une saisie de résultat.
+  ('admin.recompute_after_result', 'true'::jsonb)
+on conflict (key) do nothing;
+
+-- ▼▼▼ 0016_push_notifications.sql ▼▼▼
+
+-- ============================================================================
+-- LES P'TITS PRONOS D'HUGO — 0016 · PWA & notifications (chantier G)
+-- ----------------------------------------------------------------------------
+-- Les tables existent déjà (0002). Cette migration les rend exploitables :
+--
+--   1. `push_subscriptions` apprend à mourir proprement : un abonnement que le
+--      service de push refuse (410 Gone) est révoqué, pas oublié.
+--   2. `notifications` devient une **file d'attente** et non un simple journal.
+--      Trois colonnes suffisent : `dedupe_key` (regroupement + idempotence),
+--      `scheduled_for` (report après les heures de silence) et `payload`.
+--   3. `notification_settings` porte l'interrupteur « tout couper » et les
+--      heures de silence propres au joueur.
+--
+-- Les trois règles anti-agacement du point 17 de l'audit sont donc appliquées
+-- par la base, pas seulement par le code :
+--   · regroupement    → index unique sur (user_id, dedupe_key)
+--   · heures de silence → scheduled_for + notification_settings
+--   · préférences      → notification_preferences + notification_settings
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Abonnements push : santé et nettoyage
+-- ---------------------------------------------------------------------------
+
+alter table push_subscriptions
+  add column if not exists updated_at    timestamptz not null default now(),
+  add column if not exists failure_count integer     not null default 0,
+  add column if not exists last_error    text,
+  add column if not exists revoked_at    timestamptz;
+
+comment on column push_subscriptions.revoked_at is
+  'Renseigné quand le service de push répond 404/410 : l''abonnement est mort, '
+  'on le garde une trace de côté plutôt que de le supprimer en silence.';
+
+create index if not exists push_subscriptions_active_idx
+  on push_subscriptions (user_id) where revoked_at is null;
+
+-- ---------------------------------------------------------------------------
+-- 2. Réglages de notification propres au joueur
+-- ---------------------------------------------------------------------------
+
+-- Une ligne par joueur. `push_enabled = false`, c'est le vrai bouton
+-- « tout couper » : il court-circuite toutes les préférences par type.
+create table notification_settings (
+  user_id      uuid primary key references profiles(id) on delete cascade,
+  push_enabled boolean not null default true,
+  quiet_from   time,          -- null = on suit app_settings.notifications.quiet_from
+  quiet_to     time,          -- null = on suit app_settings.notifications.quiet_to
+  updated_at   timestamptz not null default now()
+);
+
+comment on table notification_settings is
+  'Réglages globaux de notification par joueur. Absence de ligne = valeurs par défaut.';
+
+alter table notification_preferences
+  add column if not exists updated_at timestamptz not null default now();
+
+-- ---------------------------------------------------------------------------
+-- 3. `notifications` : une file d'attente
+-- ---------------------------------------------------------------------------
+
+alter table notifications
+  add column if not exists dedupe_key    text,
+  add column if not exists scheduled_for timestamptz not null default now(),
+  add column if not exists payload       jsonb       not null default '{}'::jsonb,
+  add column if not exists failed_at     timestamptz,
+  add column if not exists error         text;
+
+comment on column notifications.dedupe_key is
+  'Clé de regroupement. « lock_reminder:<round>:<jour> » couvre les 7 matchs '
+  'd''une même journée : l''index unique ci-dessous rend impossible d''envoyer '
+  '7 notifications là où une seule suffit. Sert aussi d''idempotence : le '
+  'planificateur peut repasser autant de fois qu''il veut.';
+
+comment on column notifications.scheduled_for is
+  'Instant d''envoi souhaité. Une notification tombant dans les heures de '
+  'silence est reportée au matin plutôt que supprimée.';
+
+create unique index notifications_dedupe_idx
+  on notifications (user_id, dedupe_key) where dedupe_key is not null;
+
+create index notifications_pending_idx
+  on notifications (scheduled_for) where sent_at is null and failed_at is null;
+
+-- ---------------------------------------------------------------------------
+-- 4. RLS — mêmes règles que les autres tables personnelles
+-- ---------------------------------------------------------------------------
+
+alter table notification_settings enable row level security;
+alter table notification_settings force row level security;
+
+create policy notif_settings_own on notification_settings
+  for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- 5. Réglages applicatifs — aucune donnée métier en dur dans le code
+-- ---------------------------------------------------------------------------
+-- `notifications.types` est le catalogue des notifications du jeu. Les quatre
+-- dernières sont décrites mais pas branchées (`wired: false`) : l'écran des
+-- réglages les affiche grisées, le serveur refuse de les émettre. Les activer
+-- se fera en basculant un booléen, sans nouvelle migration.
+
+insert into app_settings (key, value) values
+  ('notifications.enabled',       'true'::jsonb),
+  ('notifications.timezone',      '"Europe/Paris"'::jsonb),
+  ('notifications.max_per_day',   '3'::jsonb),
+  ('notifications.types', '[
+     {"kind":"lock_reminder","emoji":"⏰","label":"Rappel avant verrouillage",
+      "description":"Trois heures avant la fermeture, seulement s''il te manque des pronos.",
+      "default_enabled":true,"wired":true},
+     {"kind":"round_digest","emoji":"🏆","label":"Fin de journée",
+      "description":"La journée est terminée : résultats et nouveau classement.",
+      "default_enabled":true,"wired":true},
+     {"kind":"exact_score","emoji":"🎯","label":"Score exact réussi",
+      "description":"Quand quelqu''un décroche un score exact.",
+      "default_enabled":true,"wired":false},
+     {"kind":"leader_change","emoji":"👑","label":"Changement de leader",
+      "description":"Quand la tête du classement change de main.",
+      "default_enabled":true,"wired":false},
+     {"kind":"overtake","emoji":"🔥","label":"Dépassement direct",
+      "description":"Quand un joueur te double au classement.",
+      "default_enabled":true,"wired":false},
+     {"kind":"bonus_question","emoji":"❓","label":"Nouvelle question bonus",
+      "description":"Quand une question bonus s''ouvre.",
+      "default_enabled":true,"wired":false}
+   ]'::jsonb)
+on conflict (key) do nothing;
+
+-- ▼▼▼ 0017_profiles_stats_feed.sql ▼▼▼
+
+-- ============================================================================
+-- LES P'TITS PRONOS D'HUGO — Chantier H : profils, statistiques, Le Vestiaire
+-- ----------------------------------------------------------------------------
+-- Cette migration n'ajoute aucune table : le socle (0002) a déjà `events`,
+-- `feed_posts`, `reactions`, `comments` et `streaks`. Elle se contente de :
+--   1. garantir qu'un événement ne produit qu'une seule publication ;
+--   2. accélérer les requêtes du fil et des statistiques ;
+--   3. externaliser en base les derniers réglages du Vestiaire, pour qu'aucune
+--      valeur métier (gabarit du résumé, tailles maximales…) ne reste en dur.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Projection des événements vers le fil
+-- ---------------------------------------------------------------------------
+-- Le Vestiaire est un lecteur de la table `events` : il ne recalcule jamais la
+-- logique du jeu, il projette chaque événement en une publication. Cet index
+-- rend la projection idempotente — la rejouer ne crée pas de doublon.
+
+create unique index if not exists feed_posts_event_unique
+  on feed_posts (group_id, event_id)
+  where event_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- 2. Index de lecture
+-- ---------------------------------------------------------------------------
+
+create index if not exists reactions_post_idx    on reactions (post_id);
+create index if not exists comments_post_idx     on comments (post_id, created_at);
+create index if not exists events_round_idx      on events (round_id);
+create index if not exists events_actor_idx      on events (actor_id);
+create index if not exists predictions_user_idx  on predictions (user_id);
+create index if not exists point_adjust_user_idx on point_adjustments (user_id, round_id);
+create index if not exists streaks_user_idx      on streaks (user_id, season_id);
+
+-- ---------------------------------------------------------------------------
+-- 3. Réglages du Vestiaire et des statistiques
+-- ---------------------------------------------------------------------------
+-- Le gabarit du résumé de journée vit ici, pas dans le code : l'admin peut en
+-- changer le ton sans redéploiement. Les phrases sont à trous ; une ligne dont
+-- un trou ne peut pas être rempli est simplement omise. Aucun modèle de
+-- langage n'intervient — la donnée d'abord, le style ensuite.
+
+insert into app_settings (key, value) values
+  ('feed.page_size',        '25'::jsonb),
+  ('feed.post_max_length',  '500'::jsonb),
+  ('feed.reply_max_length', '300'::jsonb),
+  ('stats.podium_size',     '3'::jsonb),
+  ('feed.round_summary_template',
+   '[
+      "🏉 JOURNÉE {n} TERMINÉE",
+      "{leader} prend la première place avec {pts} points.",
+      "{meilleur_joueur} signe la meilleure journée ({pts_j} pts).",
+      "{plus_grosse_chute} chute de la {avant}e à la {apres}e place.",
+      "🎯 {n_exacts} scores exacts · 🔥 {n_vainqueurs} bons vainqueurs",
+      "📉 Le match le plus mal pronostiqué : {match} ({n_erreurs} joueurs dans l''erreur)"
+    ]'::jsonb)
+on conflict (key) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- 4. Séries (streaks)
+-- ---------------------------------------------------------------------------
+-- Rappel de contrat : `streaks` n'est écrite que par le serveur, à la clôture
+-- d'une journée. Aucune politique d'écriture côté client n'existe (cf. 0003).
+
+comment on table streaks is
+  'Séries d''un joueur sur une saison. kind : good_prediction | bad_prediction | podium. Écrite uniquement par le serveur, à la clôture d''une journée.';
