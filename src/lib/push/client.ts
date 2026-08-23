@@ -15,6 +15,29 @@ function toUint8Array(base64url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+/**
+ * L'abonnement déjà posé a-t-il été créé avec la clé publique d'aujourd'hui ?
+ *
+ * Quand l'admin change la paire VAPID, les abonnements existants deviennent
+ * définitivement inutilisables : le service de push les refuse par un 403
+ * « VapidPkHashMismatch ». Rien ne le signale côté navigateur — l'interrupteur
+ * reste allumé, et le joueur croit être abonné alors que plus rien n'arrive.
+ * On compare les octets pour le détecter avant l'envoi.
+ */
+export function matchesKey(
+  applied: ArrayBuffer | null | undefined,
+  vapidPublicKey: string,
+): boolean {
+  // Un navigateur qui n'expose pas la clé de l'abonnement ne permet aucune
+  // conclusion : mieux vaut garder l'abonnement que le détruire par principe.
+  if (!applied) return true;
+
+  const expected = new Uint8Array(toUint8Array(vapidPublicKey));
+  const actual = new Uint8Array(applied);
+  if (actual.length !== expected.length) return false;
+  return actual.every((byte, i) => byte === expected[i]);
+}
+
 export type PushState =
   | "unsupported"      // le navigateur ne sait pas faire
   | "needs-install"    // iOS : il faut d'abord installer sur l'écran d'accueil
@@ -61,7 +84,7 @@ function isIOS(): boolean {
   return /iP(hone|ad|od)/.test(navigator.userAgent);
 }
 
-export async function readState(): Promise<PushState> {
+export async function readState(vapidPublicKey: string): Promise<PushState> {
   if (typeof window === "undefined") return "unsupported";
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     // Sur iPhone, le push existe — mais seulement une fois l'app installée.
@@ -74,7 +97,11 @@ export async function readState(): Promise<PushState> {
   if (!registration) return "no-sw";
 
   const existing = await registration.pushManager.getSubscription();
-  return existing ? "on" : "off";
+  if (!existing) return "off";
+
+  // Un abonnement né d'une clé révolue est mort : l'annoncer « allumé » ferait
+  // croire au joueur qu'il est joignable.
+  return matchesKey(existing.options?.applicationServerKey, vapidPublicKey) ? "on" : "off";
 }
 
 /**
@@ -89,6 +116,13 @@ export async function enable(vapidPublicKey: string): Promise<PushState> {
   if (!registration) return "no-sw";
 
   let subscription = await registration.pushManager.getSubscription();
+  if (subscription && !matchesKey(subscription.options?.applicationServerKey, vapidPublicKey)) {
+    // La clé du serveur a changé depuis cet abonnement. On le remplace ici
+    // plutôt que d'attendre du joueur qu'il devine « coupe puis rallume ».
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+
   if (!subscription) {
     try {
       subscription = await registration.pushManager.subscribe({

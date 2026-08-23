@@ -23,8 +23,8 @@ export function NotificationSwitch({ vapidPublicKey }: { vapidPublicKey: string 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    readState().then(setState).catch(() => setState("unsupported"));
-  }, []);
+    readState(vapidPublicKey).then(setState).catch(() => setState("unsupported"));
+  }, [vapidPublicKey]);
 
   async function toggle() {
     if (busy || !state) return;
