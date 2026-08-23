@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { recomputeFixtures, recomputeRound, recomputeSeason } from "@/lib/scoring/persist";
+import {
+  recomputeFixtures,
+  recomputeRound,
+  recomputeSeason,
+  type RecomputeSummary,
+} from "@/lib/scoring/persist";
 import type { Uuid } from "@/lib/types";
 import { requireAdmin, AdminError } from "./auth";
 import { logAdminAction, MissingReasonError } from "./log";
@@ -285,25 +290,41 @@ export async function recomputeRoundAction(
 /**
  * Barème.
  *
- * Un changement de barème ne réécrit pas l'histoire à la main : il modifie la
- * règle, puis rejoue la saison entière. `computeScore` étant pure, le
- * classement obtenu est exactement celui qu'on aurait eu si le nouveau barème
- * avait été en vigueur depuis le premier match (règle n° 2).
+ * Toute modification demande une portée, parce que les deux réponses sont
+ * légitimes et qu'on ne peut pas deviner laquelle l'admin veut :
+ *
+ *   · « toute la saison » — on corrige la version en cours sur place, puis on
+ *     rejoue tout. `computeScore` étant pure, le classement obtenu est
+ *     exactement celui qu'on aurait eu si le barème avait toujours été
+ *     celui-là. C'est le bon choix quand on répare une erreur de réglage.
+ *
+ *   · « à partir de maintenant » — on clôt la version en cours et on en ouvre
+ *     une nouvelle. Les matchs déjà verrouillés gardent leur barème, les
+ *     suivants prennent le nouveau. C'est le bon choix quand on change les
+ *     règles du jeu en cours de route : personne ne voit ses points d'octobre
+ *     bouger en février.
  */
+
+export type RulesetScope = "season" | "forward";
+
+const scopeField = z.enum(["season", "forward"]);
 
 interface CurrentRuleset {
   id: Uuid;
   seasonId: Uuid;
+  version: number;
   rules: Record<string, unknown>;
 }
 
 async function currentRuleset(admin: SupabaseClient): Promise<CurrentRuleset> {
   const seasonId = await currentSeasonId(admin);
+  const now = new Date().toISOString();
   const { data, error } = await admin
     .from("scoring_rulesets")
-    .select("id, rules")
+    .select("id, version, rules")
     .eq("season_id", seasonId)
-    .lte("effective_from", new Date().toISOString())
+    .lte("effective_from", now)
+    .or(`effective_to.is.null,effective_to.gt.${now}`)
     .order("version", { ascending: false })
     .limit(1)
     .single();
@@ -311,22 +332,175 @@ async function currentRuleset(admin: SupabaseClient): Promise<CurrentRuleset> {
   return {
     id: data.id as Uuid,
     seasonId,
+    version: data.version as number,
     rules: (data.rules ?? {}) as Record<string, unknown>,
   };
 }
 
-/** Écrit une branche du JSON du barème, sans toucher au reste. */
-async function patchRules(
+interface AppliedChange {
+  /** Le barème effectivement modifié — nouveau ou existant selon la portée. */
+  rulesetId: Uuid;
+  version: number;
+  /** Correspondance ancienne → nouvelle tranche, vide en portée « saison ». */
+  bucketIds: Map<Uuid, Uuid>;
+  /** Pronostics recollés sur les nouvelles tranches. */
+  remapped: number;
+}
+
+/**
+ * Ouvre la version suivante du barème et referme l'actuelle.
+ *
+ * Les tranches d'écart appartiennent à une version : la nouvelle reçoit sa
+ * propre copie. Les pronostics déjà saisis sur des matchs **encore ouverts**
+ * pointent alors vers des tranches périmées — on les recolle sur la tranche de
+ * même rang. Sans ça, un joueur ayant pronostiqué avant le changement verrait
+ * sa tranche ignorée au dépouillement.
+ */
+async function openNextVersion(
   admin: SupabaseClient,
-  rulesetId: Uuid,
+  ctx: { userId: Uuid },
+  current: CurrentRuleset,
   rules: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await admin
+  label: string,
+): Promise<AppliedChange> {
+  const now = new Date().toISOString();
+
+  const { data: latest, error: lErr } = await admin
     .from("scoring_rulesets")
-    .update({ rules: { ...rules, ...patch } })
-    .eq("id", rulesetId);
-  if (error) throw error;
+    .select("version")
+    .eq("season_id", current.seasonId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .single();
+  if (lErr) throw lErr;
+
+  const version = (latest.version as number) + 1;
+
+  const { data: created, error: cErr } = await admin
+    .from("scoring_rulesets")
+    .insert({
+      season_id: current.seasonId,
+      version,
+      label: label.slice(0, 120),
+      effective_from: now,
+      rules,
+      created_by: ctx.userId,
+    })
+    .select("id")
+    .single();
+  if (cErr) throw cErr;
+  const rulesetId = created.id as Uuid;
+
+  const { error: closeErr } = await admin
+    .from("scoring_rulesets")
+    .update({ effective_to: now })
+    .eq("id", current.id);
+  if (closeErr) throw closeErr;
+
+  // --- Les tranches suivent la version ------------------------------------
+  const { data: oldBuckets, error: bErr } = await admin
+    .from("margin_buckets")
+    .select("id, position, min_points, max_points, label")
+    .eq("ruleset_id", current.id)
+    .order("position");
+  if (bErr) throw bErr;
+
+  const bucketIds = new Map<Uuid, Uuid>();
+  if ((oldBuckets ?? []).length > 0) {
+    const { data: newBuckets, error: iErr } = await admin
+      .from("margin_buckets")
+      .insert(
+        oldBuckets!.map((b) => ({
+          ruleset_id: rulesetId,
+          position: b.position,
+          min_points: b.min_points,
+          max_points: b.max_points,
+          label: b.label,
+        })),
+      )
+      .select("id, position");
+    if (iErr) throw iErr;
+
+    const newByPosition = new Map<number, Uuid>();
+    for (const b of newBuckets ?? []) {
+      newByPosition.set(b.position as number, b.id as Uuid);
+    }
+    for (const b of oldBuckets!) {
+      const next = newByPosition.get(b.position as number);
+      if (next) bucketIds.set(b.id as Uuid, next);
+    }
+  }
+
+  // --- Recoller les pronostics des matchs encore ouverts -------------------
+  let remapped = 0;
+  if (bucketIds.size > 0) {
+    const { data: rounds } = await admin
+      .from("rounds").select("id").eq("season_id", current.seasonId);
+    const roundIds = (rounds ?? []).map((r) => r.id as string);
+
+    if (roundIds.length > 0) {
+      const { data: openFixtures, error: fErr } = await admin
+        .from("fixtures")
+        .select("id")
+        .in("round_id", roundIds)
+        .gt("locks_at", now);
+      if (fErr) throw fErr;
+
+      const fixtureIds = (openFixtures ?? []).map((f) => f.id as string);
+      if (fixtureIds.length > 0) {
+        for (const [oldId, newId] of bucketIds) {
+          const { data: moved, error: mErr } = await admin
+            .from("predictions")
+            .update({ margin_bucket_id: newId })
+            .in("fixture_id", fixtureIds)
+            .eq("margin_bucket_id", oldId)
+            .select("id");
+          if (mErr) throw mErr;
+          remapped += (moved ?? []).length;
+        }
+      }
+    }
+  }
+
+  return { rulesetId, version, bucketIds, remapped };
+}
+
+/**
+ * Applique un changement de barème selon la portée demandée, puis rejoue la
+ * saison.
+ *
+ * Le rejeu est lancé dans les deux cas, et c'est voulu : en portée « à partir
+ * de maintenant » il ne bouge rien, puisque chaque match retrouve la version
+ * qui s'appliquait à son verrouillage. Le vérifier coûte quelques requêtes et
+ * garantit qu'aucun point n'est resté sur un barème périmé.
+ */
+async function applyRulesetChange(
+  admin: SupabaseClient,
+  ctx: { userId: Uuid },
+  scope: RulesetScope,
+  current: CurrentRuleset,
+  patch: Record<string, unknown>,
+  label: string,
+): Promise<AppliedChange & { summary: RecomputeSummary }> {
+  const rules = { ...current.rules, ...patch };
+
+  let applied: AppliedChange;
+  if (scope === "forward") {
+    applied = await openNextVersion(admin, ctx, current, rules, label);
+  } else {
+    const { error } = await admin
+      .from("scoring_rulesets").update({ rules }).eq("id", current.id);
+    if (error) throw error;
+    applied = {
+      rulesetId: current.id,
+      version: current.version,
+      bucketIds: new Map(),
+      remapped: 0,
+    };
+  }
+
+  const summary = await recomputeSeason(admin, current.seasonId);
+  return { ...applied, summary };
 }
 
 /** Un barème touche tous les écrans qui affichent des points. */
@@ -343,9 +517,21 @@ function revalidatePathsAfterPlayer(): void {
   }
 }
 
-function recomputeSentence(summary: { predictions: number; points: number }): string {
-  if (summary.predictions === 0) return "Aucun pronostic à recalculer pour l'instant.";
-  return `${summary.predictions} pronostic${summary.predictions > 1 ? "s" : ""} rejoué${summary.predictions > 1 ? "s" : ""}, ${summary.points} point${summary.points > 1 ? "s" : ""} au total.`;
+/** Ce que le changement a produit, dit à l'admin dans ses mots. */
+function outcomeSentence(
+  scope: RulesetScope,
+  applied: { version: number; remapped: number; summary: RecomputeSummary },
+): string {
+  if (scope === "forward") {
+    const remapped =
+      applied.remapped > 0
+        ? ` ${applied.remapped} pronostic${applied.remapped > 1 ? "s" : ""} en cours recollé${applied.remapped > 1 ? "s" : ""} sur les nouvelles tranches.`
+        : "";
+    return `Version ${applied.version} ouverte : les matchs déjà verrouillés gardent l'ancien barème.${remapped}`;
+  }
+  const { predictions, points } = applied.summary;
+  if (predictions === 0) return "Aucun pronostic à recalculer pour l'instant.";
+  return `Saison rejouée : ${predictions} pronostic${predictions > 1 ? "s" : ""}, ${points} point${points > 1 ? "s" : ""} au total.`;
 }
 
 const pointsSchema = z.object({
@@ -353,6 +539,7 @@ const pointsSchema = z.object({
   winner: z.coerce.number().int().min(0).max(999),
   winnerAndMargin: z.coerce.number().int().min(0).max(999),
   exactScore: z.coerce.number().int().min(0).max(999),
+  scope: scopeField,
   reason: z.string(),
 });
 
@@ -368,12 +555,13 @@ export async function updatePoints(
       winner: formData.get("winner"),
       winnerAndMargin: formData.get("winnerAndMargin"),
       exactScore: formData.get("exactScore"),
+      scope: formData.get("scope"),
       reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Valeurs invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { wrong, winner, winnerAndMargin, exactScore, reason } = parsed.data;
+    const { wrong, winner, winnerAndMargin, exactScore, scope, reason } = parsed.data;
 
     // La cascade doit rester croissante, sinon viser juste ferait perdre des points.
     if (!(wrong <= winner && winner <= winnerAndMargin && winnerAndMargin <= exactScore)) {
@@ -384,7 +572,6 @@ export async function updatePoints(
 
     const admin = createAdminClient();
     const rs = await currentRuleset(admin);
-    const before = { points: rs.rules.points };
     const points = {
       wrong,
       winner,
@@ -392,21 +579,20 @@ export async function updatePoints(
       exact_score: exactScore,
     };
 
-    await patchRules(admin, rs.id, rs.rules, { points });
-    const summary = await recomputeSeason(admin, rs.seasonId);
+    const applied = await applyRulesetChange(admin, ctx, scope, rs, { points }, reason);
 
     await logAdminAction(admin, {
       adminId: ctx.userId,
-      action: "ruleset.points_changed",
+      action: scope === "forward" ? "ruleset.version_created" : "ruleset.points_changed",
       entityType: "scoring_ruleset",
-      entityId: rs.id,
-      before,
-      after: { points },
+      entityId: applied.rulesetId,
+      before: { points: rs.rules.points, version: rs.version },
+      after: { points, version: applied.version },
       reason,
     });
 
     revalidatePathsAfterRuleset();
-    return adminOk(`Barème enregistré. ${recomputeSentence(summary)}`);
+    return adminOk(`Barème enregistré. ${outcomeSentence(scope, applied)}`);
   } catch (error) {
     return handle(error);
   }
@@ -418,10 +604,11 @@ const lockSchema = z.object({
 });
 
 /**
- * Délai de verrouillage. Changer la règle ne suffit pas : les matchs déjà
- * programmés portent leur propre `locks_at`, calculé au moment de la création.
- * On les recalcule tous, sauf ceux dont l'heure est déjà passée — rouvrir un
- * match verrouillé laisserait pronostiquer un résultat connu.
+ * Délai de verrouillage. Pas de portée à choisir ici : le délai ne décide
+ * d'aucun point, seulement de l'heure de fermeture des pronostics à venir. Les
+ * matchs déjà programmés portent leur propre `locks_at`, calculé à leur
+ * création : on les recalcule tous, sauf ceux déjà verrouillés — rouvrir un
+ * match fermé laisserait pronostiquer un résultat connu.
  */
 export async function updateLockDelay(
   _prev: AdminActionState,
@@ -443,7 +630,11 @@ export async function updateLockDelay(
     const before = { lock: rs.rules.lock };
     const lock = { minutes_before_kickoff: minutesBeforeKickoff };
 
-    await patchRules(admin, rs.id, rs.rules, { lock });
+    const { error: pErr } = await admin
+      .from("scoring_rulesets")
+      .update({ rules: { ...rs.rules, lock } })
+      .eq("id", rs.id);
+    if (pErr) throw pErr;
 
     // Le réglage lu par le reste du serveur suit la même valeur.
     const { error: sErr } = await admin
@@ -503,6 +694,7 @@ export async function updateLockDelay(
 const exactScoreSchema = z.object({
   quota: z.string(),
   period: z.enum(["match", "round", "month", "season"]),
+  scope: scopeField,
   reason: z.string(),
 });
 
@@ -516,12 +708,13 @@ export async function updateExactScoreQuota(
     const parsed = exactScoreSchema.safeParse({
       quota: formData.get("quota"),
       period: formData.get("period"),
+      scope: formData.get("scope"),
       reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Quota invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { quota: rawQuota, period, reason } = parsed.data;
+    const { quota: rawQuota, period, scope, reason } = parsed.data;
 
     // Champ vide = illimité. On le distingue de zéro, qui interdit tout.
     const quota = rawQuota.trim() === "" ? null : Number(rawQuota);
@@ -533,25 +726,25 @@ export async function updateExactScoreQuota(
 
     const admin = createAdminClient();
     const rs = await currentRuleset(admin);
-    const before = { exact_score: rs.rules.exact_score };
     const previous = (rs.rules.exact_score ?? {}) as Record<string, unknown>;
     const exact = { ...previous, quota, period };
 
-    await patchRules(admin, rs.id, rs.rules, { exact_score: exact });
-    const summary = await recomputeSeason(admin, rs.seasonId);
+    const applied = await applyRulesetChange(
+      admin, ctx, scope, rs, { exact_score: exact }, reason,
+    );
 
     await logAdminAction(admin, {
       adminId: ctx.userId,
-      action: "ruleset.exact_score_changed",
+      action: scope === "forward" ? "ruleset.version_created" : "ruleset.exact_score_changed",
       entityType: "scoring_ruleset",
-      entityId: rs.id,
-      before,
-      after: { exact_score: exact },
+      entityId: applied.rulesetId,
+      before: { exact_score: previous, version: rs.version },
+      after: { exact_score: exact, version: applied.version },
       reason,
     });
 
     revalidatePathsAfterRuleset();
-    return adminOk(`Quota enregistré. ${recomputeSentence(summary)}`);
+    return adminOk(`Quota enregistré. ${outcomeSentence(scope, applied)}`);
   } catch (error) {
     return handle(error);
   }
@@ -562,6 +755,7 @@ const bucketSchema = z.object({
   label: z.string().trim().min(1).max(40),
   minPoints: z.coerce.number().int().min(0).max(200),
   maxPoints: z.string(),
+  scope: scopeField,
   reason: z.string(),
 });
 
@@ -577,12 +771,13 @@ export async function updateMarginBucket(
       label: formData.get("label"),
       minPoints: formData.get("minPoints"),
       maxPoints: formData.get("maxPoints"),
+      scope: formData.get("scope"),
       reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Tranche invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { bucketId, label, minPoints, maxPoints: rawMax, reason } = parsed.data;
+    const { bucketId, label, minPoints, maxPoints: rawMax, scope, reason } = parsed.data;
 
     // Champ vide = borne haute ouverte (la dernière tranche, « 41 et + »).
     const maxPoints = rawMax.trim() === "" ? null : Number(rawMax);
@@ -593,37 +788,54 @@ export async function updateMarginBucket(
     }
 
     const admin = createAdminClient();
+    const rs = await currentRuleset(admin);
+
     const { data: before, error: bErr } = await admin
       .from("margin_buckets")
       .select("id, ruleset_id, label, min_points, max_points")
       .eq("id", bucketId)
       .single();
     if (bErr) throw bErr;
+    if (before.ruleset_id !== rs.id) {
+      return adminFail("Cette tranche appartient à une version périmée du barème.");
+    }
+
+    // La version suivante emporte une copie des tranches : on modifie la copie,
+    // pas l'originale, sinon les matchs déjà joués changeraient de barème.
+    const applied =
+      scope === "forward"
+        ? await openNextVersion(admin, ctx, rs, rs.rules, reason)
+        : {
+            rulesetId: rs.id,
+            version: rs.version,
+            bucketIds: new Map<Uuid, Uuid>(),
+            remapped: 0,
+          };
+
+    const targetId = applied.bucketIds.get(bucketId as Uuid) ?? bucketId;
 
     const { error: uErr } = await admin
       .from("margin_buckets")
       .update({ label, min_points: minPoints, max_points: maxPoints })
-      .eq("id", bucketId);
+      .eq("id", targetId);
     if (uErr) throw uErr;
 
-    const { data: rsRow, error: rErr } = await admin
-      .from("scoring_rulesets").select("season_id").eq("id", before.ruleset_id).single();
-    if (rErr) throw rErr;
-
-    const summary = await recomputeSeason(admin, rsRow.season_id as Uuid);
+    const summary = await recomputeSeason(admin, rs.seasonId);
 
     await logAdminAction(admin, {
       adminId: ctx.userId,
       action: "ruleset.margin_bucket_changed",
       entityType: "margin_bucket",
-      entityId: bucketId,
+      entityId: targetId,
       before: { label: before.label, min_points: before.min_points, max_points: before.max_points },
-      after: { label, min_points: minPoints, max_points: maxPoints },
+      after: { label, min_points: minPoints, max_points: maxPoints, version: applied.version },
       reason,
     });
 
     revalidatePathsAfterRuleset();
-    return adminOk(`Tranche « ${label} » enregistrée. ${recomputeSentence(summary)}`);
+    return adminOk(
+      `Tranche « ${label} » enregistrée. ${outcomeSentence(scope, { ...applied, summary })}`,
+    );
   } catch (error) {
     return handle(error);
   }

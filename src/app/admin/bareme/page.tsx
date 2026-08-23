@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Card, Label } from "@/components/ui";
-import { loadCurrentRuleset } from "@/lib/admin/queries";
+import { loadCurrentRuleset, loadRulesetVersions } from "@/lib/admin/queries";
 import { PointsForm } from "./_components/points-form";
 import { LockForm } from "./_components/lock-form";
 import { ExactScoreForm } from "./_components/exact-score-form";
@@ -29,8 +29,17 @@ function Section({
   );
 }
 
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit", month: "short", year: "2-digit", timeZone: "Europe/Paris",
+  });
+}
+
 export default async function AdminBaremePage() {
-  const ruleset = await loadCurrentRuleset();
+  const [ruleset, versions] = await Promise.all([
+    loadCurrentRuleset(),
+    loadRulesetVersions(),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,6 +96,41 @@ export default async function AdminBaremePage() {
       >
         <LockForm ruleset={ruleset} />
       </Section>
+
+      {versions.length > 1 && (
+        <Section
+          title="L'historique"
+          intro="Chaque match est noté avec le barème en vigueur au moment où ses pronostics ont été verrouillés."
+        >
+          <ul className="flex flex-col gap-2">
+            {versions.map((v) => (
+              <li
+                key={v.id}
+                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                  v.isCurrent ? "border-clay bg-clay-soft" : "border-line bg-surface-sunk"
+                }`}
+              >
+                <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-ink-faint">
+                  v{v.version}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] text-ink">
+                    {v.label ?? "Barème initial"}
+                  </span>
+                  <span className="block font-mono text-[11px] text-ink-faint">
+                    {formatDay(v.effectiveFrom)} →{" "}
+                    {v.effectiveTo ? formatDay(v.effectiveTo) : "en cours"}
+                  </span>
+                </span>
+                <span className="font-mono text-[12.5px] tabular text-ink-muted">
+                  {v.points.wrong}/{v.points.winner}/{v.points.winner_and_margin}/
+                  {v.points.exact_score}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
     </div>
   );
 }

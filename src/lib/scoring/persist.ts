@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadRuleset } from "../settings/index.ts";
+import { loadRulesetAt } from "../settings/index.ts";
 import { computeScore } from "./index.ts";
 import type { FixtureResult, Prediction, Ruleset, Uuid } from "../types.ts";
 
@@ -66,6 +66,7 @@ interface FixtureRow {
   home_score: number | null;
   away_score: number | null;
   status: string;
+  locks_at: string;
 }
 
 function toPrediction(row: Record<string, unknown>): Prediction {
@@ -110,12 +111,15 @@ export async function recomputeFixtures(
 
   const { data: fixtures, error } = await admin
     .from("fixtures")
-    .select("id, round_id, home_score, away_score, status")
+    .select("id, round_id, home_score, away_score, status, locks_at")
     .in("id", fixtureIds);
   if (error) throw error;
 
-  // Le barème dépend de la saison : on le charge une fois par saison croisée.
-  const rulesetBySeason = new Map<Uuid, Ruleset>();
+  // Le barème dépend de la saison *et* de la date : un barème changé « à partir
+  // de maintenant » ouvre une nouvelle version, et chaque match reste noté avec
+  // celle qui s'appliquait au moment où ses pronostics ont été verrouillés.
+  // On mémorise par (saison, verrouillage) pour ne pas relire à chaque match.
+  const rulesetByKey = new Map<string, Ruleset>();
 
   for (const fixture of (fixtures ?? []) as FixtureRow[]) {
     const { data: predictionRows, error: pErr } = await admin
@@ -142,10 +146,11 @@ export async function recomputeFixtures(
       .from("rounds").select("season_id").eq("id", fixture.round_id).single();
     if (rErr) throw rErr;
 
-    let ruleset = rulesetBySeason.get(round.season_id);
+    const key = `${round.season_id}@${fixture.locks_at}`;
+    let ruleset = rulesetByKey.get(key);
     if (!ruleset) {
-      ruleset = await loadRuleset(admin, round.season_id);
-      rulesetBySeason.set(round.season_id, ruleset);
+      ruleset = await loadRulesetAt(admin, round.season_id, new Date(fixture.locks_at));
+      rulesetByKey.set(key, ruleset);
     }
 
     const plan = planFixtureScores(

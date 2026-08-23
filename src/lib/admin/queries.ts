@@ -302,3 +302,48 @@ export async function loadAdjustments(limit = 50): Promise<AdminAdjustment[]> {
     authorName: one<{ display_name: string }>(r.author)?.display_name ?? "Administration",
   }));
 }
+
+export interface RulesetVersion {
+  id: Uuid;
+  version: number;
+  label: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  points: { wrong: number; winner: number; winner_and_margin: number; exact_score: number };
+  isCurrent: boolean;
+}
+
+/**
+ * L'historique des barèmes de la saison.
+ *
+ * Un changement « à partir de maintenant » laisse une trace ici : on voit d'un
+ * coup d'œil quel barème s'appliquait à quelle période, et donc pourquoi deux
+ * journées ne rapportent pas la même chose.
+ */
+export async function loadRulesetVersions(): Promise<RulesetVersion[]> {
+  const admin = createAdminClient();
+  const seasonId = await currentSeasonId(admin);
+  const now = new Date().toISOString();
+
+  const { data, error } = await admin
+    .from("scoring_rulesets")
+    .select("id, version, label, effective_from, effective_to, rules")
+    .eq("season_id", seasonId)
+    .order("version", { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((r) => {
+    const effectiveTo = (r.effective_to as string | null) ?? null;
+    return {
+      id: r.id as Uuid,
+      version: r.version as number,
+      label: (r.label as string | null) ?? null,
+      effectiveFrom: r.effective_from as string,
+      effectiveTo,
+      points: ((r.rules as Record<string, unknown>)?.points ?? {
+        wrong: 0, winner: 0, winner_and_margin: 0, exact_score: 0,
+      }) as RulesetVersion["points"],
+      isCurrent: (r.effective_from as string) <= now && (effectiveTo === null || effectiveTo > now),
+    };
+  });
+}

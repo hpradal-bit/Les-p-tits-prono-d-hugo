@@ -6,6 +6,7 @@ import { updatePoints } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
 import type { Ruleset } from "@/lib/types";
 import { Feedback, numberInput, reasonInput } from "./shared";
+import { ScopePicker } from "./scope-picker";
 
 const LEVELS = [
   {
@@ -77,8 +78,10 @@ export function PointsForm({ ruleset }: { ruleset: Ruleset }) {
 
       <p className="text-[12.5px] leading-relaxed text-ink-muted">
         La cascade doit rester croissante : viser plus précis ne peut jamais
-        rapporter moins. Enregistrer relance le calcul de toute la saison.
+        rapporter moins.
       </p>
+
+      <ScopePicker />
 
       <input
         name="reason"
@@ -90,7 +93,7 @@ export function PointsForm({ ruleset }: { ruleset: Ruleset }) {
 
       <div>
         <Button type="submit" size="sm" disabled={pending}>
-          {pending ? "Recalcul de la saison…" : "Enregistrer le barème"}
+          {pending ? "Enregistrement…" : "Enregistrer le barème"}
         </Button>
       </div>
 

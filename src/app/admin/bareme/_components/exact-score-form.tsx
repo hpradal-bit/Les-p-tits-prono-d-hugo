@@ -6,6 +6,7 @@ import { updateExactScoreQuota } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
 import type { Ruleset } from "@/lib/types";
 import { Feedback, numberInput, textInput, reasonInput } from "./shared";
+import { ScopePicker } from "./scope-picker";
 
 const PERIODS = [
   { value: "match", label: "par match" },
@@ -52,6 +53,8 @@ export function ExactScoreForm({ ruleset }: { ruleset: Ruleset }) {
         désactive complètement le score exact.
       </p>
 
+      <ScopePicker />
+
       <input
         name="reason"
         required
@@ -62,7 +65,7 @@ export function ExactScoreForm({ ruleset }: { ruleset: Ruleset }) {
 
       <div>
         <Button type="submit" size="sm" disabled={pending}>
-          {pending ? "Recalcul de la saison…" : "Enregistrer le quota"}
+          {pending ? "Enregistrement…" : "Enregistrer le quota"}
         </Button>
       </div>
 

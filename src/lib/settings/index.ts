@@ -38,17 +38,72 @@ export function setting<T>(settings: Settings, key: string, fallback: T): T {
   return (v === undefined || v === null ? fallback : v) as T;
 }
 
-/** Le barème en vigueur pour une saison, tranches d'écart comprises. */
+/** Le barème en vigueur pour une saison aujourd'hui, tranches d'écart comprises. */
 export async function loadRuleset(sb: SupabaseClient, seasonId: Uuid): Promise<Ruleset> {
-  const { data: rs, error } = await sb
+  return loadRulesetAt(sb, seasonId, new Date());
+}
+
+/** Une version de barème, réduite à sa période de validité. */
+export interface RulesetPeriod {
+  version: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+}
+
+/**
+ * La version qui s'appliquait à une date donnée.
+ *
+ * Fonction pure, et c'est le point : c'est elle qui garantit qu'un match noté
+ * en septembre reste noté avec le barème de septembre, même si on rejoue la
+ * saison en février. Une version est en vigueur de `effectiveFrom` inclus à
+ * `effectiveTo` exclu ; `effectiveTo` à `null` veut dire « toujours en cours ».
+ *
+ * Si aucune version ne couvre la date — un match antérieur à la création du
+ * barème — on retombe sur la plus ancienne : mieux vaut un barème que rien.
+ */
+export function pickVersionAt<T extends RulesetPeriod>(versions: T[], at: Date): T | null {
+  if (versions.length === 0) return null;
+  const iso = at.toISOString();
+
+  const inForce = versions
+    .filter((v) => v.effectiveFrom <= iso && (v.effectiveTo === null || v.effectiveTo > iso))
+    .sort((a, b) => b.version - a.version);
+  if (inForce.length > 0) return inForce[0];
+
+  return versions.reduce((oldest, v) => (v.version < oldest.version ? v : oldest));
+}
+
+/**
+ * Le barème en vigueur à une date donnée, tranches d'écart comprises.
+ *
+ * Un barème peut être remplacé en cours de saison sans rien réécrire : la
+ * version en cours est close, une nouvelle s'ouvre. Chaque match est alors
+ * noté avec le barème qui s'appliquait au moment où ses pronostics ont été
+ * verrouillés — c'est celui sous lequel les joueurs ont joué.
+ */
+export async function loadRulesetAt(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+  at: Date,
+): Promise<Ruleset> {
+  const { data: versions, error } = await sb
     .from("scoring_rulesets")
-    .select("id, version, rules")
+    .select("id, version, rules, effective_from, effective_to")
     .eq("season_id", seasonId)
-    .lte("effective_from", new Date().toISOString())
-    .order("version", { ascending: false })
-    .limit(1)
-    .single();
+    .order("version", { ascending: false });
   if (error) throw error;
+
+  const rs = pickVersionAt(
+    (versions ?? []).map((v) => ({
+      id: v.id as Uuid,
+      version: v.version as number,
+      rules: v.rules,
+      effectiveFrom: v.effective_from as string,
+      effectiveTo: (v.effective_to as string | null) ?? null,
+    })),
+    at,
+  );
+  if (!rs) throw new Error(`Aucun barème pour la saison ${seasonId}.`);
 
   const { data: rows, error: bErr } = await sb
     .from("margin_buckets")
