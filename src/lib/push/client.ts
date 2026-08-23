@@ -19,8 +19,33 @@ export type PushState =
   | "unsupported"      // le navigateur ne sait pas faire
   | "needs-install"    // iOS : il faut d'abord installer sur l'écran d'accueil
   | "denied"           // le joueur a refusé, il faut passer par les réglages système
+  | "no-sw"            // le service worker ne s'active pas : rien ne peut marcher
   | "off"              // possible, pas encore activé
   | "on";              // abonné
+
+/**
+ * `navigator.serviceWorker.ready` n'échoue jamais : si aucun service worker ne
+ * s'active, la promesse attend indéfiniment. L'écran restait alors sur
+ * « Vérification… » sans que rien ne dise pourquoi. On borne l'attente pour
+ * transformer un blocage muet en diagnostic lisible.
+ */
+const SW_TIMEOUT_MS = 6000;
+
+export class PushError extends Error {}
+
+async function readyRegistration(): Promise<ServiceWorkerRegistration | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), SW_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
@@ -45,34 +70,58 @@ export async function readState(): Promise<PushState> {
   if (isIOS() && !isStandalone()) return "needs-install";
   if (Notification.permission === "denied") return "denied";
 
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await readyRegistration();
+  if (!registration) return "no-sw";
+
   const existing = await registration.pushManager.getSubscription();
   return existing ? "on" : "off";
 }
 
+/**
+ * Chaque étape peut échouer pour une raison différente, et le joueur n'a aucun
+ * moyen de la deviner. On nomme la cause plutôt que de renvoyer « ça a raté ».
+ */
 export async function enable(vapidPublicKey: string): Promise<PushState> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
 
-  const registration = await navigator.serviceWorker.ready;
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: toUint8Array(vapidPublicKey),
-    }));
+  const registration = await readyRegistration();
+  if (!registration) return "no-sw";
+
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    try {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: toUint8Array(vapidPublicKey),
+      });
+    } catch (error) {
+      // Cause la plus fréquente : la clé publique enregistrée en base ne
+      // correspond pas à celle d'un abonnement déjà posé par ce navigateur.
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new PushError(
+        `Le navigateur a refusé l'abonnement (${detail}). Si la clé VAPID a changé récemment, désinstalle puis réinstalle l'app.`,
+      );
+    }
+  }
 
   const response = await fetch("/api/push/subscribe", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ subscription: subscription.toJSON(), userAgent: navigator.userAgent }),
   });
-  if (!response.ok) throw new Error("Le serveur a refusé l'abonnement.");
+  if (!response.ok) {
+    throw new PushError(
+      `Le serveur a refusé l'abonnement (erreur ${response.status}). L'abonnement n'a pas été enregistré.`,
+    );
+  }
   return "on";
 }
 
 export async function disable(): Promise<PushState> {
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await readyRegistration();
+  if (!registration) return "no-sw";
+
   const subscription = await registration.pushManager.getSubscription();
   if (!subscription) return "off";
 

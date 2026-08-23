@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
-import { readState, enable, disable, type PushState } from "@/lib/push/client";
+import { readState, enable, disable, PushError, type PushState } from "@/lib/push/client";
 
 const MESSAGES: Record<PushState, string> = {
   unsupported: "Ton navigateur ne sait pas envoyer de notifications.",
   "needs-install": "Sur iPhone, il faut d'abord installer l'app sur l'écran d'accueil.",
   denied: "Tu as refusé les notifications. Il faut les réautoriser dans les réglages du navigateur.",
+  "no-sw":
+    "L'app n'arrive pas à démarrer son service d'arrière-plan. Ferme complètement l'app puis rouvre-la ; si ça persiste, désinstalle et réinstalle-la.",
   off: "Deux messages par semaine au maximum : le rappel avant verrouillage, et la fin de journée.",
   on: "Tu recevras le rappel avant verrouillage et le résumé de fin de journée.",
 };
@@ -28,8 +30,14 @@ export function NotificationSwitch({ vapidPublicKey }: { vapidPublicKey: string 
     setError(null);
     try {
       setState(state === "on" ? await disable() : await enable(vapidPublicKey));
-    } catch {
-      setError("L'abonnement a échoué. Réessaie dans un instant.");
+    } catch (err) {
+      // On affiche la vraie cause : « réessaie plus tard » n'a jamais réparé
+      // une clé dépareillée ni un service worker absent.
+      setError(
+        err instanceof PushError
+          ? err.message
+          : "L'abonnement a échoué. Réessaie dans un instant.",
+      );
     } finally {
       setBusy(false);
     }
