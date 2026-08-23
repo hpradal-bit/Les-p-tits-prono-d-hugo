@@ -165,3 +165,140 @@ export async function loadCurrentRuleset(): Promise<Ruleset> {
   const admin = createAdminClient();
   return loadRuleset(admin, await currentSeasonId(admin));
 }
+
+export interface AdminPlayer {
+  id: Uuid;
+  firstName: string;
+  displayName: string;
+  avatarKind: string;
+  avatarValue: string;
+  isActive: boolean;
+  role: string;
+  seasonPoints: number;
+  adjustmentTotal: number;
+}
+
+export interface AdminAdjustment {
+  id: Uuid;
+  userId: Uuid;
+  playerName: string;
+  delta: number;
+  reason: string;
+  source: string;
+  roundName: string | null;
+  createdAt: string;
+  authorName: string;
+}
+
+/**
+ * Les joueurs du groupe, avec leur total de la saison.
+ *
+ * Le total est relu depuis `prediction_scores` et `point_adjustments` à chaque
+ * affichage plutôt que stocké : l'admin doit voir la même chose que le
+ * classement, y compris juste après un recalcul.
+ */
+export async function loadPlayers(): Promise<AdminPlayer[]> {
+  const admin = createAdminClient();
+  const seasonId = await currentSeasonId(admin);
+
+  const [profilesRes, membersRes, roundsRes, adjustmentsRes] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id, first_name, display_name, avatar_kind, avatar_value, is_active")
+      .order("first_name"),
+    admin.from("group_members").select("user_id, role"),
+    admin.from("rounds").select("id").eq("season_id", seasonId),
+    admin.from("point_adjustments").select("user_id, delta").eq("season_id", seasonId),
+  ]);
+  if (profilesRes.error) throw profilesRes.error;
+  if (membersRes.error) throw membersRes.error;
+  if (roundsRes.error) throw roundsRes.error;
+  if (adjustmentsRes.error) throw adjustmentsRes.error;
+
+  const roleByUser = new Map<string, string>();
+  for (const m of membersRes.data ?? []) {
+    roleByUser.set(m.user_id as string, m.role as string);
+  }
+
+  const adjustmentByUser = new Map<string, number>();
+  for (const a of adjustmentsRes.data ?? []) {
+    const uid = a.user_id as string;
+    adjustmentByUser.set(uid, (adjustmentByUser.get(uid) ?? 0) + (a.delta as number));
+  }
+
+  const pointsByUser = new Map<string, number>();
+  const roundIds = (roundsRes.data ?? []).map((r) => r.id as string);
+  if (roundIds.length > 0) {
+    const { data: fixtures } = await admin
+      .from("fixtures").select("id").in("round_id", roundIds);
+    const fixtureIds = (fixtures ?? []).map((f) => f.id as string);
+
+    if (fixtureIds.length > 0) {
+      const { data: predictions } = await admin
+        .from("predictions").select("id, user_id").in("fixture_id", fixtureIds);
+      const userByPrediction = new Map<string, string>();
+      for (const p of predictions ?? []) {
+        userByPrediction.set(p.id as string, p.user_id as string);
+      }
+      if (userByPrediction.size > 0) {
+        const { data: scores } = await admin
+          .from("prediction_scores")
+          .select("prediction_id, points")
+          .in("prediction_id", [...userByPrediction.keys()]);
+        for (const s of scores ?? []) {
+          const uid = userByPrediction.get(s.prediction_id as string);
+          if (!uid) continue;
+          pointsByUser.set(uid, (pointsByUser.get(uid) ?? 0) + (s.points as number));
+        }
+      }
+    }
+  }
+
+  return (profilesRes.data ?? []).map((p) => {
+    const id = p.id as string;
+    const adjustmentTotal = adjustmentByUser.get(id) ?? 0;
+    return {
+      id,
+      firstName: p.first_name as string,
+      displayName: p.display_name as string,
+      avatarKind: p.avatar_kind as string,
+      avatarValue: p.avatar_value as string,
+      isActive: Boolean(p.is_active),
+      role: roleByUser.get(id) ?? "player",
+      seasonPoints: (pointsByUser.get(id) ?? 0) + adjustmentTotal,
+      adjustmentTotal,
+    };
+  });
+}
+
+/** Les ajustements manuels de la saison, du plus récent au plus ancien. */
+export async function loadAdjustments(limit = 50): Promise<AdminAdjustment[]> {
+  const admin = createAdminClient();
+  const seasonId = await currentSeasonId(admin);
+
+  const { data, error } = await admin
+    .from("point_adjustments")
+    .select(`id, user_id, delta, reason, source, created_at,
+             player:user_id (display_name),
+             round:round_id (name),
+             author:created_by (display_name)`)
+    .eq("season_id", seasonId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  const one = <T,>(v: unknown): T | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+
+  return (data ?? []).map((r) => ({
+    id: r.id as Uuid,
+    userId: r.user_id as Uuid,
+    playerName: one<{ display_name: string }>(r.player)?.display_name ?? "Joueur inconnu",
+    delta: r.delta as number,
+    reason: r.reason as string,
+    source: r.source as string,
+    roundName: one<{ name: string }>(r.round)?.name ?? null,
+    createdAt: r.created_at as string,
+    authorName: one<{ display_name: string }>(r.author)?.display_name ?? "Administration",
+  }));
+}

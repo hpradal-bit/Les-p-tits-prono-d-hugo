@@ -336,6 +336,13 @@ function revalidatePathsAfterRuleset(): void {
   }
 }
 
+/** Un joueur ou un ajustement touche le classement et le vestiaire. */
+function revalidatePathsAfterPlayer(): void {
+  for (const path of ["/admin/joueurs", "/classement", "/vestiaire", "/profil"]) {
+    revalidatePath(path);
+  }
+}
+
 function recomputeSentence(summary: { predictions: number; points: number }): string {
   if (summary.predictions === 0) return "Aucun pronostic à recalculer pour l'instant.";
   return `${summary.predictions} pronostic${summary.predictions > 1 ? "s" : ""} rejoué${summary.predictions > 1 ? "s" : ""}, ${summary.points} point${summary.points > 1 ? "s" : ""} au total.`;
@@ -617,6 +624,271 @@ export async function updateMarginBucket(
 
     revalidatePathsAfterRuleset();
     return adminOk(`Tranche « ${label} » enregistrée. ${recomputeSentence(summary)}`);
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Joueurs et ajustements de points.
+
+   Un ajustement n'écrase jamais un score calculé : il vit dans sa propre
+   table, s'additionne au classement, et s'annule par un ajustement inverse
+   plutôt que par une suppression. L'histoire du groupe reste lisible.
+   --------------------------------------------------------------------------- */
+
+const playerStateSchema = z.object({
+  userId: z.string().uuid(),
+  isActive: z.enum(["true", "false"]).transform((v) => v === "true"),
+  reason: z.string(),
+});
+
+/**
+ * Active ou désactive un joueur.
+ *
+ * Désactiver le sort du classement et des rappels, mais ne supprime rien :
+ * ses pronostics et ses points restent en base, et le réactiver les rend.
+ */
+export async function setPlayerActive(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = playerStateSchema.safeParse({
+      userId: formData.get("userId"),
+      isActive: formData.get("isActive"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) return adminFail("Joueur introuvable.");
+    const { userId, isActive, reason } = parsed.data;
+
+    const admin = createAdminClient();
+    const { data: before, error: bErr } = await admin
+      .from("profiles").select("id, display_name, is_active").eq("id", userId).single();
+    if (bErr) throw bErr;
+
+    const { error: uErr } = await admin
+      .from("profiles").update({ is_active: isActive }).eq("id", userId);
+    if (uErr) throw uErr;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: isActive ? "player.reactivated" : "player.deactivated",
+      entityType: "profile",
+      entityId: userId,
+      before: { is_active: before.is_active },
+      after: { is_active: isActive },
+      reason,
+    });
+
+    revalidatePathsAfterPlayer();
+    return adminOk(
+      `${before.display_name} ${isActive ? "est de retour dans le classement" : "ne compte plus dans le classement"}.`,
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+const playerRoleSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(["admin", "player"]),
+  reason: z.string(),
+});
+
+/** Promeut ou rétrograde un joueur. Le dernier admin ne peut pas se démettre. */
+export async function setPlayerRole(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = playerRoleSchema.safeParse({
+      userId: formData.get("userId"),
+      role: formData.get("role"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) return adminFail("Rôle invalide.");
+    const { userId, role, reason } = parsed.data;
+
+    const admin = createAdminClient();
+    const { data: before, error: bErr } = await admin
+      .from("group_members")
+      .select("group_id, user_id, role")
+      .eq("user_id", userId)
+      .single();
+    if (bErr) throw bErr;
+
+    // Retirer le dernier administrateur fermerait l'espace admin pour tout le monde.
+    if (before.role === "admin" && role === "player") {
+      const { count, error: cErr } = await admin
+        .from("group_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("group_id", before.group_id)
+        .eq("role", "admin");
+      if (cErr) throw cErr;
+      if ((count ?? 0) <= 1) {
+        return adminFail("Impossible : il n'y aurait plus aucun administrateur.");
+      }
+    }
+
+    const { error: uErr } = await admin
+      .from("group_members")
+      .update({ role })
+      .eq("group_id", before.group_id)
+      .eq("user_id", userId);
+    if (uErr) throw uErr;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "player.role_changed",
+      entityType: "profile",
+      entityId: userId,
+      before: { role: before.role },
+      after: { role },
+      reason,
+    });
+
+    revalidatePathsAfterPlayer();
+    return adminOk(role === "admin" ? "Joueur promu administrateur." : "Joueur redevenu simple joueur.");
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+const adjustmentSchema = z.object({
+  userId: z.string().uuid(),
+  delta: z.coerce.number().int().min(-999).max(999),
+  roundId: z.string(),
+  reason: z.string().trim().min(3),
+});
+
+/**
+ * Ajoute ou retire des points à la main — un pari perdu, un gage, une
+ * correction. La raison est obligatoire : elle s'affiche telle quelle aux
+ * joueurs, qui doivent pouvoir comprendre d'où viennent ces points.
+ */
+export async function adjustPoints(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = adjustmentSchema.safeParse({
+      userId: formData.get("userId"),
+      delta: formData.get("delta"),
+      roundId: formData.get("roundId"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return adminFail("Ajustement invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
+    }
+    const { userId, delta, roundId: rawRound, reason } = parsed.data;
+    if (delta === 0) return adminFail("Un ajustement de zéro point ne sert à rien.");
+
+    const roundId = rawRound.trim() === "" ? null : rawRound;
+    const admin = createAdminClient();
+    const seasonId = await currentSeasonId(admin);
+
+    const { data: player, error: pErr } = await admin
+      .from("profiles").select("display_name").eq("id", userId).single();
+    if (pErr) throw pErr;
+
+    const { data: inserted, error: iErr } = await admin
+      .from("point_adjustments")
+      .insert({
+        user_id: userId,
+        season_id: seasonId,
+        round_id: roundId,
+        delta,
+        reason,
+        source: "admin",
+        created_by: ctx.userId,
+      })
+      .select("id")
+      .single();
+    if (iErr) throw iErr;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "points.adjusted",
+      entityType: "point_adjustment",
+      entityId: inserted.id as Uuid,
+      after: { delta, reason, players: player.display_name },
+      reason,
+      event: roundId ? { roundId } : undefined,
+    });
+
+    revalidatePathsAfterPlayer();
+    return adminOk(
+      `${delta > 0 ? "+" : ""}${delta} point${Math.abs(delta) > 1 ? "s" : ""} pour ${player.display_name}.`,
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+const revertSchema = z.object({
+  adjustmentId: z.string().uuid(),
+  reason: z.string(),
+});
+
+/**
+ * Annule un ajustement par un ajustement inverse.
+ *
+ * On n'efface pas la ligne d'origine : un joueur qui a vu ses points bouger
+ * doit pouvoir retrouver pourquoi, même après correction.
+ */
+export async function revertAdjustment(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = revertSchema.safeParse({
+      adjustmentId: formData.get("adjustmentId"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) return adminFail("Ajustement introuvable.");
+    const { adjustmentId, reason } = parsed.data;
+
+    const admin = createAdminClient();
+    const { data: original, error: oErr } = await admin
+      .from("point_adjustments")
+      .select("id, user_id, season_id, round_id, delta, reason, source_id")
+      .eq("id", adjustmentId)
+      .single();
+    if (oErr) throw oErr;
+
+    if (original.source_id) {
+      return adminFail("Cet ajustement en annule déjà un autre.");
+    }
+
+    const { error: iErr } = await admin.from("point_adjustments").insert({
+      user_id: original.user_id,
+      season_id: original.season_id,
+      round_id: original.round_id,
+      delta: -(original.delta as number),
+      reason: `Annulation : ${original.reason}`,
+      source: "admin",
+      source_id: adjustmentId,
+      created_by: ctx.userId,
+    });
+    if (iErr) throw iErr;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "points.adjustment_reverted",
+      entityType: "point_adjustment",
+      entityId: adjustmentId,
+      before: { delta: original.delta, reason: original.reason },
+      after: { delta: -(original.delta as number), reverts: adjustmentId },
+      reason,
+    });
+
+    revalidatePathsAfterPlayer();
+    return adminOk("Ajustement annulé.");
   } catch (error) {
     return handle(error);
   }
