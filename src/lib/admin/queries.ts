@@ -1,5 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Uuid } from "@/lib/types";
+import { loadRuleset } from "@/lib/settings";
+import type { Ruleset, Uuid } from "@/lib/types";
 
 /** Lecture des données de l'espace admin. Client de service : on voit tout. */
 
@@ -143,4 +145,23 @@ export async function loadJournal(limit = 100): Promise<JournalEntry[]> {
       adminName: a?.display_name ?? "Administration",
     };
   });
+}
+
+/** La saison en cours. L'admin ne travaille jamais sur une autre. */
+export async function currentSeasonId(admin: SupabaseClient): Promise<Uuid> {
+  const { data, error } = await admin
+    .from("seasons")
+    .select("id")
+    .eq("status", "active")
+    .order("starts_on", { ascending: false })
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data.id as Uuid;
+}
+
+/** Le barème en vigueur, tel que l'admin va l'éditer. */
+export async function loadCurrentRuleset(): Promise<Ruleset> {
+  const admin = createAdminClient();
+  return loadRuleset(admin, await currentSeasonId(admin));
 }

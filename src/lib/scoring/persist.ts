@@ -185,6 +185,30 @@ export async function recomputeRound(
 }
 
 /**
+ * Recalcule toute une saison. C'est ce qu'on lance après un changement de
+ * barème : la règle n° 2 veut qu'un rejeu complet redonne exactement le même
+ * classement que si le nouveau barème avait toujours été en vigueur.
+ */
+export async function recomputeSeason(
+  admin: SupabaseClient,
+  seasonId: Uuid,
+): Promise<RecomputeSummary> {
+  const { data: rounds, error: rErr } = await admin
+    .from("rounds").select("id").eq("season_id", seasonId);
+  if (rErr) throw rErr;
+
+  const roundIds = (rounds ?? []).map((r) => r.id as string);
+  if (roundIds.length === 0) {
+    return { fixtures: 0, predictions: 0, exactScores: 0, points: 0, cleared: 0 };
+  }
+
+  const { data, error } = await admin
+    .from("fixtures").select("id").in("round_id", roundIds);
+  if (error) throw error;
+  return recomputeFixtures(admin, (data ?? []).map((f) => f.id as string));
+}
+
+/**
  * Un score exact écrit un événement — le fil social, les badges et les
  * notifications le liront (règle n° 8). Le recalcul étant rejouable, on ne
  * réécrit jamais un événement déjà présent : sinon rejouer une saison

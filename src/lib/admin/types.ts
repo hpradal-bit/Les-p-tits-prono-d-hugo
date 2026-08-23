@@ -19,6 +19,10 @@ export const ADMIN_ACTIONS = {
   "fixture.status_forced": "Statut forcé",
 
   "ruleset.version_created": "Nouvelle version du barème",
+  "ruleset.points_changed": "Barème de points modifié",
+  "ruleset.lock_changed": "Délai de verrouillage modifié",
+  "ruleset.exact_score_changed": "Quota de scores exacts modifié",
+  "ruleset.margin_bucket_changed": "Tranche d'écart modifiée",
   "settings.updated": "Réglage modifié",
   "group.invite_code_changed": "Code d'invitation modifié",
 
@@ -46,6 +50,7 @@ export type AdminEntity =
   | "app_setting"
   | "group"
   | "profile"
+  | "margin_bucket"
   | "point_adjustment";
 
 export const ENTITY_LABELS: Record<AdminEntity, string> = {
@@ -55,6 +60,7 @@ export const ENTITY_LABELS: Record<AdminEntity, string> = {
   app_setting: "Réglage",
   group: "Groupe",
   profile: "Joueur",
+  margin_bucket: "Tranche d'écart",
   point_adjustment: "Ajustement",
 };
 
@@ -95,6 +101,15 @@ export const FIELD_LABELS: Record<string, string> = {
   predictions_changed: "Pronostics modifiés",
   ruleset_version: "Version du barème",
   locks_recomputed: "Verrouillages recalculés",
+  fixtures_retimed: "Matchs reprogrammés",
+  minutes_before_kickoff: "Minutes avant le coup d'envoi",
+  quota: "Quota",
+  period: "Période",
+  min_points: "Écart minimum",
+  max_points: "Écart maximum",
+  wrong: "Mauvais vainqueur",
+  winner: "Bon vainqueur",
+  winner_and_margin: "Vainqueur + tranche",
   players: "Joueurs",
   round: "Journée",
   fixture: "Match",
