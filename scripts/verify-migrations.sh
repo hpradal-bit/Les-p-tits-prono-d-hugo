@@ -32,7 +32,7 @@ create schema if not exists auth;
 create table auth.users (id uuid primary key default gen_random_uuid(), email text);
 create or replace function auth.uid() returns uuid language sql stable
   as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
-create role authenticated;
+create role authenticated; create role anon; create role service_role;
 SQL
 
 for f in supabase/migrations/*.sql; do
