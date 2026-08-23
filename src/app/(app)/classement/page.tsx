@@ -142,7 +142,13 @@ export default async function ClassementPage({
   }
 
   return (
-    <PageShell title="Classement" subtitle={`Top 14 · Saison ${season.label}`}>
+    <PageShell
+      title="Le classement"
+      subtitle={
+        referenceRound ? `Après la ${referenceRound.name.toLowerCase()}` : `Top 14 · ${season.label}`
+      }
+      banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
+    >
       <div className="flex flex-col gap-3">
         <Segmented options={viewOptions} current={query.vue} label="Type de classement" />
         <Segmented options={reachOptions} current={query.portee} label="Portée du classement" />
@@ -185,7 +191,6 @@ export default async function ClassementPage({
         </Card>
       ) : (
         <>
-          <Podium rows={table.rows} />
           <StandingsList rows={table.rows} viewerId={user?.id ?? null} />
           <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
             {query.vue === "general" && countedRounds.length > 0 &&
@@ -225,19 +230,27 @@ function roundNumber(
 function PageShell({
   title,
   subtitle,
+  banner,
   children,
 }: {
   title: string;
   subtitle: string;
+  /** Le podium vit dans le bandeau, comme sur la maquette. */
+  banner?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-1">
-        <Label>{subtitle}</Label>
-        <h1 className="font-display text-3xl tracking-tight text-ink">{title}</h1>
+    <div className="-mx-4 flex flex-col">
+      <header className="flex flex-col gap-2.5 bg-sage px-6 pb-4 pt-3 text-surface">
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-surface/70">
+            {subtitle}
+          </span>
+          <h1 className="font-display text-[30px] leading-none">{title}</h1>
+        </div>
+        {banner}
       </header>
-      {children}
+      <div className="flex flex-col gap-3.5 px-4 pt-4">{children}</div>
     </div>
   );
 }

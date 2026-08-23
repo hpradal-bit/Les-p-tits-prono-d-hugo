@@ -5,39 +5,41 @@
 
 import { cn } from "@/lib/cn";
 import { PlayerAvatar } from "../../_components/player-avatar";
-import { Movement } from "./bits";
 import type { StandingsRow } from "@/lib/standings/engine";
 
-const MEDALS = ["🥇", "🥈", "🥉"];
+const MEDALS = ["👑", "", ""];
 
 function Step({ row, rank }: { row: StandingsRow; rank: number }) {
-  const heights = ["h-24", "h-16", "h-12"];
+  // Marches de la maquette : 46 / 30 / 22 px, le premier dominant nettement.
+  const heights = ["h-[46px]", "h-[30px]", "h-[22px]"];
+  const widths = ["w-[72px]", "w-[64px]", "w-[60px]"];
   const isFirst = rank === 0;
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-      <span className="text-xl" aria-hidden>
-        {MEDALS[rank]}
-      </span>
+    <div className="flex min-w-0 flex-col items-center justify-end gap-1.5">
+      {MEDALS[rank] && (
+        <span className="text-[15px]" aria-hidden>
+          {MEDALS[rank]}
+        </span>
+      )}
       <PlayerAvatar
         player={row.player}
         size={isFirst ? 60 : 46}
-        className={cn(isFirst && "ring-2 ring-clay")}
+        className={cn(isFirst && "ring-2 ring-clay-soft")}
       />
-      <p className="max-w-full truncate text-center text-sm font-semibold text-ink">
+      <p className={cn(
+        "max-w-full truncate text-center font-semibold text-surface",
+        isFirst ? "text-[13px] font-bold" : "text-[12px]",
+      )}>
         {row.player.firstName}
       </p>
-      <Movement value={row.movement} />
       <div
         className={cn(
-          "flex w-full flex-col items-center justify-center rounded-t-[12px] border border-b-0 border-line",
-          isFirst ? "bg-clay-soft" : "bg-surface-sunk",
-          heights[rank],
+          "flex flex-col items-center justify-start rounded-t-[12px] pt-1 font-bold text-surface",
+          isFirst ? "bg-clay" : "bg-sage-soft/25",
+          heights[rank], widths[rank],
         )}
       >
-        <span className="tabular font-mono text-lg font-bold text-ink">{row.points}</span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-          {Math.abs(row.points) > 1 ? "pts" : "pt"}
-        </span>
+        <span className="tabular text-[15px] leading-none">{row.points}</span>
       </div>
     </div>
   );
@@ -49,10 +51,7 @@ export function Podium({ rows }: { rows: StandingsRow[] }) {
   const [first, second, third] = top3;
 
   return (
-    <section
-      aria-label="Podium"
-      className="flex items-end gap-3 rounded-[var(--radius-card)] border border-line bg-surface px-4 pt-5 shadow-[var(--shadow-card)]"
-    >
+    <section aria-label="Podium" className="flex items-end justify-center gap-3.5">
       <Step row={second} rank={1} />
       <Step row={first} rank={0} />
       <Step row={third} rank={2} />
