@@ -207,7 +207,7 @@ export default async function ClassementPage({
 
       <Link
         href="/classement/top14"
-        className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 text-sm font-semibold text-pine shadow-[var(--shadow-card)] transition hover:bg-surface-sunk"
+        className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 text-sm font-semibold text-clay shadow-[var(--shadow-card)] transition hover:bg-surface-sunk"
       >
         Voir le classement réel du Top 14 →
       </Link>
@@ -235,7 +235,7 @@ function PageShell({
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
         <Label>{subtitle}</Label>
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-3xl tracking-tight text-ink">{title}</h1>
       </header>
       {children}
     </div>

@@ -26,7 +26,7 @@ export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
             className={cn(
               "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
               fixture.status === "official"
-                ? "bg-pine-soft text-pine"
+                ? "bg-clay-soft text-clay"
                 : "bg-surface-sunk text-ink-muted",
             )}
           >
@@ -61,7 +61,7 @@ export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
           {formatKickoff(fixture.kickoffAt)}
         </p>
         {!fixture.kickoffConfirmed && (
-          <p className="font-mono text-[11px] text-leather">
+          <p className="font-mono text-[11px] text-sage">
             ⚠️ Horaire provisoire : la LNR n&apos;a pas encore publié le jour et l&apos;heure.
           </p>
         )}

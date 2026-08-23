@@ -54,7 +54,7 @@ export default async function JourneePage({
           </nav>
         </div>
 
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">
+        <h1 className="font-display text-3xl tracking-tight text-ink">
           {round.name}
         </h1>
         {date && <p className="text-[13px] text-ink-muted">{date}</p>}
@@ -62,7 +62,7 @@ export default async function JourneePage({
 
       {/* --- Horaires provisoires : le dire, franchement ----------------------- */}
       {board.hasProvisionalKickoffs && (
-        <Card className="border-leather/40 bg-leather-soft p-3">
+        <Card className="border-sage/40 bg-sage-soft p-3">
           <p className="text-[13px] leading-relaxed text-ink">
             <span aria-hidden>⏱️</span>{" "}
             <span className="font-semibold">Horaires provisoires.</span> La LNR n&apos;a

@@ -7,7 +7,7 @@ import type { PlayerProfile } from "@/lib/stats/profile";
 function Stat({ value, label }: { value: string | number; label: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="tabular font-display text-2xl font-bold leading-none text-ink">
+      <span className="tabular font-display text-2xl leading-none text-ink">
         {value}
       </span>
       <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-faint">
@@ -37,7 +37,7 @@ export function ProfileView({
       <Card className="flex items-center gap-4 p-5">
         <PlayerAvatar player={profile.player} size={64} />
         <div className="min-w-0">
-          <h1 className="truncate font-display text-2xl font-extrabold tracking-tight text-ink">
+          <h1 className="truncate font-display text-2xl tracking-tight text-ink">
             {profile.player.displayName}
           </h1>
           <p className="font-mono text-[12px] text-ink-muted">

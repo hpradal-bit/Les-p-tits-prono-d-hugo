@@ -15,7 +15,7 @@ export default async function ConnexionPage({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">
+        <h1 className="font-display text-3xl tracking-tight text-ink">
           Content de te revoir
         </h1>
         <p className="text-ink-muted">La J1, c&apos;est le samedi 5 septembre 2026.</p>
@@ -40,7 +40,7 @@ export default async function ConnexionPage({
         </Link>
         <p className="text-ink-muted">
           Tu as un code d&apos;invitation ?{" "}
-          <Link href="/inscription" className="font-semibold text-pine underline">
+          <Link href="/inscription" className="font-semibold text-clay underline">
             Créer un compte
           </Link>
         </p>

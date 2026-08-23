@@ -1,140 +1,187 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   LES P'TITS PRONOS D'HUGO — Design system
+   LES P'TITS PRONOS D'HUGO — Design system « Cuir & craie »
    --------------------------------------------------------------------------
-   Direction : sport premium × réseau social privé. Jamais « casino ».
-   Les trois couleurs de résultat (raté / bon vainqueur / parfait) sont
-   modifiables depuis l'espace admin : elles sont injectées à l'exécution
-   par-dessus les valeurs par défaut définies ici.
+   Transposition fidèle de la maquette Claude Design (design system Organic).
+   Les valeurs viennent du fichier source, elles ne sont pas approximées :
+   craie (#f5ead8), terracotta (#c67139), sauge (#7a8a5e), titres Caprasimo.
+
+   Les couleurs des quatre niveaux de score viennent elles aussi de la
+   maquette, écran « Les règles » : neutre pour un raté, sauge pour un bon
+   vainqueur, terracotta pour un score exact. Elles portent une information,
+   pas une décoration — un joueur doit lire son résultat sans lire le texte.
    ========================================================================== */
 
 :root {
-  /* --- Fonds et texte --------------------------------------------------- */
-  --ground:        #F2F4F0;   /* craie, très légère dominante verte */
-  --surface:       #FFFFFF;
-  --surface-sunk:  #EAEEE7;
-  --ink:           #101A14;
-  --ink-muted:     #56685C;
-  --ink-faint:     #83978A;
-  --line:          #D9E0D6;
-  --line-strong:   #BCC7B8;
+  /* --- Rampe neutre (chaude) -------------------------------------------- */
+  --neutral-100: #f9f4ed;
+  --neutral-200: #eee7db;
+  --neutral-300: #dcd3c4;
+  --neutral-400: #c0b6a5;
+  --neutral-500: #a19786;
+  --neutral-600: #82796a;
+  --neutral-700: #645c50;
+  --neutral-800: #474238;
+  --neutral-900: #2e2b25;
 
-  /* --- Identité --------------------------------------------------------- */
-  --pine:          #14663F;   /* vert terrain : couleur de marque */
-  --pine-soft:     #E1EEE6;
-  --leather:       #A66B22;   /* cuir de ballon : accent secondaire */
-  --leather-soft:  #F6EBDA;
+  /* --- Terracotta : l'accent principal ---------------------------------- */
+  --clay-100: #fff2eb;
+  --clay-200: #ffe1d0;
+  --clay-300: #ffc6a5;
+  --clay-400: #f6a06b;
+  --clay-500: #d67f48;
+  --clay-600: #b2622d;
+  --clay-700: #8c491a;
+  --clay-800: #643312;
+  --clay-900: #402310;
 
-  /* --- Code couleur du jeu (configurable en admin) ---------------------- */
-  --result-wrong:      #C0392B;   /* 🔴 mauvais pronostic */
-  --result-wrong-soft: #F8E6E3;
-  --result-winner:     #2E7D52;   /* 🟢 bon vainqueur */
-  --result-winner-soft:#E2F1E8;
-  --result-perfect:    #B08214;   /* 👌 score exact */
-  --result-perfect-soft:#F9F0D8;
+  /* --- Sauge : le second accent ----------------------------------------- */
+  --sage-100: #f0fae1;
+  --sage-200: #e1eecc;
+  --sage-300: #ccdbb2;
+  --sage-400: #aebf92;
+  --sage-500: #8fa073;
+  --sage-600: #728157;
+  --sage-700: #56633f;
+  --sage-800: #3d472b;
+  --sage-900: #272e1b;
 
-  /* --- État live -------------------------------------------------------- */
-  --live:          #D6453C;
-  --live-soft:     #FBE7E5;
+  /* --- Fonds et texte ---------------------------------------------------- */
+  --ground:       #f5ead8;   /* la craie */
+  --surface:      #f9f4ed;   /* les cartes, plus claires que la page */
+  --surface-sunk: #ebddc5;   /* les zones en creux */
+  --ink:          #201e1d;
+  --ink-muted:    #645c50;
+  --ink-faint:    #82796a;
+  --line:         #dcd3c4;
+  --line-strong:  #c0b6a5;
 
-  /* --- Élévation -------------------------------------------------------- */
-  --shadow-card:   0 1px 2px rgb(16 26 20 / 0.05), 0 8px 24px -18px rgb(16 26 20 / 0.35);
-  --shadow-lift:   0 2px 6px rgb(16 26 20 / 0.08), 0 16px 40px -24px rgb(16 26 20 / 0.45);
+  /* --- Accents ----------------------------------------------------------- */
+  --clay:      #c67139;
+  --clay-soft: #ffe1d0;
+  --sage:      #7a8a5e;
+  --sage-soft: #e1eecc;
 
-  /* --- Rayons ----------------------------------------------------------- */
-  --radius-card:   14px;
-  --radius-pill:   999px;
+  /* --- Code couleur du jeu (configurable en admin) ------------------------ */
+  --result-wrong:       #645c50;   /* raté : neutre, on n'accable personne */
+  --result-wrong-soft:  #eee7db;
+  --result-winner:      #56633f;   /* bon vainqueur : sauge */
+  --result-winner-soft: #e1eecc;
+  --result-perfect:     #8c491a;   /* score exact : terracotta */
+  --result-perfect-soft:#ffe1d0;
+
+  /* --- État live ---------------------------------------------------------- */
+  --live:      #b2622d;
+  --live-soft: #ffe1d0;
+
+  /* --- Élévation et formes ------------------------------------------------ */
+  --shadow-card: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent),
+                 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lift: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+
+  --radius-sm:   8px;
+  --radius-card: 16px;
+  --radius-lg:   28px;
+  --radius-pill: 999px;
 }
 
+/* --------------------------------------------------------------------------
+   Thème sombre — dérivé des rampes de la maquette, qui n'en prévoyait pas.
+   L'application se consulte le samedi à 21 h, un écran crème plein phare
+   n'est pas tenable. Aucune couleur inventée : uniquement d'autres nuances
+   des mêmes rampes.
+   -------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground:        #0C110E;
-    --surface:       #141B17;
-    --surface-sunk:  #101713;
-    --ink:           #E7EEE8;
-    --ink-muted:     #94A499;
-    --ink-faint:     #6D7D73;
-    --line:          #242F28;
-    --line-strong:   #35443A;
+    --ground:       #1b1916;
+    --surface:      #2e2b25;
+    --surface-sunk: #201e1d;
+    --ink:          #f9f4ed;
+    --ink-muted:    #c0b6a5;
+    --ink-faint:    #a19786;
+    --line:         #474238;
+    --line-strong:  #645c50;
 
-    --pine:          #4FB183;
-    --pine-soft:     #112620;
-    --leather:       #D3A25C;
-    --leather-soft:  #241B0F;
+    --clay:      #f6a06b;
+    --clay-soft: #402310;
+    --sage:      #aebf92;
+    --sage-soft: #272e1b;
 
-    --result-wrong:      #E5817A;
-    --result-wrong-soft: #2A1614;
-    --result-winner:     #5FC392;
-    --result-winner-soft:#12241A;
-    --result-perfect:    #E3C15C;
-    --result-perfect-soft:#241E0D;
+    --result-wrong:       #c0b6a5;
+    --result-wrong-soft:  #474238;
+    --result-winner:      #ccdbb2;
+    --result-winner-soft: #272e1b;
+    --result-perfect:     #ffc6a5;
+    --result-perfect-soft:#402310;
 
-    --live:          #F0736A;
-    --live-soft:     #2B1512;
+    --live:      #f6a06b;
+    --live-soft: #402310;
 
-    --shadow-card:   0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
-    --shadow-lift:   0 2px 8px rgb(0 0 0 / 0.5), 0 20px 50px -28px rgb(0 0 0 / 0.95);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
+    --shadow-lift: 0 20px 50px -28px rgb(0 0 0 / 0.95);
   }
 }
 
 :root[data-theme="dark"] {
-  --ground:        #0C110E;
-  --surface:       #141B17;
-  --surface-sunk:  #101713;
-  --ink:           #E7EEE8;
-  --ink-muted:     #94A499;
-  --ink-faint:     #6D7D73;
-  --line:          #242F28;
-  --line-strong:   #35443A;
-  --pine:          #4FB183;
-  --pine-soft:     #112620;
-  --leather:       #D3A25C;
-  --leather-soft:  #241B0F;
-  --result-wrong:      #E5817A;
-  --result-wrong-soft: #2A1614;
-  --result-winner:     #5FC392;
-  --result-winner-soft:#12241A;
-  --result-perfect:    #E3C15C;
-  --result-perfect-soft:#241E0D;
-  --live:          #F0736A;
-  --live-soft:     #2B1512;
-  --shadow-card:   0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
-  --shadow-lift:   0 2px 8px rgb(0 0 0 / 0.5), 0 20px 50px -28px rgb(0 0 0 / 0.95);
+  --ground:       #1b1916;
+  --surface:      #2e2b25;
+  --surface-sunk: #201e1d;
+  --ink:          #f9f4ed;
+  --ink-muted:    #c0b6a5;
+  --ink-faint:    #a19786;
+  --line:         #474238;
+  --line-strong:  #645c50;
+  --clay:      #f6a06b;
+  --clay-soft: #402310;
+  --sage:      #aebf92;
+  --sage-soft: #272e1b;
+  --result-wrong:       #c0b6a5;
+  --result-wrong-soft:  #474238;
+  --result-winner:      #ccdbb2;
+  --result-winner-soft: #272e1b;
+  --result-perfect:     #ffc6a5;
+  --result-perfect-soft:#402310;
+  --live:      #f6a06b;
+  --live-soft: #402310;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -20px rgb(0 0 0 / 0.85);
+  --shadow-lift: 0 20px 50px -28px rgb(0 0 0 / 0.95);
 }
 
 /* --------------------------------------------------------------------------
-   Exposition des jetons à Tailwind (bg-surface, text-ink, border-line…)
+   Exposition à Tailwind : bg-surface, text-ink, text-clay, bg-sage-soft…
    -------------------------------------------------------------------------- */
 @theme inline {
-  --color-ground:         var(--ground);
-  --color-surface:        var(--surface);
-  --color-surface-sunk:   var(--surface-sunk);
-  --color-ink:            var(--ink);
-  --color-ink-muted:      var(--ink-muted);
-  --color-ink-faint:      var(--ink-faint);
-  --color-line:           var(--line);
-  --color-line-strong:    var(--line-strong);
-  --color-pine:           var(--pine);
-  --color-pine-soft:      var(--pine-soft);
-  --color-leather:        var(--leather);
-  --color-leather-soft:   var(--leather-soft);
-  --color-wrong:          var(--result-wrong);
-  --color-wrong-soft:     var(--result-wrong-soft);
-  --color-winner:         var(--result-winner);
-  --color-winner-soft:    var(--result-winner-soft);
-  --color-perfect:        var(--result-perfect);
-  --color-perfect-soft:   var(--result-perfect-soft);
-  --color-live:           var(--live);
-  --color-live-soft:      var(--live-soft);
+  --color-ground:       var(--ground);
+  --color-surface:      var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-ink:          var(--ink);
+  --color-ink-muted:    var(--ink-muted);
+  --color-ink-faint:    var(--ink-faint);
+  --color-line:         var(--line);
+  --color-line-strong:  var(--line-strong);
 
-  --font-display: var(--font-display), "Helvetica Neue", Arial, sans-serif;
+  --color-clay:      var(--clay);
+  --color-clay-soft: var(--clay-soft);
+  --color-sage:      var(--sage);
+  --color-sage-soft: var(--sage-soft);
+
+  --color-wrong:        var(--result-wrong);
+  --color-wrong-soft:   var(--result-wrong-soft);
+  --color-winner:       var(--result-winner);
+  --color-winner-soft:  var(--result-winner-soft);
+  --color-perfect:      var(--result-perfect);
+  --color-perfect-soft: var(--result-perfect-soft);
+  --color-live:         var(--live);
+  --color-live-soft:    var(--live-soft);
+
+  --font-display: var(--font-display), Georgia, serif;
   --font-sans:    var(--font-sans-body), system-ui, sans-serif;
   --font-mono:    var(--font-mono-data), ui-monospace, monospace;
 
-  --radius-card:  var(--radius-card);
-  --shadow-card:  var(--shadow-card);
-  --shadow-lift:  var(--shadow-lift);
+  --radius-card: var(--radius-card);
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
 }
 
 /* --------------------------------------------------------------------------
@@ -142,7 +189,6 @@
    -------------------------------------------------------------------------- */
 html {
   -webkit-text-size-adjust: 100%;
-  /* L'app est une PWA : pas de rebond élastique sur le fond. */
   overscroll-behavior-y: none;
 }
 
@@ -151,18 +197,22 @@ body {
   color: var(--ink);
   font-family: var(--font-sans-body), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Encoches et barre gestuelle iOS */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Caprasimo n'a qu'une graisse : on ne lui demande pas de gras synthétique. */
+h1, h2, h3, .font-display {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
 :focus-visible {
-  outline: 2px solid var(--pine);
+  outline: 2px solid var(--clay);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* Les chiffres s'alignent partout : scores, points, classements. */
 .tabular { font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {

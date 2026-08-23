@@ -59,7 +59,7 @@ export function Input({
       className={cn(
         "w-full rounded-xl border bg-surface px-3.5 py-2.5 text-[15px] text-ink",
         "placeholder:text-ink-faint",
-        "transition focus:outline-none focus-visible:border-pine",
+        "transition focus:outline-none focus-visible:border-clay",
         invalid ? "border-wrong" : "border-line",
         className,
       )}

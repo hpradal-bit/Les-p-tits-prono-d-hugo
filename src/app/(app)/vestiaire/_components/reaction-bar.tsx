@@ -31,7 +31,7 @@ export function ReactionBar({
             className={cn(
               "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] transition",
               r.mine
-                ? "border-pine bg-pine-soft text-pine"
+                ? "border-clay bg-clay-soft text-clay"
                 : "border-line bg-surface text-ink-muted hover:bg-surface-sunk",
               r.count === 0 && "opacity-45 hover:opacity-100",
             )}

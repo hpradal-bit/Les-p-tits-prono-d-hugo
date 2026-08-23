@@ -10,11 +10,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <header className="flex flex-col gap-2">
         <Link
           href="/"
-          className="font-mono text-[11px] uppercase tracking-[0.18em] text-pine"
+          className="font-mono text-[11px] uppercase tracking-[0.18em] text-clay"
         >
           Top 14 · Saison 2026/2027
         </Link>
-        <p className="font-display text-2xl font-extrabold leading-tight tracking-tight text-ink">
+        <p className="font-display text-2xl leading-tight tracking-tight text-ink">
           Les p&apos;tits pronos d&apos;Hugo
         </p>
       </header>

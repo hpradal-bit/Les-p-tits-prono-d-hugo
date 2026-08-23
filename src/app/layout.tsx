@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Figtree, IBM_Plex_Mono } from "next/font/google";
+import { Caprasimo, Figtree, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
+// Caprasimo : la police de titres de la maquette « Cuir & craie ».
+// Une seule graisse, c'est voulu — le caractère vient de la forme, pas du gras.
+const display = Caprasimo({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["600", "700", "800"],
+  weight: "400",
 });
 
 const body = Figtree({
@@ -37,8 +39,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F2F4F0" },
-    { media: "(prefers-color-scheme: dark)", color: "#0C110E" },
+    { media: "(prefers-color-scheme: light)", color: "#f5ead8" },
+    { media: "(prefers-color-scheme: dark)", color: "#1b1916" },
   ],
   width: "device-width",
   initialScale: 1,

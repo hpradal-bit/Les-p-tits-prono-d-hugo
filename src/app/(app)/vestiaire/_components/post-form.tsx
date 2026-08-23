@@ -21,7 +21,7 @@ export function PostForm() {
         required
         maxLength={500}
         placeholder="Balance ton chambrage…"
-        className="w-full resize-none rounded-[var(--radius-card)] border border-line bg-surface px-3.5 py-3 text-[15px] text-ink placeholder:text-ink-faint focus-visible:border-pine"
+        className="w-full resize-none rounded-[var(--radius-card)] border border-line bg-surface px-3.5 py-3 text-[15px] text-ink placeholder:text-ink-faint focus-visible:border-clay"
       />
       <div className="flex items-center justify-between gap-3">
         <p

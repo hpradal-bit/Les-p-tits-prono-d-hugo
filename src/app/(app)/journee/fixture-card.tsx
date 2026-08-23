@@ -156,7 +156,7 @@ export function FixtureCard({
       className={cn(
         "overflow-hidden transition",
         locked && "opacity-80",
-        !locked && played && "border-pine/35",
+        !locked && played && "border-clay/35",
         error && "border-wrong",
       )}
     >
@@ -166,7 +166,7 @@ export function FixtureCard({
           {formatKickoff(fixture.kickoffAt, timeZone)}
           {!fixture.kickoffConfirmed && (
             <span
-              className="ml-1.5 text-leather"
+              className="ml-1.5 text-sage"
               title="Horaire provisoire : la LNR n'a pas encore publié le jour et l'heure."
             >
               ~ provisoire
@@ -176,7 +176,7 @@ export function FixtureCard({
         <span
           className={cn(
             "tabular font-mono text-[11px]",
-            locked ? "text-ink-faint" : "text-pine",
+            locked ? "text-ink-faint" : "text-clay",
           )}
         >
           {locked ? "🔒 verrouillé" : lockSentence(fixture.locksAt, now)}
@@ -266,9 +266,9 @@ export function FixtureCard({
                     <span
                       className={cn(
                         "tabular block cursor-pointer rounded-full px-2.5 py-1 font-mono text-[12px] transition",
-                        "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-pine",
+                        "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-clay",
                         selected
-                          ? "bg-pine font-semibold text-white"
+                          ? "bg-clay font-semibold text-white"
                           : derived
                             ? "bg-perfect-soft text-perfect"
                             : "bg-surface-sunk text-ink-muted",
@@ -343,7 +343,7 @@ export function FixtureCard({
         </p>
       )}
       {exactIncomplete && (
-        <p className="border-t border-line/70 px-3 py-1 font-mono text-[10px] text-leather">
+        <p className="border-t border-line/70 px-3 py-1 font-mono text-[10px] text-sage">
           Score exact incomplet : saisis les deux scores, ou referme le bloc.
         </p>
       )}
@@ -426,12 +426,12 @@ function OutcomeButton({
         style={style}
         className={cn(
           "flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-2 py-2 transition",
-          "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-pine",
+          "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-clay",
           reversed && "flex-row-reverse",
           selected
             ? style
               ? "font-bold shadow-[var(--shadow-card)]"
-              : "bg-pine font-bold text-white"
+              : "bg-clay font-bold text-white"
             : "bg-surface-sunk text-ink-muted",
           disabled && "cursor-default",
         )}

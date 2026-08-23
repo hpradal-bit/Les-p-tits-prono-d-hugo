@@ -69,7 +69,7 @@ export function AvatarPicker({
             className={cn(
               "rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition",
               tab === t.id
-                ? "bg-pine text-white"
+                ? "bg-clay text-white"
                 : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk",
             )}
           >
@@ -97,7 +97,7 @@ export function AvatarPicker({
                   className={cn(
                     "flex aspect-square items-center justify-center rounded-xl border text-2xl transition",
                     active
-                      ? "border-pine bg-pine-soft"
+                      ? "border-clay bg-clay-soft"
                       : "border-line bg-surface hover:bg-surface-sunk",
                   )}
                 >
@@ -127,7 +127,7 @@ export function AvatarPicker({
                   className={cn(
                     "flex aspect-square items-center justify-center rounded-xl border p-2 transition",
                     active
-                      ? "border-pine bg-pine-soft"
+                      ? "border-clay bg-clay-soft"
                       : "border-line bg-surface hover:bg-surface-sunk",
                   )}
                 >

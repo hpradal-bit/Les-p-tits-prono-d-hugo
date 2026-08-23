@@ -27,7 +27,7 @@ export default async function MonComptePage({
       <div className="flex items-center gap-4">
         <Avatar kind={viewer.avatarKind} value={viewer.avatarValue} clubs={clubs} size={64} />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 className="truncate font-display text-2xl font-extrabold tracking-tight text-ink">
+          <h1 className="truncate font-display text-2xl tracking-tight text-ink">
             {viewer.displayName}
           </h1>
           <p className="truncate text-[14px] text-ink-muted">{viewer.email}</p>
@@ -67,7 +67,7 @@ export default async function MonComptePage({
         </p>
         <Link
           href="/mot-de-passe-oublie"
-          className="self-start text-[14px] font-semibold text-pine underline"
+          className="self-start text-[14px] font-semibold text-clay underline"
         >
           Changer mon mot de passe
         </Link>

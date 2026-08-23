@@ -8,7 +8,7 @@ import type { AdminFixture } from "@/lib/admin/queries";
 
 const input =
   "w-16 rounded-lg border border-line bg-surface px-2 py-2 text-center font-mono text-lg " +
-  "tabular text-ink focus-visible:border-pine";
+  "tabular text-ink focus-visible:border-clay";
 
 /** Saisie d'un résultat. Le filet de sécurité quand l'API ne répond plus. */
 export function ResultForm({ fixture }: { fixture: AdminFixture }) {

@@ -30,7 +30,7 @@ export default async function VestiairePage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-display text-2xl font-extrabold tracking-tight text-ink">
+        <h1 className="font-display text-2xl tracking-tight text-ink">
           Le Vestiaire
         </h1>
         <p className="text-[14px] text-ink-muted">
@@ -45,7 +45,7 @@ export default async function VestiairePage() {
       {items.length === 0 ? (
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <span className="text-3xl" aria-hidden>🏉</span>
-          <p className="font-display text-[17px] font-semibold text-ink">
+          <p className="font-display text-[17px] text-ink">
             Le vestiaire est encore vide
           </p>
           <p className="max-w-[36ch] text-[14px] text-ink-muted">

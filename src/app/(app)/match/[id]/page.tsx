@@ -42,7 +42,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
         <Label>Match Center</Label>
-        <h1 className="font-display text-2xl font-extrabold leading-tight tracking-tight text-ink">
+        <h1 className="font-display text-2xl leading-tight tracking-tight text-ink">
           {fixture.homeTeam.shortName} — {fixture.awayTeam.shortName}
         </h1>
       </header>

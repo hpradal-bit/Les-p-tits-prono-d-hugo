@@ -40,7 +40,7 @@ export function PlayerAvatar({
   return (
     <span
       aria-hidden
-      className={cn(shared, isClub ? "font-display font-bold" : "")}
+      className={cn(shared, isClub ? "font-display" : "")}
       style={{ width: size, height: size, fontSize: size * (isClub ? 0.34 : 0.5) }}
     >
       {isClub ? player.avatarValue.slice(0, 3).toUpperCase() : player.avatarValue || "🏉"}

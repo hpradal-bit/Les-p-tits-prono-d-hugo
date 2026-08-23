@@ -45,7 +45,7 @@ export function Button({ variant = "primary", size = "md", className, ...props }
         "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition",
         "disabled:cursor-not-allowed disabled:opacity-45",
         size === "md" ? "px-5 py-3 text-[15px]" : "px-3.5 py-1.5 text-[13px]",
-        variant === "primary" && "bg-pine text-white hover:brightness-110 active:brightness-95",
+        variant === "primary" && "bg-clay text-white hover:brightness-110 active:brightness-95",
         variant === "ghost" && "border border-line bg-surface text-ink hover:bg-surface-sunk",
         variant === "danger" && "bg-wrong text-white hover:brightness-110",
         className,
@@ -98,7 +98,7 @@ export function TeamLogo({ team, size = 32 }: { team: Team; size?: number }) {
   return (
     <span
       aria-label={team.name}
-      className="inline-flex items-center justify-center rounded-full font-display font-bold"
+      className="inline-flex items-center justify-center rounded-full font-display"
       style={{
         width: size,
         height: size,

@@ -45,7 +45,7 @@ export default async function ProfilJoueurPage({
                 {h2h.a.player.firstName}
               </span>
             </div>
-            <span className="tabular shrink-0 font-display text-lg font-bold text-ink">
+            <span className="tabular shrink-0 font-display text-lg text-ink">
               {h2h.duels.aWins} – {h2h.duels.bWins}
             </span>
             <div className="flex min-w-0 items-center justify-end gap-2">
@@ -67,7 +67,7 @@ export default async function ProfilJoueurPage({
               <li key={l.label} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                 <span
                   className={`tabular text-right font-mono text-[14px] ${
-                    l.leader === "a" ? "font-semibold text-pine" : "text-ink-muted"
+                    l.leader === "a" ? "font-semibold text-clay" : "text-ink-muted"
                   }`}
                 >
                   {l.aText}
@@ -77,7 +77,7 @@ export default async function ProfilJoueurPage({
                 </span>
                 <span
                   className={`tabular font-mono text-[14px] ${
-                    l.leader === "b" ? "font-semibold text-pine" : "text-ink-muted"
+                    l.leader === "b" ? "font-semibold text-clay" : "text-ink-muted"
                   }`}
                 >
                   {l.bText}

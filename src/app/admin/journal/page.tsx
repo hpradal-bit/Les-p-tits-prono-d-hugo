@@ -39,7 +39,7 @@ export default async function JournalPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="border-leather/40 bg-leather-soft p-4">
+      <Card className="border-sage/40 bg-sage-soft p-4">
         <p className="text-[14px] leading-relaxed text-ink">
           Chaque action d&apos;administration est écrite ici, avec sa raison, et ne
           peut plus être modifiée ni effacée — pas même par un administrateur.
@@ -58,7 +58,7 @@ export default async function JournalPage() {
             <li key={e.id}>
               <Card className="p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-display text-[15px] font-semibold text-ink">
+                  <p className="font-display text-[15px] text-ink">
                     {actionLabel(e.action)}
                   </p>
                   <p className="font-mono text-[11px] text-ink-faint">{formatDate(e.createdAt)}</p>

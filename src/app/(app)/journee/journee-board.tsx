@@ -157,8 +157,8 @@ export function JourneeBoard({ board }: { board: JourneyBoard }) {
         <div className="flex items-baseline justify-between gap-3">
           <p
             className={cn(
-              "font-display text-[15px] font-bold",
-              allPlayed ? "text-pine" : "text-ink",
+              "font-display text-[15px]",
+              allPlayed ? "text-clay" : "text-ink",
             )}
           >
             {openFixtures.length === 0
@@ -235,7 +235,7 @@ export function JourneeBoard({ board }: { board: JourneyBoard }) {
                 <p
                   className={cn(
                     "truncate font-mono text-[11px]",
-                    incomplete.length > 0 ? "text-leather" : "text-ink-faint",
+                    incomplete.length > 0 ? "text-sage" : "text-ink-faint",
                   )}
                 >
                   {incomplete.length > 0

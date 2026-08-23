@@ -21,7 +21,7 @@ function Step({ row, rank }: { row: StandingsRow; rank: number }) {
       <PlayerAvatar
         player={row.player}
         size={isFirst ? 60 : 46}
-        className={cn(isFirst && "ring-2 ring-pine")}
+        className={cn(isFirst && "ring-2 ring-clay")}
       />
       <p className="max-w-full truncate text-center text-sm font-semibold text-ink">
         {row.player.firstName}
@@ -30,7 +30,7 @@ function Step({ row, rank }: { row: StandingsRow; rank: number }) {
       <div
         className={cn(
           "flex w-full flex-col items-center justify-center rounded-t-[12px] border border-b-0 border-line",
-          isFirst ? "bg-pine-soft" : "bg-surface-sunk",
+          isFirst ? "bg-clay-soft" : "bg-surface-sunk",
           heights[rank],
         )}
       >

@@ -138,13 +138,13 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex flex-col items-center gap-1 px-1 pb-2 pt-2.5 text-center transition",
-                  active ? "text-pine" : "text-ink-faint hover:text-ink-muted",
+                  active ? "text-clay" : "text-ink-faint hover:text-ink-muted",
                 )}
               >
                 <span
                   className={cn(
                     "flex h-7 w-12 items-center justify-center rounded-full transition",
-                    active && "bg-pine-soft",
+                    active && "bg-clay-soft",
                   )}
                 >
                   <Icon className="size-[22px]" />

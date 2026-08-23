@@ -18,10 +18,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-4 pb-28 pt-8">
       <header className="flex flex-col gap-3">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-leather">
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-sage">
           Administration
         </p>
-        <h1 className="font-display text-2xl font-extrabold tracking-tight text-ink">
+        <h1 className="font-display text-2xl tracking-tight text-ink">
           Les commandes
         </h1>
         <nav className="flex gap-2">

@@ -71,7 +71,7 @@ export function RoundPicker({
           ‹
         </span>
       )}
-      <p className="font-display text-lg font-bold text-ink">{name}</p>
+      <p className="font-display text-lg text-ink">{name}</p>
       {nextHref ? (
         <Link href={nextHref} className={arrow} aria-label="Journée suivante">
           ›

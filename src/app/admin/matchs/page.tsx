@@ -45,7 +45,7 @@ export default async function AdminMatchsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="border-leather/40 bg-leather-soft p-4">
+      <Card className="border-sage/40 bg-sage-soft p-4">
         <p className="text-[14px] leading-relaxed text-ink">
           La saisie manuelle est le filet de sécurité : si la synchronisation
           tombe un samedi soir, sept scores tapés ici suffisent à faire tomber
@@ -61,7 +61,7 @@ export default async function AdminMatchsPage({
             href={`/admin/matchs?j=${r.number}`}
             className={`rounded-full px-3 py-1 font-mono text-[12px] font-semibold ${
               r.id === current.id
-                ? "bg-pine text-white"
+                ? "bg-clay text-white"
                 : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
             }`}
           >
@@ -72,7 +72,7 @@ export default async function AdminMatchsPage({
 
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-bold text-ink">{current.name}</h2>
+          <h2 className="font-display text-xl text-ink">{current.name}</h2>
           <Label>
             {withResult} / {fixtures.length} résultats saisis
           </Label>
@@ -88,7 +88,7 @@ export default async function AdminMatchsPage({
                 <p className="font-mono text-[12px] text-ink-muted">
                   {formatKickoff(f.kickoffAt)}
                   {!f.kickoffConfirmed && (
-                    <span className="text-leather"> · horaire provisoire</span>
+                    <span className="text-sage"> · horaire provisoire</span>
                   )}
                 </p>
                 <p className="font-mono text-[11px] text-ink-faint">

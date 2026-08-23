@@ -16,7 +16,7 @@ export default async function NouveauMotDePassePage() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">
+        <h1 className="font-display text-3xl tracking-tight text-ink">
           Nouveau mot de passe
         </h1>
         <p className="text-ink-muted">
@@ -32,7 +32,7 @@ export default async function NouveauMotDePassePage() {
         </Card>
       ) : (
         <p className="text-center text-[14px] text-ink-muted">
-          <Link href="/mot-de-passe-oublie" className="font-semibold text-pine underline">
+          <Link href="/mot-de-passe-oublie" className="font-semibold text-clay underline">
             Recevoir un nouveau lien
           </Link>
         </p>

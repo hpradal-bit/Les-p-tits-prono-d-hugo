@@ -20,14 +20,14 @@ export function PredictionRow({
   isViewer: boolean;
 }) {
   return (
-    <li className={cn("flex gap-3 px-3 py-3 sm:px-4", isViewer && "bg-pine-soft/60")}>
+    <li className={cn("flex gap-3 px-3 py-3 sm:px-4", isViewer && "bg-clay-soft/60")}>
       <PlayerAvatar player={prediction.player} size={38} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="truncate text-[15px] font-semibold text-ink">
             {prediction.player.firstName}
             {isViewer && (
-              <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-pine">
+              <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-clay">
                 toi
               </span>
             )}
@@ -52,7 +52,7 @@ export function PredictionRow({
         )}
 
         {prediction.isAuto && (
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-leather">
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sage">
             😴 pronostic automatique
           </p>
         )}

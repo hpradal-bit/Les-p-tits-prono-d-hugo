@@ -34,13 +34,13 @@ export function StandingsList({
               key={row.player.userId}
               className={cn(
                 "flex items-center gap-3 px-3 py-3 sm:px-4",
-                isViewer && "bg-pine-soft/60",
+                isViewer && "bg-clay-soft/60",
               )}
             >
               <span
                 className={cn(
                   "tabular w-6 shrink-0 text-center font-mono text-sm font-semibold",
-                  row.position <= 3 ? "text-pine" : "text-ink-faint",
+                  row.position <= 3 ? "text-clay" : "text-ink-faint",
                 )}
                 aria-label={`Position ${row.position}`}
               >
@@ -53,7 +53,7 @@ export function StandingsList({
                 <p className="truncate text-[15px] font-semibold text-ink">
                   {row.player.firstName}
                   {isViewer && (
-                    <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-pine">
+                    <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-clay">
                       toi
                     </span>
                   )}
