@@ -140,6 +140,17 @@ export function ProfileView({
           </ul>
         </Card>
       )}
+
+      {isMe && (
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/reglages"
+            className="rounded-full border border-line-strong py-3.5 text-center text-[15px] font-bold text-ink"
+          >
+            Réglages et notifications
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
