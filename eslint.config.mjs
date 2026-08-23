@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Copies de travail des chantiers menés en parallèle : ce n'est pas
+    // le code du projet, et elles embarquent leurs propres dépendances.
+    ".claude/**",
   ]),
 ]);
 

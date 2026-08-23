@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * Les p'tits pronos d'Hugo — service worker.
  * ---------------------------------------------------------------------------
