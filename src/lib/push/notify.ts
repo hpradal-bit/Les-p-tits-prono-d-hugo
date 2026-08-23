@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSettings, setting } from "@/lib/settings";
 import { sendToUser, type PushPayload } from "./send";
-import { scheduleFor, dayKey } from "./schedule";
+import { scheduleForAll, dayKey, type QuietHours } from "./schedule";
 import { readRules } from "./rules";
 
 /**
@@ -41,8 +41,8 @@ interface Prefs {
   /** L'interrupteur général du groupe, réglé depuis l'espace admin. */
   groupEnabled: boolean;
   pushEnabled: boolean;
-  quietFrom: string;
-  quietTo: string;
+  /** Celles du groupe, puis celles du joueur : toutes s'appliquent. */
+  quiet: QuietHours[];
   timeZone: string;
   maxPerDay: number;
   wiredKinds: Set<string>;
@@ -61,13 +61,20 @@ async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> 
   type CatalogEntry = { kind: string; wired?: boolean };
   const catalog = setting<CatalogEntry[]>(settings, "notifications.types", []);
 
-  // Les heures de silence du joueur l'emportent sur celles du groupe : le
-  // réglage général est un défaut, pas une contrainte.
+  // Les heures du groupe sont un plancher, pas un défaut : les siennes
+  // s'ajoutent aux leurs. Un joueur peut se faire plus silencieux — vider ses
+  // heures ne doit pas le rendre plus bruyant que le groupe ne l'autorise.
+  const quiet: QuietHours[] = [
+    { from: rules.quietFrom, to: rules.quietTo, timeZone: rules.timeZone },
+  ];
+  if (own?.quiet_from && own?.quiet_to) {
+    quiet.push({ from: own.quiet_from, to: own.quiet_to, timeZone: rules.timeZone });
+  }
+
   return {
     groupEnabled: rules.enabled,
     pushEnabled: own?.push_enabled ?? true,
-    quietFrom: own?.quiet_from ?? rules.quietFrom,
-    quietTo: own?.quiet_to ?? rules.quietTo,
+    quiet,
     timeZone: rules.timeZone,
     maxPerDay: rules.maxPerDay,
     wiredKinds: new Set(catalog.filter((c) => c.wired).map((c) => c.kind)),
@@ -116,9 +123,7 @@ export async function enqueue(
     if ((count ?? 0) >= prefs.maxPerDay) return "capped";
   }
 
-  const scheduled = scheduleFor(now, {
-    from: prefs.quietFrom, to: prefs.quietTo, timeZone: prefs.timeZone,
-  });
+  const scheduled = scheduleForAll(now, prefs.quiet);
 
   const { error } = await admin.from("notifications").insert({
     user_id: request.userId,

@@ -64,6 +64,36 @@ export function scheduleFor(wanted: Date, quiet: QuietHours): Date {
   return new Date(wanted.getTime() + delta * 60_000);
 }
 
+/**
+ * L'instant d'envoi qui respecte **toutes** les plages de silence à la fois.
+ *
+ * Les heures du groupe sont un plancher, pas un défaut : un joueur peut se
+ * faire plus silencieux, jamais plus bruyant. On reporte donc tant qu'une
+ * seule des plages est en silence, au lieu de laisser la plage du joueur
+ * remplacer celle du groupe.
+ */
+export function scheduleForAll(wanted: Date, quiets: QuietHours[]): Date {
+  const windows = quiets.filter(
+    (q) => toMinutes(q.from) !== null && toMinutes(q.to) !== null,
+  );
+  if (windows.length === 0) return wanted;
+
+  let at = wanted;
+  // Sortir d'une plage peut faire entrer dans une autre : on repasse jusqu'à
+  // ce que plus rien ne bouge. La borne évite la boucle infinie quand l'union
+  // des plages couvre la journée entière.
+  for (let pass = 0; pass < windows.length * 2; pass++) {
+    const next = windows.reduce((acc, w) => scheduleFor(acc, w), at);
+    if (next.getTime() === at.getTime()) return at;
+    at = next;
+  }
+
+  // Union couvrant les 24 heures : aucun instant n'est libre. On s'en tient
+  // alors à la plage du groupe — c'est elle, la garantie ; le joueur a demandé
+  // un silence permanent, ce que le vrai bouton « tout couper » sait faire.
+  return scheduleFor(wanted, windows[0]);
+}
+
 /** La clé de regroupement : sept matchs d'une journée, un seul message. */
 export function dedupeKey(kind: string, scopeId: string, day?: string): string {
   return day ? `${kind}:${scopeId}:${day}` : `${kind}:${scopeId}`;
