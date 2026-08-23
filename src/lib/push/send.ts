@@ -38,6 +38,26 @@ export async function configure(admin: SupabaseClient): Promise<boolean> {
   return true;
 }
 
+/**
+ * Ce que le service de push a répondu, en clair.
+ *
+ * `web-push` résume tout refus par « Received unexpected response code » et
+ * range le vrai motif dans le corps de la réponse — c'est là qu'Apple écrit
+ * `BadJwtToken`, et c'est la seule chose qui permette de réparer. On y ajoute
+ * la traduction des motifs qu'on rencontre pour de bon.
+ */
+function describeFailure(error: unknown): string {
+  const body = (error as { body?: string }).body;
+  const message = error instanceof Error ? error.message : String(error);
+  const reason = typeof body === "string" ? body.trim() : "";
+  if (!reason) return message;
+
+  if (/BadJwtToken|VapidPkHashMismatch|Unauthorized/i.test(reason)) {
+    return `${reason} — la clé privée du serveur ne correspond pas à la clé publique qui a créé cet abonnement.`;
+  }
+  return reason;
+}
+
 /** La clé publique telle que l'espace admin l'a enregistrée. */
 export async function loadPublicKey(admin: SupabaseClient): Promise<string> {
   const { data } = await admin
@@ -104,7 +124,7 @@ export async function sendToUser(
         .eq("id", sub.id);
     } catch (error) {
       const status = (error as { statusCode?: number }).statusCode;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = describeFailure(error);
 
       if (status === 404 || status === 410) {
         await admin

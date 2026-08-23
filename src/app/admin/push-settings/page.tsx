@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadSettings } from "@/lib/settings";
 import { loadPublicKey } from "@/lib/push/send";
 import { readRules, describeQuiet } from "@/lib/push/rules";
+import { verifyPair, describePair, isValidSubject } from "@/lib/push/keys";
 import { getViewerContext } from "@/lib/admin/auth";
 import { VapidForm } from "./_components/vapid-form";
 import { TestForm } from "./_components/test-form";
@@ -28,8 +29,16 @@ export default async function PushSettingsPage() {
     loadSettings(admin),
   ]);
   const rules = readRules(settings);
-  const hasPrivateKey = Boolean(process.env.VAPID_PRIVATE_KEY);
-  const ready = Boolean(publicKey) && hasPrivateKey;
+  const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
+  const hasPrivateKey = Boolean(privateKey);
+
+  // Les deux moitiés se saisissent à deux endroits différents ; rien n'empêche
+  // d'y coller deux générations distinctes. Le service de push répond alors 403
+  // sans un mot. On le dit ici, avant l'envoi.
+  const pair = verifyPair(publicKey, privateKey);
+  const subject = process.env.VAPID_SUBJECT ?? "mailto:contact@example.com";
+  const subjectOk = isValidSubject(subject);
+  const ready = pair === "ok" && subjectOk;
 
   // Combien de joueurs sont réellement joignables, et combien ont un appareil
   // abonné : l'écart entre les deux explique la plupart des « je n'ai rien reçu ».
@@ -81,13 +90,24 @@ export default async function PushSettingsPage() {
             ? "Notifications éteintes pour tout le groupe. Rien ne part, même une annonce."
             : ready
               ? "Tout est en place. Les joueurs peuvent activer les notifications depuis leurs Réglages."
-              : "Les notifications sont en sommeil : il manque une moitié de la paire."}
+              : !subjectOk
+                ? "Rien ne partira : la variable VAPID_SUBJECT doit être une adresse « mailto: » ou une URL « https: »."
+                : describePair(pair)}
         </p>
         <ul className="flex flex-col gap-1 text-[13px] text-ink-muted">
           <li>{publicKey ? "✅" : "⬜️"} Clé publique — enregistrée ici, dans la base.</li>
           <li>
             {hasPrivateKey ? "✅" : "⬜️"} Clé privée — variable serveur{" "}
             <span className="font-mono text-[12px]">VAPID_PRIVATE_KEY</span>, chez Vercel.
+          </li>
+          <li>
+            {pair === "ok" ? "✅" : pair === "missing" ? "⬜️" : "⛔️"} Les deux clés vont ensemble —{" "}
+            {describePair(pair)}
+          </li>
+          <li>
+            {subjectOk ? "✅" : "⛔️"} Sujet du jeton —{" "}
+            <span className="font-mono text-[12px]">{subject}</span>
+            {!subjectOk && " — attendu : une adresse « mailto: » ou une URL « https: »."}
           </li>
           <li>
             {subscribed > 0 ? "✅" : "⬜️"} {subscribed} joueur{subscribed > 1 ? "s" : ""} sur{" "}
