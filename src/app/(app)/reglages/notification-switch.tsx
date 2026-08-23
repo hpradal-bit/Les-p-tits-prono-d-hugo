@@ -11,8 +11,10 @@ const MESSAGES: Record<PushState, string> = {
   denied: "Tu as refusé les notifications. Il faut les réautoriser dans les réglages du navigateur.",
   "no-sw":
     "L'app n'arrive pas à démarrer son service d'arrière-plan. Ferme complètement l'app puis rouvre-la ; si ça persiste, désinstalle et réinstalle-la.",
-  off: "Deux messages par semaine au maximum : le rappel avant verrouillage, et la fin de journée.",
-  on: "Tu recevras le rappel avant verrouillage et le résumé de fin de journée.",
+  // Les limites sont déjà expliquées par la carte « Les garde-fous » juste en
+  // dessous : les répéter ici ferait lire deux fois la même chose.
+  off: "Permet de recevoir des notifications.",
+  on: "Permet de recevoir des notifications.",
 };
 
 export function NotificationSwitch({ vapidPublicKey }: { vapidPublicKey: string }) {
