@@ -96,8 +96,12 @@ export function validateRules(rules: NotificationRules): RulesErrors {
  * Deux heures identiques ne sont pas une erreur : c'est la façon de dire
  * « pas d'heures de silence », et `isQuiet` la comprend déjà ainsi.
  */
+export function hasQuietHours(rules: NotificationRules): boolean {
+  return rules.quietFrom !== rules.quietTo;
+}
+
 export function describeQuiet(rules: NotificationRules): string {
-  if (rules.quietFrom === rules.quietTo) return "aucune heure de silence";
+  if (!hasQuietHours(rules)) return "aucune heure de silence";
   return `silence de ${rules.quietFrom} à ${rules.quietTo}`;
 }
 

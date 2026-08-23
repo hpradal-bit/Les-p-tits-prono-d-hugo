@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Card, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings, setting } from "@/lib/settings";
-import { readRules } from "@/lib/push/rules";
+import { readRules, hasQuietHours } from "@/lib/push/rules";
 import { getViewer } from "@/lib/auth/session";
 import { NotificationSwitch } from "./notification-switch";
 
@@ -83,11 +83,20 @@ export default async function ReglagesPage() {
       <Card className="flex flex-col gap-2 p-4">
         <Label>Les garde-fous</Label>
         <p className="text-[13px] leading-relaxed text-ink-muted">
-          Jamais plus de <strong className="text-ink">{maxPerDay}</strong> messages par jour.
-          Rien entre <strong className="text-ink">{quietFrom}</strong> et{" "}
-          <strong className="text-ink">{quietTo}</strong> — ce qui tombe la nuit est reporté au
-          matin, pas supprimé. Et sept matchs ne font jamais sept notifications : une seule,
-          résumée.
+          Jamais plus de <strong className="text-ink">{maxPerDay}</strong> message
+          {maxPerDay > 1 ? "s" : ""} par jour.{" "}
+          {hasQuietHours(rules) ? (
+            <>
+              Rien entre <strong className="text-ink">{quietFrom}</strong> et{" "}
+              <strong className="text-ink">{quietTo}</strong> — ce qui tombe la nuit est reporté au
+              matin, pas supprimé.
+            </>
+          ) : (
+            // Deux heures identiques valent « pas de silence » pour le moteur
+            // d'envoi : promettre ici une nuit tranquille serait un mensonge.
+            <>Aucune heure de silence pour l&apos;instant : un message peut tomber à toute heure.</>
+          )}{" "}
+          Et sept matchs ne font jamais sept notifications : une seule, résumée.
         </p>
       </Card>
 

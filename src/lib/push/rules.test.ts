@@ -4,6 +4,7 @@ import {
   RULES_DEFAULTS,
   RULES_KEYS,
   describeQuiet,
+  hasQuietHours,
   isKnownTimeZone,
   readRules,
   rulesToRows,
@@ -98,6 +99,14 @@ describe("heures de silence", () => {
 
   test("une plage normale est décrite telle quelle", () => {
     assert.equal(describeQuiet(base), "silence de 22:00 à 08:00");
+  });
+
+  test("l'écran joueur et le moteur s'accordent sur « pas de silence »", () => {
+    // La page Réglages choisit sa phrase avec `hasQuietHours` : si elle
+    // divergeait de `describeQuiet`, le joueur lirait une nuit tranquille
+    // que le moteur ne respecterait pas.
+    assert.equal(hasQuietHours({ ...base, quietFrom: "08:00", quietTo: "08:00" }), false);
+    assert.equal(hasQuietHours(base), true);
   });
 
   test("une plage identique reste valide pour la validation", () => {
