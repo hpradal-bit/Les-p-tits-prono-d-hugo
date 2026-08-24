@@ -119,6 +119,28 @@ export async function runWithFallback<T>(
 export function describeError(error: unknown): string {
   if (error instanceof ProviderError) return error.message;
   if (error instanceof Error) return `${error.name}: ${error.message}`;
+
+  // Supabase ne lève pas des `Error` mais des objets simples
+  // (`{ code, message, details, hint }`). `String(error)` les réduisait à
+  // « [object Object] » — un message qui coûte autant à lire qu'un silence,
+  // et qui laisse l'administrateur sans rien à corriger.
+  if (error !== null && typeof error === "object") {
+    const fields = error as Record<string, unknown>;
+    const parts = [fields.code, fields.message, fields.details, fields.hint]
+      .filter((v) => typeof v === "string" || typeof v === "number")
+      .map((v) => String(v).trim())
+      .filter((v) => v !== "");
+    if (parts.length > 0) return parts.join(" — ");
+
+    try {
+      // Un objet dont aucun champ n'est reconnu vaut encore mieux brut que
+      // remplacé par « [object Object] ».
+      return JSON.stringify(error);
+    } catch {
+      return "erreur non sérialisable";
+    }
+  }
+
   return String(error);
 }
 

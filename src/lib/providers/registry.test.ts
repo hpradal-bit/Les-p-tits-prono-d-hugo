@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createProviderChain, runWithFallback } from "./registry.ts";
+import { createProviderChain, describeError, runWithFallback } from "./registry.ts";
 import { ProviderError, type ProviderFixture, type SportsDataProvider } from "./types.ts";
 
 /** Un faux fournisseur : soit il répond, soit il tombe. */
@@ -154,4 +154,50 @@ test("bascule : une chaîne vide échoue proprement", async () => {
   );
   assert.equal(outcome.response, null);
   assert.deepEqual(outcome.requestsByProvider, {});
+});
+
+/**
+ * Lisibilité des erreurs.
+ *
+ * Un message d'erreur illisible équivaut à pas de message : l'administrateur
+ * voit que quelque chose a raté, sans rien pour le corriger. Cas vécu — une
+ * synchronisation de calendrier a rapporté « correspondance de match non
+ * écrite : [object Object] ».
+ */
+test("une erreur Supabase se lit, au lieu de « [object Object] »", () => {
+  // Supabase (PostgREST) lève un objet simple, pas une instance d'`Error` :
+  // c'est ce qui prenait `String(error)` en défaut.
+  const postgrest = {
+    code: "23505",
+    message: "duplicate key value violates unique constraint",
+    details: "Key (provider, entity_id)=(espn, abc) already exists.",
+    hint: null,
+  };
+  const described = describeError(postgrest);
+  assert.match(described, /23505/);
+  assert.match(described, /duplicate key/);
+  assert.match(described, /already exists/);
+  assert.doesNotMatch(described, /\[object Object\]/);
+});
+
+test("un objet sans champ connu reste lisible", () => {
+  const described = describeError({ statusCode: 502, body: "bad gateway" });
+  assert.doesNotMatch(described, /\[object Object\]/);
+  assert.match(described, /502|bad gateway/);
+});
+
+test("les erreurs déjà lisibles ne changent pas", () => {
+  assert.equal(describeError(new ProviderError("espn", "service indisponible")),
+    "[espn] service indisponible");
+  assert.match(describeError(new TypeError("fetch failed")), /TypeError: fetch failed/);
+  assert.equal(describeError("panne sèche"), "panne sèche");
+  assert.equal(describeError(null), "null");
+});
+
+test("un objet impossible à sérialiser ne fait pas tomber la synchronisation", () => {
+  // Une référence circulaire ferait lever `JSON.stringify` — au beau milieu
+  // d'un rapport d'erreur, ce serait une erreur cachant l'erreur.
+  const cyclique: Record<string, unknown> = { statusCode: 500 };
+  cyclique.self = cyclique;
+  assert.doesNotThrow(() => describeError(cyclique));
 });
