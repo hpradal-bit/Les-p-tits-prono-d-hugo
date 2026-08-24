@@ -164,3 +164,43 @@ export function rangeAround(dateKey: string, daysBefore: number, daysAfter: numb
     to: new Date(base + daysAfter * DAY_MS).toISOString().slice(0, 10),
   };
 }
+
+/**
+ * Espace le prochain passage pour que le quota tienne jusqu'à la fin du jour.
+ *
+ * Le scénario redouté n'est pas le dépassement en soi, c'est *quand* il
+ * survient : si le fournisseur gratuit tombe un samedi après-midi, la chaîne
+ * bascule sur celui qui a un quota — et à cadence de match, celui-ci s'épuise
+ * vers 17 h. Il ne reste alors plus aucun fournisseur pour la fin de journée,
+ * au pire moment possible.
+ *
+ * Mieux vaut des scores rafraîchis toutes les vingt minutes jusqu'au coup de
+ * sifflet final que toutes les dix minutes jusqu'à 17 h, puis plus rien.
+ *
+ * Sans quota (`null`), rien n'est ralenti : c'est le cas d'ESPN.
+ */
+export function paceToQuota(
+  intervalMinutes: number,
+  quotaRemaining: number | null,
+  minutesLeft: number,
+): number {
+  if (quotaRemaining === null) return intervalMinutes;
+
+  // Plus rien à dépenser : on attend le renouvellement plutôt que de collecter
+  // des refus. Jamais moins que l'intervalle demandé — on ne rattrape rien en
+  // accélérant ici.
+  if (quotaRemaining <= 0) return Math.max(intervalMinutes, minutesLeft);
+
+  return Math.max(intervalMinutes, Math.ceil(minutesLeft / quotaRemaining));
+}
+
+/** Minutes restant avant la remise à zéro du quota, à minuit UTC. */
+export function minutesLeftInDay(now: Date): number {
+  const midnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0,
+  );
+  return Math.max(1, Math.ceil((midnight - now.getTime()) / MINUTE_MS));
+}

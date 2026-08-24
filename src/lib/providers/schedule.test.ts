@@ -8,6 +8,8 @@ import {
   localDateKey,
   rangeAround,
   weekendAnchor,
+  paceToQuota,
+  minutesLeftInDay,
 } from "./schedule.ts";
 
 // --- Verrouillage ------------------------------------------------------------
@@ -173,4 +175,58 @@ test("fenêtre : un samedi de Top 14 tient dans le quota de 100 requêtes", () =
   // ~18 passages horaires + 2 fenêtres de 27 passages : on reste sous 100.
   assert.ok(calls < 100, `attendu moins de 100 appels, obtenu ${calls}`);
   assert.ok(calls > 40, `attendu un suivi réel du direct, obtenu ${calls}`);
+});
+
+/**
+ * Cadence et quota.
+ *
+ * Le scénario redouté n'est pas de dépasser le quota, c'est *quand* : si le
+ * fournisseur gratuit tombe un samedi après-midi, celui qui a un quota prend
+ * le relais à cadence de match et s'épuise vers 17 h — il ne reste alors plus
+ * rien pour la fin de journée, au pire moment de la semaine.
+ */
+test("sans quota, la cadence demandée est respectée telle quelle", () => {
+  // ESPN n'a pas de quota et ne doit pas payer la prudence due à un autre.
+  assert.equal(paceToQuota(10, null, 600), 10);
+});
+
+test("un quota confortable ne ralentit rien", () => {
+  // 100 appels pour 600 minutes : un toutes les 6 minutes serait tenable,
+  // donc les 10 demandées passent sans retouche.
+  assert.equal(paceToQuota(10, 100, 600), 10);
+});
+
+test("un quota serré espace les passages", () => {
+  // 10 appels restants pour 600 minutes : un toutes les 60 minutes.
+  assert.equal(paceToQuota(10, 10, 600), 60);
+});
+
+test("la cadence n'est jamais accélérée par le quota", () => {
+  // Beaucoup de quota et peu de temps ne doit pas resserrer l'intervalle.
+  assert.equal(paceToQuota(30, 1000, 60), 30);
+});
+
+test("un quota épuisé fait attendre le renouvellement", () => {
+  assert.equal(paceToQuota(10, 0, 420), 420);
+  assert.equal(paceToQuota(10, -5, 420), 420);
+});
+
+test("un quota épuisé en fin de journée n'accélère pas non plus", () => {
+  // Cinq minutes avant minuit, l'intervalle demandé reste le plancher.
+  assert.equal(paceToQuota(10, 0, 5), 10);
+});
+
+test("les minutes restantes se comptent jusqu'à minuit UTC", () => {
+  assert.equal(minutesLeftInDay(new Date("2026-09-05T23:00:00.000Z")), 60);
+  assert.equal(minutesLeftInDay(new Date("2026-09-05T00:00:00.000Z")), 1440);
+  // Jamais zéro : un intervalle nul ferait tourner le planificateur en boucle.
+  assert.ok(minutesLeftInDay(new Date("2026-09-05T23:59:59.000Z")) >= 1);
+});
+
+test("un samedi de Top 14 tient dans le quota gratuit", () => {
+  // Cas concret : 21 h de match restantes après une bascule à 14 h, 98 appels
+  // encore disponibles. La cadence doit rester utile, pas s'effondrer.
+  const interval = paceToQuota(10, 98, 600);
+  assert.equal(interval, 10);
+  assert.ok(600 / interval <= 98, "le budget doit couvrir la fin de journée");
 });

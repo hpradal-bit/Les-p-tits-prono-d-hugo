@@ -1,4 +1,26 @@
 /**
+ * Repousse le prochain passage si le fournisseur qui a répondu a un quota.
+ *
+ * On ne ralentit que le fournisseur concerné : ESPN n'a pas de quota et ne
+ * doit pas payer la prudence due à un autre.
+ */
+function paceNextCheck(
+  ctx: SyncContext,
+  provider: string,
+  now: Date,
+  proposed: string,
+): string {
+  const chained = ctx.chain.providers.find((p) => p.name === provider);
+  if (!chained?.dailyQuota) return proposed;
+
+  const remaining = chained.dailyQuota - ctx.apisportsUsedToday;
+  const asked = Math.max(1, Math.round((new Date(proposed).getTime() - now.getTime()) / 60_000));
+  const paced = paceToQuota(asked, remaining, minutesLeftInDay(now));
+
+  return paced === asked ? proposed : new Date(now.getTime() + paced * 60_000).toISOString();
+}
+
+/**
  * Synchronisation des scores en direct.
  *
  * Elle commence par se demander si elle a lieu d'être : hors fenêtre de match,
@@ -8,7 +30,7 @@
  */
 
 import { setting } from "@/lib/settings";
-import { evaluateWindow, localDateKey } from "../schedule.ts";
+import { evaluateWindow, localDateKey, minutesLeftInDay, paceToQuota } from "../schedule.ts";
 import { planLiveUpdate } from "../reconcile.ts";
 import { TeamResolver, loadRefs, loadSeasonExternalId } from "../refs.ts";
 import { runWithFallback } from "../registry.ts";
@@ -244,12 +266,18 @@ export async function syncLive(
     windowSettings,
   );
 
+  // Si le fournisseur qui a répondu a un quota, on espace le prochain passage
+  // pour qu'il tienne jusqu'à minuit. Des scores toutes les vingt minutes
+  // jusqu'au coup de sifflet final valent mieux que toutes les dix jusqu'à
+  // 17 h, puis plus rien.
+  const nextCheckAt = paceNextCheck(ctx, provider, now, after.nextCheckAt);
+
   return {
     status,
     provider,
     requestsUsed,
     inWindow: verdict.inWindow,
-    nextCheckAt: after.nextCheckAt,
+    nextCheckAt,
     fixturesUpdated,
     finished,
     changes,
