@@ -63,7 +63,9 @@ se promouvoir : la variable n'existe que côté serveur.
 | `SUPABASE_SERVICE_ROLE_KEY` | même écran → clé `service_role` — **secrète, serveur uniquement** |
 | `SYNC_SECRET` | à inventer (une longue chaîne au hasard) |
 | `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` — la moitié privée de la paire. La moitié publique s'enregistre depuis Administration → Notifications, pas ici. |
-| `APISPORTS_KEY` | facultatif, source de secours |
+| `THESPORTSDB_KEY` | `123` (clé gratuite partagée) — fournisseur principal |
+| `HIGHLIGHTLY_KEY` | clé RapidAPI (compte gratuit, 100 req/jour) — second fournisseur |
+| `APISPORTS_KEY` | facultatif, dernier recours (saisons 2022-2024 en gratuit) |
 
 3. Déployer.
 
