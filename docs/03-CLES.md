@@ -48,6 +48,11 @@ sont de simples identifiants. Les noter fait gagner du temps.
 | `SYNC_SECRET` | Vercel **et** Cloudflare (même valeur des deux côtés) | Le planificateur reçoit un 401 |
 | `APISPORTS_KEY` | Vercel → Settings → Environment Variables | Plus de secours si ESPN tombe, et plus de classement |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel uniquement — **jamais** dans un `NEXT_PUBLIC_*` | Le serveur ne peut plus écrire |
+| `CLOUDFLARE_API_TOKEN` | GitHub → Settings → Secrets and variables → Actions | Le planificateur ne peut plus être redéployé |
+
+Les deux secrets rangés chez **GitHub** (`CLOUDFLARE_API_TOKEN` et une copie de
+`SYNC_SECRET`) servent au déploiement automatique du planificateur : c'est
+GitHub qui pousse le Worker chez Cloudflare, pas une ligne de commande.
 
 ### Vercel marque certaines variables « Sensitive »
 
@@ -67,6 +72,38 @@ avoir ajouté ou changé une variable chez Vercel :
 
 Sans ça, l'application continue de tourner avec l'ancienne valeur, sans rien
 signaler.
+
+---
+
+## Le planificateur Cloudflare
+
+Il n'a **pas d'adresse web** : il se réveille par son minuteur, toutes les
+5 minutes, et décide seul s'il y a lieu d'appeler l'application. Rien à
+exposer, donc rien à attaquer.
+
+| | |
+|---|---|
+| Nom du Worker | `pronos-sync` |
+| Minuteur | `*/5 * * * *` |
+| Espace KV | `SYNC_STATE` — il y note l'heure du prochain passage |
+| Passage quotidien | 4 h UTC (6 h à Paris) : calendrier puis classement |
+| Déploiement | `.github/workflows/deploy-worker.yml` |
+
+**Pour le redéployer** : rien à faire à la main. Toute modification de
+`worker/` le redéploie. Sinon, GitHub → onglet **Actions** → *Déployer le
+planificateur* → **Run workflow**.
+
+### Ce qui a coûté du temps à le mettre en place
+
+1. **Le jeton n'était pas un jeton.** 79 caractères au lieu de 40 : la ligne
+   `curl` d'exemple avait été copiée avec. Le workflow vérifie désormais la
+   longueur et interroge Cloudflare avant de déployer, plutôt que de laisser
+   wrangler répondre « Authentication failed [code: 9106] ».
+2. **Un secret ne se pose pas sur un Worker absent.** Créer d'abord, régler
+   ensuite — deux étapes distinctes.
+3. **Cloudflare exige un sous-domaine sur le compte**, même quand le Worker
+   n'en utilise aucun. Il se crée en ouvrant une fois la page *Workers et
+   Pages* (`hpradal.workers.dev`).
 
 ---
 
