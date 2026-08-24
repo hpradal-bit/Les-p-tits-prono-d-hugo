@@ -110,10 +110,10 @@ export default async function SynchronisationPage() {
           <li>
             {hasApiSports ? "✅" : "⬜️"} Secours API-Sports —{" "}
             {hasApiSports
-              ? "clé présente. Attention : l'offre gratuite ne dessert que les saisons 2022 à 2024, elle ne peut donc pas relayer ESPN sur la saison en cours."
+              ? "clé présente. Attention : l’offre gratuite ne dessert que les saisons 2022 à 2024, elle ne peut donc pas relayer ESPN sur la saison en cours."
               : "pas de clé APISPORTS_KEY."}{" "}
-            En pratique, ESPN est aujourd'hui le seul fournisseur de cette saison — les
-            boutons ci-dessous restent le filet s'il tombe.
+            En pratique, ESPN est aujourd&apos;hui le seul fournisseur de cette saison — les
+            boutons ci-dessous restent le filet s&apos;il tombe.
           </li>
           <li>
             {aliasCount > 0 ? "✅" : "⬜️"} {aliasCount} alias d&apos;équipe posé
