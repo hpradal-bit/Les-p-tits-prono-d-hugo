@@ -32,8 +32,11 @@ function providerFixture(over: Partial<ProviderFixture> = {}): ProviderFixture {
     awayTeam: { externalId: "e-away", name: "ASM Clermont", aliases: [] },
     homeScore: 24,
     awayScore: 12,
+    minute: null,
+    venue: null,
+    roundLabel: null,
     ...over,
-  } as ProviderFixture;
+  };
 }
 
 function provider(fixtures: ProviderFixture[]): SportsDataProvider {

@@ -11,7 +11,8 @@
  * Elle ne touche ni aux scores ni aux points.
  */
 
-import { setting } from "@/lib/settings";
+// Chemin relatif : le lanceur de tests ne résout pas « @/ » pour les valeurs.
+import { setting } from "../../settings/index.ts";
 import { computeLocksAt } from "../schedule.ts";
 import {
   findRoundFor,
@@ -33,6 +34,7 @@ import {
   type NewFixture,
 } from "./fixtures-repo.ts";
 import { closeRun, openRun, recordProviderUsage, type SyncRunResult } from "./runs.ts";
+import { bootstrapSeasonTeams } from "./teams-repo.ts";
 
 export interface CalendarSyncOptions {
   /** Plage à interroger. Par défaut : toute la saison. */
@@ -50,6 +52,8 @@ export interface CalendarSyncReport {
   fixturesUpdated: number;
   fixturesCreated: number;
   roundsCreated: number;
+  /** Équipes créées à l'amorçage d'une compétition nouvelle. */
+  teamsCreated: string[];
   unmatched: string[];
   changes: string[];
   warnings: string[];
@@ -119,6 +123,7 @@ export async function syncCalendar(
       fixturesUpdated: 0,
       fixturesCreated: 0,
       roundsCreated: 0,
+      teamsCreated: [],
       unmatched: [],
       changes: [],
       warnings: ["aucun fournisseur joignable : le calendrier connu est conservé"],
@@ -132,10 +137,29 @@ export async function syncCalendar(
   const unmatched: string[] = [];
   const changes: string[] = [];
 
+  // Une saison sans aucune équipe est une compétition qu'on vient d'ajouter :
+  // il n'y a rien à rapprocher, donc rien à dupliquer. C'est le seul cas où
+  // l'on crée l'effectif depuis le fournisseur, plutôt que d'échouer sur seize
+  // « équipe non rapprochée » et d'exiger une saisie manuelle.
+  let teams = ctx.teams;
+  const teamsCreated: string[] = [];
+  if (teams.length === 0 && incoming.length > 0) {
+    const seeded = await bootstrapSeasonTeams(
+      sb, ctx.season.id, ctx.season.competitionId, provider, incoming,
+    );
+    if (seeded.created > 0) {
+      teamsCreated.push(...seeded.names);
+      teams = seeded.teams;
+      warnings.push(
+        `${seeded.created} équipes créées à l'amorçage — vérifier leurs codes dans l'espace admin`,
+      );
+    }
+  }
+
   const [existingFixtures, rounds, resolver, fixtureRefs] = await Promise.all([
     loadSeasonFixtures(sb, ctx.season.id),
     loadSeasonRounds(sb, ctx.season.id),
-    TeamResolver.create(sb, provider, ctx.teams, ctx.aliases),
+    TeamResolver.create(sb, provider, teams, ctx.aliases),
     loadRefs(sb, provider, "fixture"),
   ]);
 
@@ -298,6 +322,7 @@ export async function syncCalendar(
       received: incoming.length,
       kickoffsConfirmed,
       roundsCreated,
+      teamsCreated,
       unmatched,
       changes: changes.slice(0, 50),
       warnings,
@@ -314,6 +339,7 @@ export async function syncCalendar(
     fixturesUpdated,
     fixturesCreated,
     roundsCreated,
+    teamsCreated,
     unmatched,
     changes,
     warnings,

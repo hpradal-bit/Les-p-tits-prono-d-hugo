@@ -1558,6 +1558,11 @@ export async function runCalendarSync(
   return runSync(formData, "sync.calendar_run", (ctx) => syncCalendar(ctx), (r) => ({
     message: `Calendrier synchronisé depuis ${r.provider} : ${r.fixturesReceived} match${r.fixturesReceived > 1 ? "s" : ""} reçu${r.fixturesReceived > 1 ? "s" : ""}.`,
     details: [
+      // L'amorçage n'arrive qu'une fois par compétition, mais il mérite d'être
+      // lu : les codes générés sont provisoires et méritent une relecture.
+      ...(r.teamsCreated.length > 0
+        ? [`${r.teamsCreated.length} équipes créées : ${r.teamsCreated.join(", ")}`]
+        : []),
       `${r.fixturesCreated} créé${r.fixturesCreated > 1 ? "s" : ""}, ${r.fixturesUpdated} mis à jour, ${r.roundsCreated} journée${r.roundsCreated > 1 ? "s" : ""} créée${r.roundsCreated > 1 ? "s" : ""}.`,
       `${r.kickoffsConfirmed} horaire${r.kickoffsConfirmed > 1 ? "s" : ""} confirmé${r.kickoffsConfirmed > 1 ? "s" : ""} — seul un horaire confirmé fixe l'heure de verrouillage.`,
       `${r.requestsUsed} requête${r.requestsUsed > 1 ? "s" : ""} consommée${r.requestsUsed > 1 ? "s" : ""}.`,
