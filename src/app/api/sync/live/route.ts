@@ -11,6 +11,12 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSyncContext, syncLive } from "@/lib/providers";
 import { checkSyncSecret, liveRequestSchema, readBody } from "@/lib/providers/sync/guard.ts";
+import {
+  queueFixtureResultNotifications,
+  queueExactScoreNotifications,
+  loadExactScoreNotifications,
+} from "@/lib/push/results";
+import { flushDue } from "@/lib/push/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +37,22 @@ export async function POST(request: Request) {
       date: body.value.date,
       force: body.value.force,
     });
+
+    if (report.finishedDetails.length > 0) {
+      try {
+        await queueFixtureResultNotifications(sb, report.finishedDetails);
+        const exactNotifs = await loadExactScoreNotifications(
+          sb,
+          report.finished,
+          report.finishedDetails,
+        );
+        await queueExactScoreNotifications(sb, exactNotifs);
+        await flushDue(sb);
+      } catch (error) {
+        console.error("[sync/live] notifications :", error);
+      }
+    }
+
     return NextResponse.json(report, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

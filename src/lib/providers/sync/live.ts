@@ -66,6 +66,14 @@ export interface LiveSyncOptions {
   now?: Date;
 }
 
+export interface FinishedFixtureDetail {
+  fixtureId: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+}
+
 export interface LiveSyncReport {
   status: SyncRunResult["status"];
   provider: string;
@@ -75,6 +83,8 @@ export interface LiveSyncReport {
   nextCheckAt: string;
   fixturesUpdated: number;
   finished: string[];
+  /** Détails des matchs terminés, pour les notifications. */
+  finishedDetails: FinishedFixtureDetail[];
   /** Pronostics notés à la suite des matchs qui viennent de se terminer. */
   predictionsScored: number;
   changes: string[];
@@ -128,6 +138,7 @@ export async function syncLive(
         nextCheckAt: verdict.nextCheckAt,
         fixturesUpdated: 0,
         finished: [],
+        finishedDetails: [],
         predictionsScored: 0,
         changes: [],
         warnings: [],
@@ -181,6 +192,7 @@ export async function syncLive(
       nextCheckAt: verdict.nextCheckAt,
       fixturesUpdated: 0,
       finished: [],
+      finishedDetails: [],
       predictionsScored: 0,
       changes: [],
       warnings: ["aucun fournisseur joignable : le dernier score connu est conservé"],
@@ -196,6 +208,7 @@ export async function syncLive(
   const unmatched: string[] = [];
 
   const officialAfterMinutes = setting(ctx.settings, "sync.official_after_minutes", 180);
+  const finishedDetails: LiveSyncReport["finishedDetails"] = [];
 
   // On ne compare qu'aux matchs du jour : deux jours de marge suffisent.
   const dayStart = new Date(`${date}T00:00:00.000Z`);
@@ -247,14 +260,25 @@ export async function syncLive(
     const becameFinal = plan.patch.status === "finished" || plan.patch.status === "official";
     if (becameFinal) {
       finished.push(existing.id);
+      const hScore = plan.patch.home_score ?? existing.homeScore;
+      const aScore = plan.patch.away_score ?? existing.awayScore;
       await emitFixtureFinished(ctx, existing.id, {
         homeTeam: incoming.homeTeam.name,
         awayTeam: incoming.awayTeam.name,
-        homeScore: plan.patch.home_score ?? existing.homeScore,
-        awayScore: plan.patch.away_score ?? existing.awayScore,
+        homeScore: hScore,
+        awayScore: aScore,
         status: plan.patch.status,
         provider,
       });
+      if (hScore !== null && aScore !== null) {
+        finishedDetails.push({
+          fixtureId: existing.id,
+          homeTeam: incoming.homeTeam.name,
+          awayTeam: incoming.awayTeam.name,
+          homeScore: hScore,
+          awayScore: aScore,
+        });
+      }
     }
   }
 
@@ -274,8 +298,6 @@ export async function syncLive(
       predictionsScored = summary.predictions;
       changes.push(`${summary.predictions} pronostic(s) noté(s) sur ${summary.fixtures} match(s)`);
     } catch (error) {
-      // Le score, lui, est déjà écrit : on ne perd rien en signalant plutôt
-      // qu'en échouant. L'admin peut relancer le calcul d'un revers de main.
       warnings.push(`points non calculés : ${describeError(error)} — relancer depuis l'espace admin`);
     }
   }
@@ -322,6 +344,7 @@ export async function syncLive(
     nextCheckAt,
     fixturesUpdated,
     finished,
+    finishedDetails,
     predictionsScored,
     changes,
     warnings,
