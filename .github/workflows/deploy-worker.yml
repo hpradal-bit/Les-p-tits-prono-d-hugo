@@ -32,13 +32,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Déployer sur Cloudflare
+      # Deux étapes, et l'ordre compte : un secret ne peut pas être posé sur
+      # un Worker qui n'existe pas encore. Les réunir faisait échouer le tout
+      # premier déploiement, celui qui crée le Worker.
+      - name: Déployer le Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker
-          # Le secret partagé est poussé avec le Worker : il ne peut pas vivre
-          # dans `wrangler.toml`, qui est versionné.
+          command: deploy
+
+      - name: Poser le secret partagé
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker
+          # Il ne peut pas vivre dans `wrangler.toml`, qui est versionné.
           secrets: |
             SYNC_SECRET
         env:
