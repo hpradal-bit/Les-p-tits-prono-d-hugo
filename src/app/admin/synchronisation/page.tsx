@@ -75,6 +75,8 @@ export default async function SynchronisationPage() {
 
   const aliases = setting<Record<string, string>>(settings, "sync.team_aliases", {});
   const aliasCount = Object.keys(aliases).length;
+  const hasTheSportsDb = Boolean(process.env.THESPORTSDB_KEY);
+  const hasHighlightly = Boolean(process.env.HIGHLIGHTLY_KEY);
   const hasApiSports = Boolean(process.env.APISPORTS_KEY);
   const hasSyncSecret = Boolean(process.env.SYNC_SECRET);
 
@@ -107,14 +109,33 @@ export default async function SynchronisationPage() {
             {competitionRef ? "✅" : "⬜️"} Compétition rattachée à{" "}
             <span className="font-mono text-[12px]">{competitionRef?.provider ?? "aucun fournisseur"}</span>.
           </li>
+          <li className="mt-1.5 font-semibold text-ink">Chaîne de fournisseurs</li>
           <li>
-            {hasApiSports ? "✅" : "⬜️"} Secours API-Sports —{" "}
-            {hasApiSports
-              ? "clé présente. Attention : l’offre gratuite ne dessert que les saisons 2022 à 2024, elle ne peut donc pas relayer ESPN sur la saison en cours."
-              : "pas de clé APISPORTS_KEY."}{" "}
-            En pratique, ESPN est aujourd&apos;hui le seul fournisseur de cette saison — les
-            boutons ci-dessous restent le filet s&apos;il tombe.
+            {hasTheSportsDb ? "✅" : "⬜️"}{" "}
+            <span className="font-mono text-[12px]">TheSportsDB</span> (principal) —{" "}
+            {hasTheSportsDb
+              ? "clé présente. 30 req/min, pas de quota journalier."
+              : "pas de clé THESPORTSDB_KEY."}
           </li>
+          <li>
+            {hasHighlightly ? "✅" : "⬜️"}{" "}
+            <span className="font-mono text-[12px]">Highlightly</span> (second) —{" "}
+            {hasHighlightly
+              ? "clé présente. 100 req/jour."
+              : "pas de clé HIGHLIGHTLY_KEY."}
+          </li>
+          <li>
+            ✅ <span className="font-mono text-[12px]">ESPN</span> (troisième) — toujours
+            disponible, pas de clé nécessaire.
+          </li>
+          <li>
+            {hasApiSports ? "✅" : "⬜️"}{" "}
+            <span className="font-mono text-[12px]">API-Sports</span> (dernier recours) —{" "}
+            {hasApiSports
+              ? "clé présente. Attention : l’offre gratuite ne dessert que les saisons 2022-2024."
+              : "pas de clé APISPORTS_KEY."}
+          </li>
+          <li className="mt-1.5 font-semibold text-ink">Rapprochement</li>
           <li>
             {aliasCount > 0 ? "✅" : "⬜️"} {aliasCount} alias d&apos;équipe posé
             {aliasCount > 1 ? "s" : ""} — ils rattrapent les graphies inhabituelles.
@@ -128,11 +149,12 @@ export default async function SynchronisationPage() {
             {confirmed > 1 ? "s" : ""} sur {fixtures.length} match{fixtures.length > 1 ? "s" : ""} —
             seul un horaire confirmé fixe l&apos;heure de verrouillage.
           </li>
+          <li className="mt-1.5 font-semibold text-ink">Planificateur</li>
           <li>
             {hasSyncSecret ? "✅" : "⬜️"} Secret{" "}
             <span className="font-mono text-[12px]">SYNC_SECRET</span>{" "}
             {hasSyncSecret
-              ? "présent — le planificateur Cloudflare peut appeler l'application."
+              ? "présent — le planificateur Cloudflare peut appeler l’application."
               : "absent — les boutons ci-dessous fonctionnent quand même, mais le planificateur automatique, non."}
           </li>
         </ul>
