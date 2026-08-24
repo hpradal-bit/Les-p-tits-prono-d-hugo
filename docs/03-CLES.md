@@ -1,0 +1,137 @@
+# 🔑 Les clés du projet — où elles vivent, à quoi elles servent
+
+> **Aucune valeur secrète n'est écrite ici.** Le dépôt est sur GitHub : une clé
+> privée y resterait dans l'historique pour toujours, même effacée ensuite.
+> Ce document dit **où trouver** chaque clé et **quoi faire** quand elle casse.
+>
+> Les valeurs secrètes se rangent ailleurs : trousseau iCloud, gestionnaire de
+> mots de passe, ou une note verrouillée. Jamais dans un fichier du projet.
+
+---
+
+## Les adresses à connaître
+
+| Quoi | Adresse |
+|---|---|
+| **L'application** (celle à donner aux joueurs) | `https://les-p-tits-prono-d-hugo.vercel.app` |
+| Espace admin — synchronisation | `…/admin/synchronisation` |
+| Espace admin — notifications | `…/admin/push-settings` |
+| Hébergement du site | vercel.com → projet `les-p-tits-prono-d-hugo` |
+| Base de données | supabase.com → projet `pronos-top14` (`fubgapghkagjicxmtbdy`) |
+| Planificateur | dash.cloudflare.com → Workers → `pronos-sync` |
+
+> ⚠️ **N'utilise jamais une adresse contenant une suite de lettres au milieu**
+> (`…-31pu34bf8-…`) : c'est un déploiement figé dans le passé, qui ne verra ni
+> les nouvelles clés ni les corrections. Toujours l'adresse courte.
+
+---
+
+## Les valeurs publiques
+
+Celles-ci ne sont pas secrètes — elles voyagent déjà vers les navigateurs ou
+sont de simples identifiants. Les noter fait gagner du temps.
+
+| Nom | Valeur | Rôle |
+|---|---|---|
+| Identifiant ESPN du Top 14 | `270559` | Range dans `external_refs`, pas dans une variable |
+| Identifiant API-Sports de la saison | `16:2026` | Idem |
+| `VAPID_SUBJECT` | `mailto:hpradal@gmail.com` | Exigé par Apple, doit être `mailto:` ou `https:` |
+| Clé publique VAPID | *dans l'espace admin* | Visible sur `/admin/push-settings`, elle n'est pas secrète |
+
+---
+
+## Les secrets, et où ils habitent
+
+| Nom | Où il est enregistré | Sans lui |
+|---|---|---|
+| `VAPID_PRIVATE_KEY` | Vercel → Settings → Environment Variables | Aucune notification ne part |
+| `SYNC_SECRET` | Vercel **et** Cloudflare (même valeur des deux côtés) | Le planificateur reçoit un 401 |
+| `APISPORTS_KEY` | Vercel → Settings → Environment Variables | Plus de secours si ESPN tombe, et plus de classement |
+| `SUPABASE_SERVICE_ROLE_KEY` | Vercel uniquement — **jamais** dans un `NEXT_PUBLIC_*` | Le serveur ne peut plus écrire |
+
+### Vercel marque certaines variables « Sensitive »
+
+Une variable marquée ainsi est **définitivement illisible**, y compris pour
+toi. Le `sk_live_a12…` affiché en gris n'est qu'un exemple, pas ta valeur.
+
+**Conséquence :** si tu perds un secret marqué *Sensitive*, il ne se retrouve
+pas — il se **remplace**. Génère une nouvelle valeur, écris-la aux deux
+endroits, redéploie.
+
+### Une variable modifiée n'atteint pas un déploiement déjà en ligne
+
+C'est le piège qui a coûté le plus de temps sur ce projet, deux fois. Après
+avoir ajouté ou changé une variable chez Vercel :
+
+> **Deployments → les trois points `···` de la première ligne → Redeploy**
+
+Sans ça, l'application continue de tourner avec l'ancienne valeur, sans rien
+signaler.
+
+---
+
+## Regénérer une clé
+
+### La paire VAPID (notifications)
+
+```
+npx web-push generate-vapid-keys
+```
+
+La **publique** (87 caractères) va dans `/admin/push-settings`.
+La **privée** (43 caractères) va dans `VAPID_PRIVATE_KEY` chez Vercel.
+
+Les deux doivent venir de la **même génération** : dépareillées, le service de
+push répond `403 VapidPkHashMismatch`. L'écran d'administration le vérifie
+désormais tout seul et le dit avant tout envoi.
+
+Après un changement de paire, chaque joueur doit rouvrir l'app : l'abonnement
+périmé est détecté et remplacé automatiquement.
+
+### Le secret de synchronisation
+
+```
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+```
+
+À écrire **aux deux endroits** — Vercel (`SYNC_SECRET`) et Cloudflare (secret
+du Worker `pronos-sync`) — puis redéployer côté Vercel.
+
+### La clé API-Sports
+
+Sur `dashboard.api-football.com`, rubrique *Profile*. Offre gratuite :
+**100 requêtes par jour**, remise à zéro à minuit UTC.
+
+---
+
+## Vérifier que tout est en place, sans rien deviner
+
+L'espace admin le dit lui-même. Deux écrans suffisent :
+
+**`/admin/synchronisation`** — compétition rattachée, secours API-Sports,
+alias posés, équipes rapprochées, horaires confirmés, secret du planificateur.
+
+**`/admin/push-settings`** — clé publique, clé privée, **paire cohérente**,
+sujet du jeton, appareils abonnés, règles du groupe.
+
+Une ligne grise ou rouge nomme ce qui manque et ce qu'il faut faire. C'est plus
+fiable que de chercher dans les réglages de trois fournisseurs.
+
+---
+
+## Les réglages qui ne sont pas des clés
+
+Beaucoup de choses qu'on croit codées en dur vivent en base, dans
+`app_settings`, et se changent sans redéploiement :
+
+| Clé | Aujourd'hui | Ce qu'elle règle |
+|---|---|---|
+| `sync.live_interval_minutes` | `10` | Cadence du relevé pendant les matchs |
+| `sync.idle_interval_minutes` | `60` | Cadence hors match |
+| `sync.provider_order` | ESPN d'abord, API-Sports pour le classement | Qui est interrogé en premier |
+| `sync.team_aliases` | 25 graphies | Rattrape les noms d'équipe inhabituels |
+| `sync.apisports_daily_quota` | `100` | Budget quotidien, sert au ralentissement automatique |
+| `notifications.max_per_day` | `3` | Plafond par joueur |
+| `notifications.quiet_from` / `_to` | `23:00` → `08:00` | Heures de silence du groupe |
+
+Les cinq derniers se modifient depuis `/admin/push-settings`.
