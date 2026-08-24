@@ -212,17 +212,20 @@ test("un objet impossible à sérialiser ne fait pas tomber la synchronisation",
  * précédente. Et le quota d'API-Sports — 100 requêtes par jour contre 288
  * réveils les jours de match — interdit de lui confier le direct.
  */
-test("le classement préfère API-Sports, le direct préfère ESPN", () => {
+test("ESPN passe en premier partout, API-Sports reste en secours", () => {
+  // Le classement avait été confié à API-Sports d'abord, ESPN renvoyant la
+  // saison précédente. Mais leur offre gratuite s'arrête à 2024 : le mettre en
+  // tête gaspillait une requête pour un refus certain. Il reste dans la
+  // chaîne, prêt à servir le jour d'un abonnement.
   const chain = { providers: [fake("espn", "ok"), fake("apisports", "ok")], skipped: [] };
 
-  assert.deepEqual(
-    orderChain(chain, readProviderOrder(null, "standings")).providers.map((p) => p.name),
-    ["apisports", "espn"],
-  );
-  assert.deepEqual(
-    orderChain(chain, readProviderOrder(null, "live")).providers.map((p) => p.name),
-    ["espn", "apisports"],
-  );
+  for (const kind of ["calendar", "live", "standings"] as const) {
+    assert.deepEqual(
+      orderChain(chain, readProviderOrder(null, kind)).providers.map((p) => p.name),
+      ["espn", "apisports"],
+      kind,
+    );
+  }
 });
 
 test("un ordre venu de la base l'emporte sur les valeurs par défaut", () => {
@@ -253,7 +256,7 @@ test("une préférence ne fait jamais disparaître un fournisseur", () => {
 
 test("un réglage illisible retombe sur les valeurs par défaut", () => {
   for (const bogus of [null, undefined, "espn", [], { standings: [] }, { standings: [42] }]) {
-    assert.deepEqual(readProviderOrder(bogus, "standings"), ["apisports", "espn"]);
+    assert.deepEqual(readProviderOrder(bogus, "standings"), ["espn", "apisports"]);
   }
 });
 

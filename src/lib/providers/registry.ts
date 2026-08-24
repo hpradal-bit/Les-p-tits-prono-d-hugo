@@ -78,7 +78,13 @@ export type SyncKind = "calendar" | "live" | "standings";
 export const DEFAULT_PROVIDER_ORDER: Record<SyncKind, string[]> = {
   calendar: [ESPN, APISPORTS],
   live: [ESPN, APISPORTS],
-  standings: [APISPORTS, ESPN],
+  // Le classement avait été confié à API-Sports d'abord, ESPN renvoyant la
+  // saison précédente. Mais l'offre gratuite d'API-Sports ne dessert que les
+  // saisons 2022 à 2024 : « Free plans do not have access to this season ».
+  // Le placer en tête gaspillait une requête à chaque passage pour un refus
+  // certain. Il reste dans la chaîne — il ne coûte rien tant qu'on ne
+  // l'appelle pas, et l'ordre se change en base le jour d'un abonnement.
+  standings: [ESPN, APISPORTS],
 };
 
 /** L'ordre retenu pour une nature donnée, avec repli sur les valeurs ci-dessus. */

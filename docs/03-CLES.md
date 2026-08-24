@@ -102,6 +102,16 @@ du Worker `pronos-sync`) — puis redéployer côté Vercel.
 Sur `dashboard.api-football.com`, rubrique *Profile*. Offre gratuite :
 **100 requêtes par jour**, remise à zéro à minuit UTC.
 
+> ⚠️ **L'offre gratuite ne dessert que les saisons 2022 à 2024.** Toute demande
+> sur 2026-27 est refusée : *« Free plans do not have access to this season »*.
+> API-Sports n'est donc **pas** un secours utilisable pour la saison en cours :
+> ESPN en est aujourd'hui le seul fournisseur. Le filet, en cas de panne, ce
+> sont les boutons de `/admin/synchronisation`.
+>
+> API-Sports reste dans la chaîne : il ne coûte rien tant qu'on ne l'appelle
+> pas, et l'ordre se change en base (`sync.provider_order`) le jour d'un
+> abonnement payant.
+
 ---
 
 ## Vérifier que tout est en place, sans rien deviner
@@ -128,7 +138,7 @@ Beaucoup de choses qu'on croit codées en dur vivent en base, dans
 |---|---|---|
 | `sync.live_interval_minutes` | `10` | Cadence du relevé pendant les matchs |
 | `sync.idle_interval_minutes` | `60` | Cadence hors match |
-| `sync.provider_order` | ESPN d'abord, API-Sports pour le classement | Qui est interrogé en premier |
+| `sync.provider_order` | ESPN d'abord partout | Qui est interrogé en premier |
 | `sync.team_aliases` | 25 graphies | Rattrape les noms d'équipe inhabituels |
 | `sync.apisports_daily_quota` | `100` | Budget quotidien, sert au ralentissement automatique |
 | `notifications.max_per_day` | `3` | Plafond par joueur |
