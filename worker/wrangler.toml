@@ -23,8 +23,9 @@ compatibility_date = "2026-08-01"
 crons = ["*/5 * * * *"]
 
 [vars]
-# L'application déployée. À remplacer par l'URL Vercel du projet.
-APP_URL = "https://ptits-pronos.vercel.app"
+# L'application déployée. L'adresse *stable* du projet, jamais celle d'un
+# déploiement (`…-31pu34bf8-…`), qui change à chaque mise en ligne.
+APP_URL = "https://les-p-tits-prono-d-hugo.vercel.app"
 # Heure UTC du passage quotidien (calendrier + classement). 4 h UTC = 6 h à
 # Paris en été : les matchs de la veille sont terminés et corrigés.
 DAILY_HOUR_UTC = "4"
