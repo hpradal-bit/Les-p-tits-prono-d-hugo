@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadRuleset } from "@/lib/settings";
+// Chemin relatif : le lanceur de tests ne résout pas « @/ » pour les valeurs.
+import { loadRuleset } from "../settings/index.ts";
 import type { MatchOutcome, Uuid } from "@/lib/types";
-import { buildDefaultPrediction, consensusOutcome } from "./defaults";
+import { buildDefaultPrediction, consensusOutcome } from "./defaults.ts";
 
 /**
  * Le verrouillage d'une journée, côté serveur.

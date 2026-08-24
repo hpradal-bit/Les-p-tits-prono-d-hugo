@@ -29,7 +29,7 @@ export interface FakeWrites {
 }
 
 interface Filter {
-  op: "eq" | "in" | "gte" | "lte" | "not" | "is";
+  op: "eq" | "neq" | "in" | "gte" | "lte" | "not" | "is";
   column: string;
   value: unknown;
 }
@@ -47,6 +47,7 @@ function matches(row: Row, filters: Filter[]): boolean {
     const actual = valueAt(row, f.column);
     switch (f.op) {
       case "eq": return actual === f.value;
+      case "neq": return actual !== f.value;
       case "in": return Array.isArray(f.value) && f.value.includes(actual);
       case "gte": return String(actual) >= String(f.value);
       case "lte": return String(actual) <= String(f.value);
@@ -83,6 +84,7 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
 
   select(_columns?: string) { if (this.mode === "select") this.mode = "select"; return this; }
   eq(column: string, value: unknown) { this.filters.push({ op: "eq", column, value }); return this; }
+  neq(column: string, value: unknown) { this.filters.push({ op: "neq", column, value }); return this; }
   in(column: string, value: unknown[]) { this.filters.push({ op: "in", column, value }); return this; }
   gte(column: string, value: unknown) { this.filters.push({ op: "gte", column, value }); return this; }
   lte(column: string, value: unknown) { this.filters.push({ op: "lte", column, value }); return this; }

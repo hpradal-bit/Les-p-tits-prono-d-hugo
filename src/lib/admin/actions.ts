@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { applyDefaultPredictionsForRound } from "@/lib/predictions/round-lock";
 import {
   recomputeFixtures,
   recomputeRound,
@@ -254,6 +255,56 @@ const roundSchema = z.object({
   roundId: z.string().uuid(),
   reason: z.string(),
 });
+
+/**
+ * Pose les pronostics par défaut sur une journée déjà verrouillée.
+ *
+ * C'est le filet si le planificateur n'a pas tourné. Rejouable : relancée deux
+ * fois, l'opération ne crée rien de plus, elle ne peut donc pas doubler les
+ * pronostics d'un joueur.
+ */
+export async function applyRoundDefaultsAction(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const parsed = roundSchema.safeParse({
+      roundId: formData.get("roundId"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) return adminFail("Journée introuvable.");
+    const { roundId, reason } = parsed.data;
+
+    const admin = createAdminClient();
+    const report = await applyDefaultPredictionsForRound(admin, roundId);
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "round.defaults_applied",
+      entityType: "round",
+      entityId: roundId,
+      after: { ...report },
+      reason,
+      event: { roundId },
+    });
+
+    revalidatePath("/admin/matchs");
+    revalidatePath("/classement");
+
+    if (!report.defaultPredictionEnabled) {
+      return adminFail("Le barème n'autorise pas le pronostic par défaut.");
+    }
+    if (report.lockedFixtures === 0) {
+      return adminOk("Aucun match verrouillé sur cette journée : rien à poser.");
+    }
+    return adminOk(
+      `${report.created} pronostic${report.created > 1 ? "s" : ""} par défaut posé${report.created > 1 ? "s" : ""} sur ${report.lockedFixtures} match${report.lockedFixtures > 1 ? "s" : ""}.`,
+    );
+  } catch (error) {
+    return adminFail(error instanceof Error ? error.message : "Échec.");
+  }
+}
 
 /** Relance le calcul de toute une journée. Idempotent : rejouable sans risque. */
 export async function recomputeRoundAction(

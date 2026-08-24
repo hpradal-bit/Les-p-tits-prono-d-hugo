@@ -5,6 +5,7 @@ import { Card, Label } from "@/components/ui";
 import { loadRounds, loadRoundFixtures } from "@/lib/admin/queries";
 import { ResultForm } from "./_components/result-form";
 import { RecomputeForm } from "./_components/recompute-form";
+import { DefaultsForm } from "./_components/defaults-form";
 
 export const metadata: Metadata = { title: "Matchs" };
 export const dynamic = "force-dynamic";
@@ -78,6 +79,7 @@ export default async function AdminMatchsPage({
           </Label>
         </div>
         <RecomputeForm roundId={current.id} />
+        <DefaultsForm roundId={current.id} />
       </div>
 
       <ul className="flex flex-col gap-3">

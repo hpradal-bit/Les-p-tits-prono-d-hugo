@@ -96,6 +96,13 @@ async function maybeRunLive(env, now, force) {
   }
 
   const result = await callSync(env, "live");
+
+  // Poser les pronostics par défaut sur les journées dont l'heure est passée.
+  // Le verrouillage tombe deux heures avant le coup d'envoi, donc hors fenêtre
+  // de match : c'est la cadence horaire qui s'en charge, largement à temps.
+  // L'opération est rejouable, l'appeler à chaque passage ne coûte rien.
+  const locked = await callSync(env, "lock");
+
   // Chaque cycle est aussi l'occasion de voir si un verrouillage approche.
   await callSync(env, "dispatch", "push");
   if (result.body && typeof result.body.nextCheckAt === "string") {
@@ -111,6 +118,9 @@ async function maybeRunLive(env, now, force) {
     status: result.status,
     inWindow: result.body?.inWindow ?? null,
     fixturesUpdated: result.body?.fixturesUpdated ?? null,
+    // Un pronostic par défaut créé se voit ici : c'est le seul endroit où
+    // constater que les oublis sont bien rattrapés.
+    defaultsCreated: locked.body?.predictionsCreated ?? null,
     nextCheckAt: result.body?.nextCheckAt ?? null,
   };
 }

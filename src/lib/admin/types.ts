@@ -13,6 +13,7 @@ export const ADMIN_ACTIONS = {
   "round.reopened": "Journée rouverte",
   "round.settled": "Journée clôturée",
   "round.recomputed": "Points recalculés",
+  "round.defaults_applied": "Pronostics par défaut posés",
 
   "fixture.result_recorded": "Résultat saisi à la main",
   "fixture.kickoff_changed": "Horaire modifié",
