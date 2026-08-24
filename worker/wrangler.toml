@@ -5,12 +5,15 @@
 # (un réveil toutes les 5 minutes), dont une poignée seulement déclenche un
 # appel réel à l'application.
 #
-# Déploiement :
-#   cd worker
-#   npx wrangler kv namespace create SYNC_STATE      # une seule fois
-#   # reporter l'identifiant renvoyé dans [[kv_namespaces]] ci-dessous
-#   npx wrangler secret put SYNC_SECRET              # même valeur que sur Vercel
-#   npx wrangler deploy
+# Déploiement : par le dépôt GitHub (Workers Builds).
+#   Cloudflare → Workers & Pages → Create → Import a repository
+#   Répertoire racine : worker/
+#   Puis, une seule fois, dans les réglages du Worker :
+#     Variables and Secrets → SYNC_SECRET (type « Secret »), même valeur
+#     que la variable du même nom chez Vercel.
+#
+# Ensuite chaque poussée sur la branche redéploie le planificateur seule ;
+# aucune ligne de commande n'est nécessaire.
 # ============================================================================
 
 name = "pronos-sync"
@@ -32,10 +35,13 @@ DAILY_HOUR_UTC = "4"
 
 # État du planificateur : prochaine vérification du direct, date du dernier
 # passage quotidien. Sans cet espace de noms, le Worker fonctionne quand même,
-# mais en cadence horaire fixe.
-# [[kv_namespaces]]
-# binding = "SYNC_STATE"
-# id = "à renseigner après `wrangler kv namespace create SYNC_STATE`"
+# mais en cadence horaire fixe — trop lent pour suivre un score.
+[[kv_namespaces]]
+binding = "SYNC_STATE"
+id = "d5d593e6f7de4f9b9a5df26ab78aa3d8"
 
-# SYNC_SECRET n'est jamais écrit ici : c'est un secret Wrangler.
-#   npx wrangler secret put SYNC_SECRET
+# SYNC_SECRET n'est jamais écrit ici : ce fichier est versionné sur GitHub.
+# Il se règle dans le tableau de bord, Settings → Variables and Secrets, en
+# choisissant le type « Secret » — la valeur devient alors illisible, y compris
+# pour soi. La même que la variable SYNC_SECRET chez Vercel : le planificateur
+# la présente à chaque appel, et l'application la compare à la sienne.
