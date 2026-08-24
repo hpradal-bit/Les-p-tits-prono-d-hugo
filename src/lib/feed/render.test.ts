@@ -38,6 +38,22 @@ test("le verrouillage mentionne les pronos automatiques, s'il y en a", () => {
   assert.equal(sans!.text, "J1 est verrouillée.");
 });
 
+test("un match terminé affiche le score", () => {
+  const r = renderEvent(ev("fixture_finished", {
+    payload: { homeTeam: "Toulouse", awayTeam: "Clermont", homeScore: 31, awayScore: 17 },
+  }));
+  assert.equal(r?.emoji, "🏉");
+  assert.equal(r?.tone, "neutral");
+  assert.equal(r!.text, "Coup de sifflet final : Toulouse 31-17 Clermont.");
+});
+
+test("un match terminé sans noms reste lisible", () => {
+  const r = renderEvent(ev("fixture_finished", {
+    payload: { homeScore: 10, awayScore: 10 },
+  }));
+  assert.equal(r!.text, "Coup de sifflet final : Domicile 10-10 Extérieur.");
+});
+
 test("une action d'arbitre affiche sa raison", () => {
   const r = renderEvent(ev("admin_action", { payload: { reason: "erreur de l'API, score officiel LNR" } }));
   assert.match(r!.text, /Intervention de l'arbitre — erreur de l'API/);

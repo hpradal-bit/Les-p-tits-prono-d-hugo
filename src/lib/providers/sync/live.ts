@@ -248,6 +248,8 @@ export async function syncLive(
     if (becameFinal) {
       finished.push(existing.id);
       await emitFixtureFinished(ctx, existing.id, {
+        homeTeam: incoming.homeTeam.name,
+        awayTeam: incoming.awayTeam.name,
         homeScore: plan.patch.home_score ?? existing.homeScore,
         awayScore: plan.patch.away_score ?? existing.awayScore,
         status: plan.patch.status,

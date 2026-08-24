@@ -102,6 +102,19 @@ const RENDERERS: Record<string, Renderer> = {
     };
   },
 
+  fixture_finished: (e) => {
+    const home = str(e.payload, "homeTeam") ?? "Domicile";
+    const away = str(e.payload, "awayTeam") ?? "Extérieur";
+    const h = num(e.payload, "homeScore");
+    const a = num(e.payload, "awayScore");
+    const score = h !== null && a !== null ? `${h}-${a}` : "?-?";
+    return {
+      emoji: "🏉",
+      tone: "neutral",
+      text: `Coup de sifflet final : ${home} ${score} ${away}.`,
+    };
+  },
+
   admin_action: (e) => {
     const reason = str(e.payload, "reason");
     const label = str(e.payload, "action") ?? "Modification";
