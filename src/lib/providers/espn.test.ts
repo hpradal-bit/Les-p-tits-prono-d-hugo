@@ -172,3 +172,58 @@ test("ESPN : aucun identifiant de ligue n'est codé en dur dans le module", asyn
   assert.match(calls[0], /\/999999\/standings/);
   assert.equal(provider.dailyQuota, null);
 });
+
+// --- Classement : retrouver les statistiques ---------------------------------
+
+/**
+ * Chaque statistique ESPN porte deux clés — `name` et `abbreviation` — et le
+ * fournisseur n'est pas constant sur celle qu'il renseigne. N'examiner que la
+ * première présente faisait ressortir victoires et défaites à zéro pour tout
+ * le monde, sans le moindre avertissement : un classement d'apparence normale,
+ * entièrement faux.
+ */
+
+function entry(stats: Record<string, unknown>[]) {
+  return {
+    standings: {
+      entries: [{ team: { id: "1", displayName: "Stade Toulousain" }, stats }],
+    },
+  };
+}
+
+test("classement : une statistique nommée est lue", () => {
+  const { rows } = parseEspnStandings(entry([
+    { name: "wins", value: 18 },
+    { name: "losses", value: 4 },
+  ]));
+  assert.equal(rows[0].won, 18);
+  assert.equal(rows[0].lost, 4);
+});
+
+test("classement : l'abréviation est consultée même quand le nom existe", () => {
+  // Le cas qui échouait : `name` est renseigné mais ne correspond à rien de
+  // ce qu'on cherche, et c'est l'abréviation qui porte l'information.
+  const { rows } = parseEspnStandings(entry([
+    { name: "overall.wins", abbreviation: "W", value: 18 },
+    { name: "overall.losses", abbreviation: "L", value: 4 },
+  ]));
+  assert.equal(rows[0].won, 18, "l'abréviation doit être examinée elle aussi");
+  assert.equal(rows[0].lost, 4);
+});
+
+test("classement : un zéro légitime n'est pas confondu avec une absence", () => {
+  // Une équipe invaincue a bien 0 défaite : la valeur existe, elle vaut zéro.
+  const { rows } = parseEspnStandings(entry([{ name: "losses", value: 0, displayValue: "0" }]));
+  assert.equal(rows[0].lost, 0);
+});
+
+test("classement : une statistique absente vaut zéro sans faire échouer", () => {
+  const { rows } = parseEspnStandings(entry([{ name: "wins", value: 3 }]));
+  assert.equal(rows[0].won, 3);
+  assert.equal(rows[0].lost, 0);
+});
+
+test("classement : la casse du nom n'a pas d'importance", () => {
+  const { rows } = parseEspnStandings(entry([{ abbreviation: "gp", value: 22 }]));
+  assert.equal(rows[0].played, 22);
+});

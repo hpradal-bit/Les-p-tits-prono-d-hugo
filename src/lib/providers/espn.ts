@@ -180,14 +180,32 @@ export function parseEspnScoreboard(payload: unknown): {
   return { fixtures, warnings };
 }
 
-/** Retrouve une statistique de classement par son nom ESPN. */
+/**
+ * Retrouve une statistique de classement par son nom ESPN.
+ *
+ * Chaque statistique porte deux clés — `name` (« gamesPlayed ») et
+ * `abbreviation` (« GP ») — et ESPN n'est pas constant sur celle qu'il
+ * renseigne. Les **deux** sont donc examinées : ne regarder que la première
+ * présente faisait manquer toutes les entrées dont le `name` existait sans
+ * correspondre, et ces statistiques ressortaient à zéro pour tout le monde,
+ * sans le moindre avertissement.
+ */
 function stat(entry: unknown, ...names: string[]): number | null {
+  const wanted = names.map((n) => n.toLowerCase());
+
   for (const raw of asArray(dig(entry, "stats"))) {
     const record = asRecord(raw);
     if (!record) continue;
-    const name = asString(record.name) ?? asString(record.abbreviation) ?? "";
-    if (names.some((n) => n.toLowerCase() === name.toLowerCase())) {
-      return asNumber(record.value) ?? asNumber(record.displayValue);
+
+    const keys = [asString(record.name), asString(record.abbreviation), asString(record.shortDisplayName)]
+      .filter((k): k is string => Boolean(k))
+      .map((k) => k.toLowerCase());
+
+    if (keys.some((k) => wanted.includes(k))) {
+      // `value` est numérique, `displayValue` une chaîne : un zéro légitime ne
+      // doit pas être confondu avec une absence, d'où le test sur null.
+      const value = asNumber(record.value);
+      return value !== null ? value : asNumber(record.displayValue);
     }
   }
   return null;
@@ -237,9 +255,9 @@ export function parseEspnStandings(payload: unknown): {
       },
       position: stat(entry, "rank", "position") ?? index + 1,
       played: stat(entry, "gamesPlayed", "GP") ?? 0,
-      won: stat(entry, "wins", "W") ?? 0,
-      drawn: stat(entry, "ties", "draws", "D") ?? 0,
-      lost: stat(entry, "losses", "L") ?? 0,
+      won: stat(entry, "wins", "gamesWon", "W") ?? 0,
+      drawn: stat(entry, "ties", "draws", "gamesDrawn", "D", "T") ?? 0,
+      lost: stat(entry, "losses", "gamesLost", "L") ?? 0,
       pointsFor: stat(entry, "pointsFor", "PF") ?? 0,
       pointsAgainst: stat(entry, "pointsAgainst", "PA") ?? 0,
       bonusOffensive: stat(entry, "bonusPointsTry", "tryBonus") ?? 0,
