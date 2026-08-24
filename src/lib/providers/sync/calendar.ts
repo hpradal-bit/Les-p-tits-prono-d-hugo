@@ -77,7 +77,7 @@ export async function syncCalendar(
   const range = options.range ?? defaultRange(ctx);
   const run = await openRun(sb, "calendar");
 
-  const outcome = await runWithFallback(ctx.chain, async (provider) => {
+  const outcome = await runWithFallback(ctx.chainFor("calendar"), async (provider) => {
     const externalId = await loadSeasonExternalId(
       sb,
       provider.name,

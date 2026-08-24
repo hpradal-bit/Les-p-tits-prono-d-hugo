@@ -28,7 +28,7 @@ export async function syncStandings(ctx: SyncContext): Promise<StandingsSyncRepo
   const { sb } = ctx;
   const run = await openRun(sb, "standings");
 
-  const outcome = await runWithFallback(ctx.chain, async (provider) => {
+  const outcome = await runWithFallback(ctx.chainFor("standings"), async (provider) => {
     const externalId = await loadSeasonExternalId(
       sb,
       provider.name,

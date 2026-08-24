@@ -98,7 +98,7 @@ export async function syncLive(
 
   const date = options.date ?? localDateKey(now);
 
-  const outcome = await runWithFallback(ctx.chain, async (provider) => {
+  const outcome = await runWithFallback(ctx.chainFor("live"), async (provider) => {
     const externalId = await loadSeasonExternalId(
       sb,
       provider.name,

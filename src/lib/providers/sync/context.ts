@@ -9,7 +9,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRuleset, loadSettings, setting, type Settings } from "@/lib/settings";
 import { buildAliasIndex, type TeamAliases, type TeamCandidate } from "../normalize.ts";
-import { createProviderChain, type ProviderChain } from "../registry.ts";
+import {
+  createProviderChain, orderChain, readProviderOrder,
+  type ProviderChain, type SyncKind,
+} from "../registry.ts";
 import { APISPORTS, APISPORTS_FREE_QUOTA } from "../apisports.ts";
 
 export interface SyncSeason {
@@ -27,6 +30,8 @@ export interface SyncContext {
   teams: TeamCandidate[];
   aliases: TeamAliases;
   chain: ProviderChain;
+  /** La chaîne réordonnée pour une nature de synchronisation donnée. */
+  chainFor: (kind: SyncKind) => ProviderChain;
   /** Délai de verrouillage en vigueur, issu du barème (`lock`). */
   lockMinutes: number;
   /** Requêtes API-Sports déjà consommées aujourd'hui. */
@@ -140,9 +145,14 @@ export async function createSyncContext(
     apisportsUsedToday,
   });
 
+  // L'ordre de préférence dépend de la nature de la synchronisation : le
+  // calendrier et le classement n'ont ni les mêmes forces ni les mêmes quotas.
+  const orderSetting = setting<unknown>(settings, "sync.provider_order", null);
+
   return {
     sb,
     season,
+    chainFor: (kind: SyncKind) => orderChain(chain, readProviderOrder(orderSetting, kind)),
     settings,
     teams,
     aliases: buildAliasIndex(settings["sync.team_aliases"]),

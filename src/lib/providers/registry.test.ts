@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createProviderChain, describeError, runWithFallback } from "./registry.ts";
+import {
+  createProviderChain, describeError, orderChain, readProviderOrder, runWithFallback,
+} from "./registry.ts";
 import { ProviderError, type ProviderFixture, type SportsDataProvider } from "./types.ts";
 
 /** Un faux fournisseur : soit il répond, soit il tombe. */
@@ -200,4 +202,62 @@ test("un objet impossible à sérialiser ne fait pas tomber la synchronisation",
   const cyclique: Record<string, unknown> = { statusCode: 500 };
   cyclique.self = cyclique;
   assert.doesNotThrow(() => describeError(cyclique));
+});
+
+/**
+ * Ordre de préférence par nature de synchronisation.
+ *
+ * Il n'y a pas de « meilleur fournisseur » dans l'absolu : le calendrier
+ * d'ESPN était irréprochable là où son classement renvoyait la saison
+ * précédente. Et le quota d'API-Sports — 100 requêtes par jour contre 288
+ * réveils les jours de match — interdit de lui confier le direct.
+ */
+test("le classement préfère API-Sports, le direct préfère ESPN", () => {
+  const chain = { providers: [fake("espn", "ok"), fake("apisports", "ok")], skipped: [] };
+
+  assert.deepEqual(
+    orderChain(chain, readProviderOrder(null, "standings")).providers.map((p) => p.name),
+    ["apisports", "espn"],
+  );
+  assert.deepEqual(
+    orderChain(chain, readProviderOrder(null, "live")).providers.map((p) => p.name),
+    ["espn", "apisports"],
+  );
+});
+
+test("un ordre venu de la base l'emporte sur les valeurs par défaut", () => {
+  const chain = { providers: [fake("espn", "ok"), fake("apisports", "ok")], skipped: [] };
+  const custom = { live: ["apisports", "espn"] };
+
+  assert.deepEqual(
+    orderChain(chain, readProviderOrder(custom, "live")).providers.map((p) => p.name),
+    ["apisports", "espn"],
+  );
+  // Une nature absente du réglage garde sa valeur par défaut.
+  assert.deepEqual(readProviderOrder(custom, "calendar"), ["espn", "apisports"]);
+});
+
+test("une préférence ne fait jamais disparaître un fournisseur", () => {
+  // Le secours doit rester joignable même si personne ne l'a nommé : une
+  // préférence qui supprime un filet est le contraire de ce qu'on demande.
+  const chain = {
+    providers: [fake("espn", "ok"), fake("apisports", "ok"), fake("autre", "ok")],
+    skipped: [],
+  };
+  const ordered = orderChain(chain, ["apisports"]);
+  assert.equal(ordered.providers.length, 3);
+  assert.equal(ordered.providers[0].name, "apisports");
+  // Les non-nommés gardent leur rang relatif.
+  assert.deepEqual(ordered.providers.slice(1).map((p) => p.name), ["espn", "autre"]);
+});
+
+test("un réglage illisible retombe sur les valeurs par défaut", () => {
+  for (const bogus of [null, undefined, "espn", [], { standings: [] }, { standings: [42] }]) {
+    assert.deepEqual(readProviderOrder(bogus, "standings"), ["apisports", "espn"]);
+  }
+});
+
+test("les réglages tolèrent la casse et les espaces", () => {
+  assert.deepEqual(readProviderOrder({ live: ["  APISports ", "ESPN"] }, "live"),
+    ["apisports", "espn"]);
 });
