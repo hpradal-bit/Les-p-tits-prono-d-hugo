@@ -9,6 +9,7 @@ import { TeamResolver } from "../refs.ts";
 import { loadSeasonExternalId } from "../refs.ts";
 import { runWithFallback } from "../registry.ts";
 import { ProviderError } from "../types.ts";
+import { checkStandingsFreshness, checkStandingsRoster } from "../plausible.ts";
 import type { SyncContext } from "./context.ts";
 import { closeRun, openRun, recordProviderUsage, type SyncRunResult } from "./runs.ts";
 
@@ -98,6 +99,44 @@ export async function syncStandings(ctx: SyncContext): Promise<StandingsSyncRepo
       points: row.points,
       updated_at: new Date().toISOString(),
     });
+  }
+
+  // --- Le tableau reçu décrit-il bien cette saison ? -------------------------
+  // Une réponse peut être parfaitement formée et pourtant fausse : ESPN a
+  // renvoyé le tableau final de la saison précédente pendant que son
+  // calendrier, lui, donnait la bonne. Aucune bascule de fournisseur n'aurait
+  // rattrapé ça — seule la cohérence avec notre propre saison le démasque.
+  const { count: finishedRounds } = await sb
+    .from("rounds")
+    .select("id", { count: "exact", head: true })
+    .eq("season_id", ctx.season.id)
+    .eq("status", "settled");
+
+  for (const verdict of [
+    checkStandingsFreshness(outcome.response.data, finishedRounds ?? 0),
+    checkStandingsRoster(rows.map((r) => r.team_id as string), ctx.teams.length),
+  ]) {
+    if (verdict.ok) continue;
+    // On n'écrit rien et on le dit : garder l'ancien classement, même vide,
+    // vaut mieux qu'afficher celui d'une autre saison.
+    await closeRun(sb, run, {
+      status: "failed",
+      provider,
+      requestsUsed,
+      fixturesUpdated: 0,
+      error: verdict.reason ?? null,
+      detail: { attempts: outcome.attempts, received: outcome.response.data.length, written: 0 },
+    });
+    return {
+      status: "failed",
+      provider,
+      requestsUsed,
+      rowsReceived: outcome.response.data.length,
+      rowsWritten: 0,
+      unmatched,
+      warnings,
+      error: verdict.reason,
+    };
   }
 
   if (rows.length > 0) {
