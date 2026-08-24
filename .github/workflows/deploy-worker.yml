@@ -32,6 +32,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # « Authentication failed [code: 9106] » ne dit pas *laquelle* des trois
+      # causes est en jeu : secret absent, jeton tronqué, ou droits
+      # insuffisants. On demande donc son avis à Cloudflare avant de déployer.
+      # La longueur est sûre à afficher — la valeur, elle, reste masquée par
+      # GitHub.
+      - name: Vérifier le jeton
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Le secret CLOUDFLARE_API_TOKEN est vide ou absent du dépôt."
+            exit 1
+          fi
+          echo "Longueur du jeton : ${#TOKEN} caractères (un jeton Cloudflare en fait 40)."
+          code=$(curl -s -o /tmp/verify.json -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)
+          echo "Cloudflare répond : HTTP $code"
+          cat /tmp/verify.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Cloudflare refuse ce jeton. Il faut en créer un nouveau."
+            exit 1
+          fi
+          echo "Le jeton est valide. Si le déploiement échoue malgré tout, ce sont les droits."
+
       # Deux étapes, et l'ordre compte : un secret ne peut pas être posé sur
       # un Worker qui n'existe pas encore. Les réunir faisait échouer le tout
       # premier déploiement, celui qui crée le Worker.
