@@ -29,11 +29,14 @@ function paceNextCheck(
  * 100 requêtes par jour chez le fournisseur de secours.
  */
 
-import { setting } from "@/lib/settings";
+// Chemins relatifs : le lanceur de tests ne résout pas le raccourci « @/ »
+// pour les imports de valeur, et ce module est désormais couvert.
+import { setting } from "../../settings/index.ts";
+import { recomputeFixtures } from "../../scoring/persist.ts";
 import { evaluateWindow, localDateKey, minutesLeftInDay, paceToQuota } from "../schedule.ts";
 import { planLiveUpdate } from "../reconcile.ts";
 import { TeamResolver, loadRefs, loadSeasonExternalId } from "../refs.ts";
-import { runWithFallback } from "../registry.ts";
+import { describeError, runWithFallback } from "../registry.ts";
 import { ProviderError } from "../types.ts";
 import type { SyncContext } from "./context.ts";
 import {
@@ -48,6 +51,18 @@ export interface LiveSyncOptions {
   date?: string;
   /** Ignore la fenêtre de match et interroge quand même. */
   force?: boolean;
+  /**
+   * Le calcul des points, injectable pour les tests.
+   *
+   * Cette couture existe pour une raison précise : l'appel avait été *oublié*,
+   * et rien ne le signalait — le relevé écrivait les scores, émettait ses
+   * événements, et laissait le classement à zéro. Un test qui vérifie
+   * simplement « le relevé a réussi » ne l'aurait jamais vu passer.
+   */
+  recompute?: (sb: SyncContext["sb"], fixtureIds: string[]) => Promise<{
+    fixtures: number;
+    predictions: number;
+  }>;
   now?: Date;
 }
 
@@ -60,6 +75,8 @@ export interface LiveSyncReport {
   nextCheckAt: string;
   fixturesUpdated: number;
   finished: string[];
+  /** Pronostics notés à la suite des matchs qui viennent de se terminer. */
+  predictionsScored: number;
   changes: string[];
   warnings: string[];
   /** Âge de la dernière donnée connue si la synchro a échoué. */
@@ -111,6 +128,7 @@ export async function syncLive(
         nextCheckAt: verdict.nextCheckAt,
         fixturesUpdated: 0,
         finished: [],
+        predictionsScored: 0,
         changes: [],
         warnings: [],
         lastKnownAt: last?.finishedAt ?? null,
@@ -163,6 +181,7 @@ export async function syncLive(
       nextCheckAt: verdict.nextCheckAt,
       fixturesUpdated: 0,
       finished: [],
+      predictionsScored: 0,
       changes: [],
       warnings: ["aucun fournisseur joignable : le dernier score connu est conservé"],
       lastKnownAt: last?.finishedAt ?? null,
@@ -239,6 +258,26 @@ export async function syncLive(
 
   await resolver.flush(sb);
 
+  // Un score écrit ne vaut rien tant que les points ne suivent pas. C'était le
+  // maillon manquant : le relevé constatait la fin d'un match, émettait
+  // l'événement, et laissait le classement à zéro — la panne ne se serait vue
+  // qu'un samedi soir de septembre, une fois les matchs joués.
+  //
+  // Le calcul est une fonction pure et rejouable : le relancer sur un match
+  // déjà noté redonne le même résultat, donc un doublon ne coûte rien.
+  let predictionsScored = 0;
+  if (finished.length > 0) {
+    try {
+      const summary = await (options.recompute ?? recomputeFixtures)(sb, finished);
+      predictionsScored = summary.predictions;
+      changes.push(`${summary.predictions} pronostic(s) noté(s) sur ${summary.fixtures} match(s)`);
+    } catch (error) {
+      // Le score, lui, est déjà écrit : on ne perd rien en signalant plutôt
+      // qu'en échouant. L'admin peut relancer le calcul d'un revers de main.
+      warnings.push(`points non calculés : ${describeError(error)} — relancer depuis l'espace admin`);
+    }
+  }
+
   const status: SyncRunResult["status"] = unmatched.length > 0 ? "partial" : "success";
   await closeRun(sb, run, {
     status,
@@ -252,6 +291,7 @@ export async function syncLive(
       activeKickoffs: verdict.activeKickoffs,
       changes: changes.slice(0, 50),
       warnings,
+      predictionsScored,
       attempts: outcome.attempts,
     },
   });
@@ -280,6 +320,7 @@ export async function syncLive(
     nextCheckAt,
     fixturesUpdated,
     finished,
+    predictionsScored,
     changes,
     warnings,
   };

@@ -1576,7 +1576,14 @@ export async function runLiveSync(
     message: `Scores relevés depuis ${r.provider} : ${r.fixturesUpdated} match${r.fixturesUpdated > 1 ? "s" : ""} mis à jour.`,
     details: [
       r.inWindow ? "Une fenêtre de match est ouverte." : "Aucun match en cours — relevé forcé.",
-      ...(r.finished.length > 0 ? [`Terminés : ${r.finished.join(", ")}`] : []),
+      ...(r.finished.length > 0
+        ? [
+            `${r.finished.length} match${r.finished.length > 1 ? "s" : ""} terminé${r.finished.length > 1 ? "s" : ""}.`,
+            // Le chiffre qui compte vraiment : un score écrit sans points
+            // distribués laisserait le classement à zéro sans rien signaler.
+            `${r.predictionsScored} pronostic${r.predictionsScored > 1 ? "s" : ""} noté${r.predictionsScored > 1 ? "s" : ""}.`,
+          ]
+        : []),
       `${r.requestsUsed} requête${r.requestsUsed > 1 ? "s" : ""} consommée${r.requestsUsed > 1 ? "s" : ""}.`,
       ...r.changes.slice(0, 12),
     ],
