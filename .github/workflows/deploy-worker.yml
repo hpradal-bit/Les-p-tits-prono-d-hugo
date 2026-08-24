@@ -1,0 +1,45 @@
+# ============================================================================
+# Déploiement du planificateur de synchronisation
+# ----------------------------------------------------------------------------
+# Cloudflare ne se déploie pas depuis cette session : son connecteur n'expose
+# que la lecture pour les Workers, et le réseau y bloque son API. GitHub, lui,
+# atteint les deux — d'où ce passage par ici.
+#
+# Trois secrets à régler une seule fois dans le dépôt
+# (Settings → Secrets and variables → Actions) :
+#
+#   CLOUDFLARE_API_TOKEN  jeton « Edit Cloudflare Workers »
+#   SYNC_SECRET           le même que la variable du même nom chez Vercel
+#
+# Ensuite, toute modification de `worker/` redéploie le planificateur seule.
+# Le déclenchement manuel (`workflow_dispatch`) permet aussi de le relancer
+# sans rien pousser — utile pour vérifier qu'il tourne encore.
+# ============================================================================
+
+name: Déployer le planificateur
+
+on:
+  push:
+    branches: [claude/ptits-pronos-hugo-u3nry4]
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Déployer sur Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker
+          # Le secret partagé est poussé avec le Worker : il ne peut pas vivre
+          # dans `wrangler.toml`, qui est versionné.
+          secrets: |
+            SYNC_SECRET
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
