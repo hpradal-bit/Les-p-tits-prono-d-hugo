@@ -18,6 +18,12 @@ account_id = "5c2c612e2d30dce2170932121de520b3"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
+# Pas d'adresse publique. Le planificateur se réveille par son minuteur : lui
+# ouvrir une porte sur le web ne servirait qu'à en créer une. Le déclenchement
+# manuel passe par l'espace admin de l'application, qui exige une session
+# d'administrateur — bien mieux qu'une adresse devinable.
+workers_dev = false
+
 # Réveil toutes les 5 minutes. Le Worker décide ensuite s'il y a lieu d'appeler
 # quoi que ce soit : hors fenêtre de match, il ne fait rien.
 [triggers]
