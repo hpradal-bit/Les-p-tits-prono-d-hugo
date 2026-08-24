@@ -6,11 +6,88 @@ import {
   openBonusQuestion,
   closeBonusQuestion,
   settleBonusQuestion,
+  settleBonusFromStandings,
 } from "@/lib/bonus/actions";
 import { getKind } from "@/lib/bonus/registry";
 import type { BonusQuestion } from "@/lib/bonus/types";
 
-function SettleForm({ question }: { question: BonusQuestion }) {
+function PodiumSettleForm({ question }: { question: BonusQuestion }) {
+  const config = question.config as { options: { value: string; label: string }[]; count: number; labels?: string[] };
+  const count = config.count ?? 3;
+  const labels = config.labels ?? Array.from({ length: count }, (_, i) => i === 0 ? "1er" : `${i + 1}e`);
+
+  const [picks, setPicks] = useState<string[]>(Array(count).fill(""));
+  const [pending, setPending] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function updatePick(i: number, v: string) {
+    const next = [...picks];
+    next[i] = v;
+    setPicks(next);
+  }
+
+  const allFilled = picks.every((p) => p !== "");
+
+  async function handleSettle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!allFilled) return;
+    setPending(true);
+    setMsg("");
+    const result = await settleBonusQuestion({
+      questionId: question.id,
+      correctAnswer: { picks },
+    });
+    setPending(false);
+    setMsg(result.message ?? "");
+  }
+
+  async function handleAutoSettle() {
+    setAutoLoading(true);
+    setMsg("");
+    const result = await settleBonusFromStandings(question.id);
+    setAutoLoading(false);
+    setMsg(result.message ?? "");
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <Button size="sm" variant="primary" onClick={handleAutoSettle} disabled={autoLoading}>
+        {autoLoading ? "Chargement…" : "Regler depuis le classement"}
+      </Button>
+      <details className="text-[12px] text-ink-muted">
+        <summary className="cursor-pointer font-semibold">Ou saisir manuellement</summary>
+        <form onSubmit={handleSettle} className="mt-2 flex flex-col gap-2">
+          {picks.map((pick, i) => {
+            const used = picks.filter((_, j) => j !== i);
+            const available = config.options.filter((o) => !used.includes(o.value) || o.value === pick);
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-8 text-right text-[12px] font-bold text-ink-muted">{labels[i]}</span>
+                <select
+                  value={pick}
+                  onChange={(e) => updatePick(i, e.target.value)}
+                  className="flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
+                >
+                  <option value="">—</option>
+                  {available.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+          <Button type="submit" size="sm" variant="ghost" disabled={pending || !allFilled}>
+            {pending ? "…" : "Regler manuellement"}
+          </Button>
+        </form>
+      </details>
+      {msg && <p className="text-[12px] font-semibold text-ink-muted">{msg}</p>}
+    </div>
+  );
+}
+
+function SimpleSettleForm({ question }: { question: BonusQuestion }) {
   const kd = getKind(question.kind);
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
@@ -85,7 +162,7 @@ function SettleForm({ question }: { question: BonusQuestion }) {
         </div>
       ))}
       <Button type="submit" size="sm" disabled={pending || !value}>
-        {pending ? "…" : "Régler"}
+        {pending ? "…" : "Regler"}
       </Button>
       {msg && <span className="text-[12px] text-ink-muted">{msg}</span>}
     </form>
@@ -95,8 +172,8 @@ function SettleForm({ question }: { question: BonusQuestion }) {
 const STATUS_LABELS: Record<string, string> = {
   draft: "Brouillon",
   open: "Ouverte",
-  closed: "Fermée",
-  settled: "Réglée",
+  closed: "Fermee",
+  settled: "Reglee",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -110,6 +187,7 @@ export function QuestionCard({ question }: { question: BonusQuestion }) {
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState("");
   const kd = getKind(question.kind);
+  const isPodium = question.kind === "podium";
 
   async function handleAction(action: "open" | "close") {
     setPending(true);
@@ -161,13 +239,15 @@ export function QuestionCard({ question }: { question: BonusQuestion }) {
             >
               {pending ? "…" : "Fermer"}
             </Button>
-            <SettleForm question={question} />
           </>
         )}
-        {question.status === "closed" && (
-          <SettleForm question={question} />
-        )}
       </div>
+
+      {(question.status === "open" || question.status === "closed") && (
+        isPodium
+          ? <PodiumSettleForm question={question} />
+          : <SimpleSettleForm question={question} />
+      )}
 
       {msg && <p className="mt-2 text-[12px] font-semibold text-ink-muted">{msg}</p>}
     </div>

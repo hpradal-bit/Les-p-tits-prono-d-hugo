@@ -2,8 +2,9 @@ import type { ErasedKind } from "./kind.ts";
 import { yesNo } from "./kinds/yes-no.ts";
 import { singleChoice } from "./kinds/single-choice.ts";
 import { numericClosest } from "./kinds/numeric-closest.ts";
+import { podium } from "./kinds/podium.ts";
 
-const ALL_KINDS: ErasedKind[] = [yesNo, singleChoice, numericClosest];
+const ALL_KINDS: ErasedKind[] = [yesNo, singleChoice, numericClosest, podium];
 
 const BY_KIND = new Map(ALL_KINDS.map((k) => [k.kind, k]));
 

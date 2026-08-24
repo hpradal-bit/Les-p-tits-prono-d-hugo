@@ -290,3 +290,54 @@ export async function answerBonusQuestion(
   revalidatePath("/questions");
   return { ok: true, message: "Réponse enregistrée !" };
 }
+
+export async function settleBonusFromStandings(
+  questionId: string,
+): Promise<AdminActionState> {
+  const ctx = await requireAdmin();
+  const admin = createAdminClient();
+
+  const { data: q } = await admin
+    .from("bonus_questions")
+    .select("id, kind, config, scoring, status, prompt, season_id")
+    .eq("id", questionId)
+    .single();
+
+  if (!q) return { status: "error", message: "Question introuvable." };
+  if (q.kind !== "podium") return { status: "error", message: "Cette action est réservée aux questions Podium." };
+  if (q.status !== "open" && q.status !== "closed") {
+    return { status: "error", message: "La question doit être ouverte ou fermée." };
+  }
+
+  const config = q.config as { options: { value: string; label: string }[]; count: number };
+  const count = config.count ?? 3;
+
+  const { data: standings, error: standErr } = await admin
+    .from("competition_standings")
+    .select("team_id, position")
+    .eq("season_id", q.season_id as string)
+    .order("position", { ascending: true })
+    .limit(count);
+
+  if (standErr || !standings || standings.length === 0) {
+    return { status: "error", message: "Classement sportif introuvable. Lancez une synchronisation d'abord." };
+  }
+
+  const teamIds = config.options.map((o) => o.value);
+  const topTeamIds = standings.map((s) => s.team_id as string);
+  const validPicks = topTeamIds.filter((id) => teamIds.includes(id));
+
+  if (validPicks.length < count) {
+    return {
+      status: "error",
+      message: `Seulement ${validPicks.length} équipe(s) du classement correspondent aux options de la question (${count} attendues).`,
+    };
+  }
+
+  const correctAnswer = { picks: validPicks.slice(0, count) };
+
+  return settleBonusQuestion({
+    questionId,
+    correctAnswer,
+  });
+}

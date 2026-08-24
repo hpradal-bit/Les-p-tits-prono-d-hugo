@@ -11,14 +11,92 @@ interface Props {
   existingAnswer: BonusAnswerRow | null;
 }
 
-export function AnswerForm({ question, existingAnswer }: Props) {
+function PodiumForm({ question, existingAnswer, onResult }: Props & { onResult: (r: { ok: boolean; text: string }) => void }) {
+  const kd = getKind(question.kind)!;
+  const config = question.config as { options: { value: string; label: string }[]; count: number; labels?: string[] };
+  const count = config.count ?? 3;
+
+  const existingPicks = (existingAnswer?.answer as { picks?: string[] } | null)?.picks ?? [];
+  const [picks, setPicks] = useState<string[]>(
+    existingPicks.length === count ? existingPicks : Array(count).fill(""),
+  );
+  const [pending, setPending] = useState(false);
+
+  const labels = config.labels ?? Array.from({ length: count }, (_, i) => i === 0 ? "1er" : `${i + 1}e`);
+
+  function updatePick(index: number, value: string) {
+    const next = [...picks];
+    next[index] = value;
+    setPicks(next);
+  }
+
+  const allFilled = picks.every((p) => p !== "");
+  const hasDuplicates = new Set(picks.filter(Boolean)).size !== picks.filter(Boolean).length;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!allFilled || hasDuplicates) return;
+    setPending(true);
+    const result = await answerBonusQuestion({
+      questionId: question.id,
+      answer: { picks },
+    });
+    setPending(false);
+    onResult({ ok: result.ok, text: result.message });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      {picks.map((pick, i) => {
+        const used = picks.filter((_, j) => j !== i);
+        const available = config.options.filter((o) => !used.includes(o.value) || o.value === pick);
+        return (
+          <div key={i} className="flex items-center gap-3">
+            <span className="w-10 text-right text-[14px] font-bold text-ink-muted">
+              {labels[i]}
+            </span>
+            <select
+              value={pick}
+              onChange={(e) => updatePick(i, e.target.value)}
+              className={`flex-1 rounded-xl border-2 px-4 py-3 text-[14px] font-semibold transition ${
+                pick
+                  ? "border-clay bg-clay-soft text-clay"
+                  : "border-line bg-surface text-ink"
+              }`}
+            >
+              <option value="">— Choisir une equipe —</option>
+              {available.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        );
+      })}
+
+      {hasDuplicates && (
+        <p className="text-[13px] font-semibold text-wrong">
+          Chaque equipe ne peut etre choisie qu'une fois.
+        </p>
+      )}
+
+      <Button type="submit" disabled={pending || !allFilled || hasDuplicates}>
+        {pending
+          ? "Envoi…"
+          : existingAnswer
+            ? "Modifier ma reponse"
+            : "Valider ma reponse"}
+      </Button>
+    </form>
+  );
+}
+
+function SimpleForm({ question, existingAnswer, onResult }: Props & { onResult: (r: { ok: boolean; text: string }) => void }) {
   const kd = getKind(question.kind);
   const initial = existingAnswer
     ? String((existingAnswer.answer as { value: unknown })?.value ?? "")
     : "";
   const [value, setValue] = useState(initial);
   const [pending, setPending] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (!kd) return <p className="text-[13px] text-ink-muted">Type de question inconnu.</p>;
 
@@ -28,7 +106,6 @@ export function AnswerForm({ question, existingAnswer }: Props) {
     e.preventDefault();
     if (!value) return;
     setPending(true);
-    setMsg(null);
 
     const field = fields[0];
     let answer: unknown;
@@ -44,7 +121,7 @@ export function AnswerForm({ question, existingAnswer }: Props) {
     });
 
     setPending(false);
-    setMsg({ ok: result.ok, text: result.message });
+    onResult({ ok: result.ok, text: result.message });
   }
 
   return (
@@ -111,19 +188,32 @@ export function AnswerForm({ question, existingAnswer }: Props) {
         </div>
       ))}
 
+      <Button type="submit" disabled={pending || !value}>
+        {pending
+          ? "Envoi…"
+          : existingAnswer
+            ? "Modifier ma reponse"
+            : "Valider ma reponse"}
+      </Button>
+    </form>
+  );
+}
+
+export function AnswerForm({ question, existingAnswer }: Props) {
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {question.kind === "podium" ? (
+        <PodiumForm question={question} existingAnswer={existingAnswer} onResult={setMsg} />
+      ) : (
+        <SimpleForm question={question} existingAnswer={existingAnswer} onResult={setMsg} />
+      )}
       {msg && (
         <p className={`text-[13px] font-semibold ${msg.ok ? "text-winner" : "text-wrong"}`}>
           {msg.text}
         </p>
       )}
-
-      <Button type="submit" disabled={pending || !value}>
-        {pending
-          ? "Envoi…"
-          : existingAnswer
-            ? "Modifier ma réponse"
-            : "Valider ma réponse"}
-      </Button>
-    </form>
+    </div>
   );
 }

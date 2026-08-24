@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { yesNo } from "./yes-no.ts";
 import { singleChoice } from "./single-choice.ts";
 import { numericClosest } from "./numeric-closest.ts";
+import { podium } from "./podium.ts";
 
 describe("yes_no", () => {
   test("bonne reponse → points", () => {
@@ -103,5 +104,71 @@ describe("numeric_closest", () => {
       entries: [],
     });
     assert.equal(grades.length, 0);
+  });
+});
+
+describe("podium", () => {
+  const config = {
+    options: [
+      { value: "tou", label: "Toulouse" },
+      { value: "bor", label: "Bordeaux" },
+      { value: "rac", label: "Racing" },
+      { value: "cle", label: "Clermont" },
+      { value: "lr", label: "La Rochelle" },
+    ],
+    count: 3,
+  };
+  const scoring = { exact_position: 5, in_podium: 2 };
+
+  test("3 bonnes positions → 15 points", () => {
+    const grades = podium.grade({
+      config,
+      scoring,
+      correctAnswer: { picks: ["tou", "bor", "rac"] },
+      entries: [{ userId: "u1", answer: { picks: ["tou", "bor", "rac"] } }],
+    });
+    assert.equal(grades[0].points, 15);
+    assert.equal(grades[0].breakdown.outcome, "correct");
+  });
+
+  test("2 bonnes equipes mais 1 mal placee → 5+5+2 = 12", () => {
+    const grades = podium.grade({
+      config,
+      scoring,
+      correctAnswer: { picks: ["tou", "bor", "rac"] },
+      entries: [{ userId: "u1", answer: { picks: ["tou", "rac", "bor"] } }],
+    });
+    assert.equal(grades[0].points, 5 + 2 + 2);
+    assert.equal(grades[0].breakdown.outcome, "partial");
+  });
+
+  test("aucune bonne equipe → 0 point", () => {
+    const grades = podium.grade({
+      config,
+      scoring,
+      correctAnswer: { picks: ["tou", "bor", "rac"] },
+      entries: [{ userId: "u1", answer: { picks: ["cle", "lr", "cle"] } }],
+    });
+    assert.equal(grades[0].points, 0);
+    assert.equal(grades[0].breakdown.outcome, "wrong");
+  });
+
+  test("1 equipe dans le podium mais mal placee → 2 points", () => {
+    const grades = podium.grade({
+      config,
+      scoring,
+      correctAnswer: { picks: ["tou", "bor", "rac"] },
+      entries: [{ userId: "u1", answer: { picks: ["cle", "lr", "tou"] } }],
+    });
+    assert.equal(grades[0].points, 2);
+  });
+
+  test("formatAnswer affiche les labels", () => {
+    const result = podium.formatAnswer(
+      { picks: ["tou", "bor", "rac"] },
+      config,
+    );
+    assert.ok(result.includes("Toulouse"));
+    assert.ok(result.includes("Bordeaux"));
   });
 });

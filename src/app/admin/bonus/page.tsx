@@ -14,12 +14,25 @@ export default async function AdminBonusPage() {
   const seasonId = await currentSeasonId(admin);
   const questions = await listQuestions(admin, seasonId);
 
+  const { data: seasonTeams } = await admin
+    .from("season_teams")
+    .select("teams(id, name)")
+    .eq("season_id", seasonId);
+
+  const teams: { value: string; label: string }[] = (seasonTeams ?? [])
+    .map((st) => {
+      const t = st.teams as unknown as { id: string; name: string } | null;
+      return t ? { value: t.id, label: t.name } : null;
+    })
+    .filter((t): t is { value: string; label: string } => t !== null)
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <Label>Nouvelle question</Label>
         <Card className="p-4">
-          <CreateForm />
+          <CreateForm teams={teams} />
         </Card>
       </section>
 
