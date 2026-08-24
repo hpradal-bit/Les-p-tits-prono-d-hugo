@@ -30,6 +30,10 @@ export const ADMIN_ACTIONS = {
   "push.announcement_sent": "Message envoyé au groupe",
   "push.rules_changed": "Règles de notification modifiées",
 
+  "sync.calendar_run": "Calendrier synchronisé",
+  "sync.live_run": "Scores relevés",
+  "sync.standings_run": "Classement sportif rafraîchi",
+
   "player.created": "Joueur ajouté",
   "player.deactivated": "Joueur désactivé",
   "player.reactivated": "Joueur réactivé",
@@ -55,7 +59,8 @@ export type AdminEntity =
   | "group"
   | "profile"
   | "margin_bucket"
-  | "point_adjustment";
+  | "point_adjustment"
+  | "season";
 
 export const ENTITY_LABELS: Record<AdminEntity, string> = {
   round: "Journée",
@@ -66,6 +71,7 @@ export const ENTITY_LABELS: Record<AdminEntity, string> = {
   profile: "Joueur",
   margin_bucket: "Tranche d'écart",
   point_adjustment: "Ajustement",
+  season: "Saison",
 };
 
 /** Libellés français des champs affichés dans l'avant/après du journal. */
