@@ -115,6 +115,15 @@ const RENDERERS: Record<string, Renderer> = {
     };
   },
 
+  bonus_question: (e) => {
+    const prompt = str(e.payload, "prompt") ?? "une question bonus";
+    return {
+      emoji: "🎯",
+      tone: "neutral",
+      text: `Nouvelle question bonus : ${prompt}`,
+    };
+  },
+
   admin_action: (e) => {
     const reason = str(e.payload, "reason");
     const label = str(e.payload, "action") ?? "Modification";

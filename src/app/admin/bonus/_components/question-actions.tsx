@@ -1,0 +1,175 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui";
+import {
+  openBonusQuestion,
+  closeBonusQuestion,
+  settleBonusQuestion,
+} from "@/lib/bonus/actions";
+import { getKind } from "@/lib/bonus/registry";
+import type { BonusQuestion } from "@/lib/bonus/types";
+
+function SettleForm({ question }: { question: BonusQuestion }) {
+  const kd = getKind(question.kind);
+  const [value, setValue] = useState("");
+  const [pending, setPending] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  if (!kd) return null;
+
+  const fields = kd.correctFields(question.config);
+
+  async function handleSettle(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setMsg("");
+
+    let correctAnswer: unknown;
+    const field = fields[0];
+    if (!field) return;
+
+    if (field.widget === "boolean") {
+      correctAnswer = { value };
+    } else if (field.widget === "number") {
+      correctAnswer = { value: parseInt(value, 10) };
+    } else {
+      correctAnswer = { value };
+    }
+
+    const result = await settleBonusQuestion({
+      questionId: question.id,
+      correctAnswer,
+    });
+    setPending(false);
+    setMsg(result.message ?? "");
+  }
+
+  return (
+    <form onSubmit={handleSettle} className="flex items-end gap-2">
+      {fields.map((f) => (
+        <div key={f.name} className="flex flex-col gap-1">
+          <label className="text-[11px] font-semibold text-ink-muted">{f.label}</label>
+          {f.widget === "boolean" ? (
+            <select
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
+            >
+              <option value="">—</option>
+              <option value="yes">{f.trueLabel}</option>
+              <option value="no">{f.falseLabel}</option>
+            </select>
+          ) : f.widget === "choice" ? (
+            <select
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
+            >
+              <option value="">—</option>
+              {f.options.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              min={f.min}
+              max={f.max}
+              step={f.step}
+              className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
+            />
+          )}
+        </div>
+      ))}
+      <Button type="submit" size="sm" disabled={pending || !value}>
+        {pending ? "…" : "Régler"}
+      </Button>
+      {msg && <span className="text-[12px] text-ink-muted">{msg}</span>}
+    </form>
+  );
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Brouillon",
+  open: "Ouverte",
+  closed: "Fermée",
+  settled: "Réglée",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: "bg-sage-soft text-sage",
+  open: "bg-winner-soft text-winner",
+  closed: "bg-clay-soft text-clay",
+  settled: "bg-perfect-soft text-perfect",
+};
+
+export function QuestionCard({ question }: { question: BonusQuestion }) {
+  const [pending, setPending] = useState(false);
+  const [msg, setMsg] = useState("");
+  const kd = getKind(question.kind);
+
+  async function handleAction(action: "open" | "close") {
+    setPending(true);
+    setMsg("");
+    const result =
+      action === "open"
+        ? await openBonusQuestion(question.id)
+        : await closeBonusQuestion(question.id);
+    setPending(false);
+    setMsg(result.message ?? "");
+  }
+
+  return (
+    <div className="rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <p className="text-[15px] font-semibold text-ink">{question.prompt}</p>
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_COLORS[question.status] ?? ""}`}>
+              {STATUS_LABELS[question.status] ?? question.status}
+            </span>
+            {kd && (
+              <span className="text-[11px] text-ink-faint">{kd.label}</span>
+            )}
+            {question.roundName && (
+              <span className="text-[11px] text-ink-faint">{question.roundName}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {question.status === "draft" && (
+          <Button
+            size="sm"
+            onClick={() => handleAction("open")}
+            disabled={pending}
+          >
+            {pending ? "…" : "Ouvrir"}
+          </Button>
+        )}
+        {question.status === "open" && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleAction("close")}
+              disabled={pending}
+            >
+              {pending ? "…" : "Fermer"}
+            </Button>
+            <SettleForm question={question} />
+          </>
+        )}
+        {question.status === "closed" && (
+          <SettleForm question={question} />
+        )}
+      </div>
+
+      {msg && <p className="mt-2 text-[12px] font-semibold text-ink-muted">{msg}</p>}
+    </div>
+  );
+}

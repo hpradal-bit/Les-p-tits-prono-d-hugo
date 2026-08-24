@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/matchs", label: "Matchs" },
   { href: "/admin/synchronisation", label: "Synchro" },
   { href: "/admin/bareme", label: "Barème" },
+  { href: "/admin/bonus", label: "Bonus" },
   { href: "/admin/joueurs", label: "Joueurs" },
   { href: "/admin/push-settings", label: "Notifications" },
   { href: "/admin/journal", label: "Journal" },
