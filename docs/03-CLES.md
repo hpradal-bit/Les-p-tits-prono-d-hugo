@@ -107,6 +107,33 @@ planificateur* → **Run workflow**.
 
 ---
 
+## Ajouter une compétition
+
+Le schéma est multi-compétitions depuis le début : `sports → competitions →
+seasons`, avec des correspondances par compétition dans `external_refs`.
+
+Il faut **trois lignes**, et aucune équipe :
+
+1. une `competition` rattachée au sport ;
+2. une `season` en `draft` (jamais `active` : le Top 14 garde la main sur ce
+   que voient les joueurs) ;
+3. une ligne `external_refs` portant l'identifiant du fournisseur.
+
+La première synchronisation du calendrier **crée l'effectif toute seule**, à
+partir des noms renvoyés par le fournisseur — l'amorçage ne joue que sur une
+saison encore vide, donc jamais sur une compétition établie. Les codes générés
+sont provisoires et se corrigent dans l'espace admin.
+
+`supabase/migrations/0025_prod2.sql` fait exactement cela pour la Pro D2. Une
+seule valeur y est à renseigner : l'identifiant ESPN, lisible dans l'adresse
+d'une page de la compétition (`espn.com/rugby/scoreboard/_/league/<id>` — le
+Top 14 porte le `270559`).
+
+Ensuite, le sélecteur **Compétition** de `/admin/synchronisation` permet de
+choisir laquelle synchroniser.
+
+---
+
 ## Regénérer une clé
 
 ### La paire VAPID (notifications)
