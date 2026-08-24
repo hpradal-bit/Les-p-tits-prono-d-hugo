@@ -14,6 +14,7 @@ import {
   type ProviderChain, type SyncKind,
 } from "../registry.ts";
 import { APISPORTS, APISPORTS_FREE_QUOTA } from "../apisports.ts";
+import { HIGHLIGHTLY, HIGHLIGHTLY_FREE_QUOTA } from "../highlightly.ts";
 
 export interface SyncSeason {
   id: string;
@@ -117,15 +118,31 @@ export async function countApiSportsRequestsToday(sb: SupabaseClient): Promise<n
   return (data ?? []).reduce((total, row) => total + (row.requests_used ?? 0), 0);
 }
 
+export async function countProviderRequestsToday(sb: SupabaseClient, provider: string): Promise<number> {
+  const midnightUtc = new Date();
+  midnightUtc.setUTCHours(0, 0, 0, 0);
+
+  const { data, error } = await sb
+    .from("sync_runs")
+    .select("requests_used")
+    .eq("provider", provider)
+    .contains("detail", { ledger: true })
+    .gte("started_at", midnightUtc.toISOString());
+  if (error) throw error;
+
+  return (data ?? []).reduce((total, row) => total + (row.requests_used ?? 0), 0);
+}
+
 export async function createSyncContext(
   sb: SupabaseClient,
   options: { seasonId?: string } = {},
 ): Promise<SyncContext> {
   const season = await loadActiveSeason(sb, options.seasonId);
-  const [settings, teams, apisportsUsedToday] = await Promise.all([
+  const [settings, teams, apisportsUsedToday, highlightlyUsedToday] = await Promise.all([
     loadSettings(sb),
     loadSeasonTeams(sb, season.id),
     countApiSportsRequestsToday(sb),
+    countProviderRequestsToday(sb, HIGHLIGHTLY),
   ]);
 
   // Le délai de verrouillage fait partie du barème ; `app_settings` sert de
@@ -139,7 +156,12 @@ export async function createSyncContext(
   }
 
   const apisportsQuota = setting(settings, "sync.apisports_daily_quota", APISPORTS_FREE_QUOTA);
+  const highlightlyQuota = setting(settings, "sync.highlightly_daily_quota", HIGHLIGHTLY_FREE_QUOTA);
   const chain = createProviderChain({
+    thesportsdbKey: process.env.THESPORTSDB_KEY,
+    highlightlyKey: process.env.HIGHLIGHTLY_KEY,
+    highlightlyQuota,
+    highlightlyUsedToday,
     apisportsKey: process.env.APISPORTS_KEY,
     apisportsQuota,
     apisportsUsedToday,

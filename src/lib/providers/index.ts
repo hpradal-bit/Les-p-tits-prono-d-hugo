@@ -16,7 +16,7 @@ export type {
 } from "./types.ts";
 export { ProviderError } from "./types.ts";
 
-export { createProviderChain, runWithFallback, describeError } from "./registry.ts";
+export { createProviderChain, runWithFallback, describeError, THESPORTSDB, HIGHLIGHTLY } from "./registry.ts";
 export type { ProviderChain, ChainOutcome, AttemptLog } from "./registry.ts";
 
 export {

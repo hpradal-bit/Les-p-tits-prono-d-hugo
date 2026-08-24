@@ -25,27 +25,29 @@ function fake(name: string, behaviour: "ok" | "boom", fixtures: ProviderFixture[
 
 // --- Composition de la chaîne ------------------------------------------------
 
-test("chaîne : sans clé API-Sports, ESPN est seul et la raison est notée", () => {
+test("chaîne : sans aucune clé, ESPN est seul fournisseur effectif", () => {
   const chain = createProviderChain({});
-  assert.equal(chain.providers.length, 1);
-  assert.equal(chain.providers[0].name, "espn");
-  assert.equal(chain.skipped[0].provider, "apisports");
-  assert.match(chain.skipped[0].reason, /APISPORTS_KEY/);
+  const names = chain.providers.map((p) => p.name);
+  assert.ok(names.includes("espn"), "ESPN doit toujours être dans la chaîne");
+  assert.ok(chain.skipped.some((s) => s.provider === "thesportsdb"));
+  assert.ok(chain.skipped.some((s) => s.provider === "highlightly"));
+  assert.ok(chain.skipped.some((s) => s.provider === "apisports"));
 });
 
 test("chaîne : avec une clé, le secours est en deuxième position", () => {
   const chain = createProviderChain({ apisportsKey: "k", apisportsQuota: 100 });
-  assert.deepEqual(chain.providers.map((p) => p.name), ["espn", "apisports"]);
+  assert.ok(chain.providers.map((p) => p.name).includes("apisports"));
+  assert.ok(chain.providers.map((p) => p.name).includes("espn"));
 });
 
-test("chaîne : quota du jour épuisé → le secours est écarté d'emblée", () => {
+test("chaîne : quota du jour épuisé → le fournisseur est écarté d'emblée", () => {
   const chain = createProviderChain({
-    apisportsKey: "k",
-    apisportsQuota: 100,
-    apisportsUsedToday: 100,
+    highlightlyKey: "k",
+    highlightlyQuota: 100,
+    highlightlyUsedToday: 100,
   });
-  assert.deepEqual(chain.providers.map((p) => p.name), ["espn"]);
-  assert.match(chain.skipped[0].reason, /quota journalier atteint \(100\/100/);
+  assert.ok(!chain.providers.map((p) => p.name).includes("highlightly"));
+  assert.ok(chain.skipped.some((s) => s.provider === "highlightly" && /quota/.test(s.reason)));
 });
 
 test("chaîne : quota presque atteint → le secours reste disponible", () => {
@@ -54,7 +56,24 @@ test("chaîne : quota presque atteint → le secours reste disponible", () => {
     apisportsQuota: 100,
     apisportsUsedToday: 99,
   });
-  assert.equal(chain.providers.length, 2);
+  assert.ok(chain.providers.map((p) => p.name).includes("apisports"));
+});
+
+test("chaîne : TheSportsDB en tête quand la clé est présente", () => {
+  const chain = createProviderChain({ thesportsdbKey: "123" });
+  assert.equal(chain.providers[0].name, "thesportsdb");
+});
+
+test("chaîne complète : quatre fournisseurs dans l'ordre", () => {
+  const chain = createProviderChain({
+    thesportsdbKey: "123",
+    highlightlyKey: "rapid-key",
+    apisportsKey: "as-key",
+  });
+  assert.deepEqual(chain.providers.map((p) => p.name), [
+    "thesportsdb", "highlightly", "espn", "apisports",
+  ]);
+  assert.deepEqual(chain.skipped, []);
 });
 
 // --- Bascule -----------------------------------------------------------------
@@ -207,37 +226,49 @@ test("un objet impossible à sérialiser ne fait pas tomber la synchronisation",
 /**
  * Ordre de préférence par nature de synchronisation.
  *
- * Il n'y a pas de « meilleur fournisseur » dans l'absolu : le calendrier
- * d'ESPN était irréprochable là où son classement renvoyait la saison
- * précédente. Et le quota d'API-Sports — 100 requêtes par jour contre 288
- * réveils les jours de match — interdit de lui confier le direct.
+ * TheSportsDB en tête partout (30 req/min, pas de quota journalier),
+ * Highlightly en second (100 req/jour, API structurée), ESPN en troisième
+ * (gratuit mais non documenté), API-Sports en dernier (saisons limitées).
  */
-test("ESPN passe en premier partout, API-Sports reste en secours", () => {
-  // Le classement avait été confié à API-Sports d'abord, ESPN renvoyant la
-  // saison précédente. Mais leur offre gratuite s'arrête à 2024 : le mettre en
-  // tête gaspillait une requête pour un refus certain. Il reste dans la
-  // chaîne, prêt à servir le jour d'un abonnement.
-  const chain = { providers: [fake("espn", "ok"), fake("apisports", "ok")], skipped: [] };
+test("TheSportsDB en tête, puis Highlightly, ESPN, API-Sports", () => {
+  const chain = {
+    providers: [
+      fake("thesportsdb", "ok"),
+      fake("highlightly", "ok"),
+      fake("espn", "ok"),
+      fake("apisports", "ok"),
+    ],
+    skipped: [],
+  };
 
   for (const kind of ["calendar", "live", "standings"] as const) {
     assert.deepEqual(
       orderChain(chain, readProviderOrder(null, kind)).providers.map((p) => p.name),
-      ["espn", "apisports"],
+      ["thesportsdb", "highlightly", "espn", "apisports"],
       kind,
     );
   }
 });
 
 test("un ordre venu de la base l'emporte sur les valeurs par défaut", () => {
-  const chain = { providers: [fake("espn", "ok"), fake("apisports", "ok")], skipped: [] };
-  const custom = { live: ["apisports", "espn"] };
+  const chain = {
+    providers: [
+      fake("thesportsdb", "ok"),
+      fake("highlightly", "ok"),
+      fake("espn", "ok"),
+      fake("apisports", "ok"),
+    ],
+    skipped: [],
+  };
+  const custom = { live: ["espn", "thesportsdb"] };
 
   assert.deepEqual(
     orderChain(chain, readProviderOrder(custom, "live")).providers.map((p) => p.name),
-    ["apisports", "espn"],
+    ["espn", "thesportsdb", "highlightly", "apisports"],
   );
   // Une nature absente du réglage garde sa valeur par défaut.
-  assert.deepEqual(readProviderOrder(custom, "calendar"), ["espn", "apisports"]);
+  assert.deepEqual(readProviderOrder(custom, "calendar"),
+    ["thesportsdb", "highlightly", "espn", "apisports"]);
 });
 
 test("une préférence ne fait jamais disparaître un fournisseur", () => {
@@ -255,8 +286,9 @@ test("une préférence ne fait jamais disparaître un fournisseur", () => {
 });
 
 test("un réglage illisible retombe sur les valeurs par défaut", () => {
+  const expected = ["thesportsdb", "highlightly", "espn", "apisports"];
   for (const bogus of [null, undefined, "espn", [], { standings: [] }, { standings: [42] }]) {
-    assert.deepEqual(readProviderOrder(bogus, "standings"), ["espn", "apisports"]);
+    assert.deepEqual(readProviderOrder(bogus, "standings"), expected);
   }
 });
 

@@ -34,6 +34,8 @@ sont de simples identifiants. Les noter fait gagner du temps.
 | Nom | Valeur | Rôle |
 |---|---|---|
 | Identifiant ESPN du Top 14 | `270559` | Range dans `external_refs`, pas dans une variable |
+| Identifiant TheSportsDB du Top 14 | `4430` (ligue) · `4430:2026-2027` (saison) | Idem |
+| Identifiant TheSportsDB de la Pro D2 | `5172` (ligue) · `5172:2026-2027` (saison) | Idem |
 | Identifiant API-Sports de la saison | `16:2026` | Idem |
 | `VAPID_SUBJECT` | `mailto:hpradal@gmail.com` | Exigé par Apple, doit être `mailto:` ou `https:` |
 | Clé publique VAPID | *dans l'espace admin* | Visible sur `/admin/push-settings`, elle n'est pas secrète |
@@ -44,9 +46,11 @@ sont de simples identifiants. Les noter fait gagner du temps.
 
 | Nom | Où il est enregistré | Sans lui |
 |---|---|---|
+| `THESPORTSDB_KEY` | Vercel → Settings → Environment Variables | Plus de fournisseur principal : bascule sur Highlightly ou ESPN |
+| `HIGHLIGHTLY_KEY` | Vercel → Settings → Environment Variables | Plus de second fournisseur : bascule directement sur ESPN |
 | `VAPID_PRIVATE_KEY` | Vercel → Settings → Environment Variables | Aucune notification ne part |
 | `SYNC_SECRET` | Vercel **et** Cloudflare (même valeur des deux côtés) | Le planificateur reçoit un 401 |
-| `APISPORTS_KEY` | Vercel → Settings → Environment Variables | Plus de secours si ESPN tombe, et plus de classement |
+| `APISPORTS_KEY` | Vercel → Settings → Environment Variables | Plus de dernier recours (limité aux saisons 2022-2024 en gratuit) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel uniquement — **jamais** dans un `NEXT_PUBLIC_*` | Le serveur ne peut plus écrire |
 | `CLOUDFLARE_API_TOKEN` | GitHub → Settings → Secrets and variables → Actions | Le planificateur ne peut plus être redéployé |
 
@@ -202,7 +206,8 @@ Beaucoup de choses qu'on croit codées en dur vivent en base, dans
 |---|---|---|
 | `sync.live_interval_minutes` | `10` | Cadence du relevé pendant les matchs |
 | `sync.idle_interval_minutes` | `60` | Cadence hors match |
-| `sync.provider_order` | ESPN d'abord partout | Qui est interrogé en premier |
+| `sync.provider_order` | TheSportsDB → Highlightly → ESPN → API-Sports | Qui est interrogé en premier |
+| `sync.highlightly_daily_quota` | `100` | Budget quotidien Highlightly |
 | `sync.team_aliases` | 25 graphies | Rattrape les noms d'équipe inhabituels |
 | `sync.apisports_daily_quota` | `100` | Budget quotidien, sert au ralentissement automatique |
 | `notifications.max_per_day` | `3` | Plafond par joueur |

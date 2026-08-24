@@ -1,18 +1,30 @@
 /**
  * La chaîne de fournisseurs et sa règle de bascule.
  *
- * ESPN en premier (gratuit, sans quota). En cas d'échec, API-Sports (100
- * requêtes par jour). Si les deux échouent, on ne casse rien : l'appelant
- * garde la dernière donnée connue en base et la panne est journalisée dans
- * `sync_runs`.
+ * TheSportsDB en premier (gratuit, 30 req/min). En cas d'échec, Highlightly
+ * (100 req/jour). Puis ESPN (gratuit, sans quota, mais API non documentée).
+ * Enfin API-Sports (100 req/jour, ne couvre que 2022-2024 en gratuit).
+ *
+ * Si tous échouent, on ne casse rien : l'appelant garde la dernière donnée
+ * connue en base et la panne est journalisée dans `sync_runs`.
  */
 
 import { APISPORTS, createApiSportsProvider } from "./apisports.ts";
 import { ESPN, createEspnProvider } from "./espn.ts";
+import { HIGHLIGHTLY, createHighlightlyProvider } from "./highlightly.ts";
+import { THESPORTSDB, createTheSportsDbProvider } from "./thesportsdb.ts";
 import { ProviderError, type ProviderResponse, type SportsDataProvider } from "./types.ts";
 
 export interface ProviderChainEnv {
-  /** Clé API-Sports. Absente = pas de secours, ESPN seul. */
+  /** Clé TheSportsDB. Absente = on saute, Highlightly prend la main. */
+  thesportsdbKey?: string;
+  /** Clé RapidAPI pour Highlightly. Absente = on saute. */
+  highlightlyKey?: string;
+  /** Quota journalier de Highlightly, lu dans `app_settings`. */
+  highlightlyQuota?: number;
+  /** Requêtes Highlightly déjà consommées aujourd'hui. */
+  highlightlyUsedToday?: number;
+  /** Clé API-Sports. Absente = pas de secours supplémentaire. */
   apisportsKey?: string;
   /** Quota journalier d'API-Sports, lu dans `app_settings`. */
   apisportsQuota?: number;
@@ -32,27 +44,55 @@ export interface ProviderChain {
  * dernière donnée connue qu'un 429 en pleine journée de championnat.
  */
 export function createProviderChain(env: ProviderChainEnv = {}): ProviderChain {
-  const providers: SportsDataProvider[] = [createEspnProvider()];
+  const providers: SportsDataProvider[] = [];
   const skipped: { provider: string; reason: string }[] = [];
 
-  if (!env.apisportsKey) {
+  // 1. TheSportsDB — principal
+  if (env.thesportsdbKey) {
+    providers.push(createTheSportsDbProvider({ apiKey: env.thesportsdbKey }));
+  } else {
+    skipped.push({ provider: THESPORTSDB, reason: "clé THESPORTSDB_KEY absente" });
+  }
+
+  // 2. Highlightly — second
+  if (env.highlightlyKey) {
+    const quota = env.highlightlyQuota ?? undefined;
+    const used = env.highlightlyUsedToday ?? 0;
+    if (quota !== undefined && used >= quota) {
+      skipped.push({
+        provider: HIGHLIGHTLY,
+        reason: `quota journalier atteint (${used}/${quota} requêtes)`,
+      });
+    } else {
+      providers.push(
+        createHighlightlyProvider({ apiKey: env.highlightlyKey, dailyQuota: quota }),
+      );
+    }
+  } else {
+    skipped.push({ provider: HIGHLIGHTLY, reason: "clé HIGHLIGHTLY_KEY absente" });
+  }
+
+  // 3. ESPN — troisième (gratuit, toujours disponible)
+  providers.push(createEspnProvider());
+
+  // 4. API-Sports — dernier recours
+  if (env.apisportsKey) {
+    const quota = env.apisportsQuota ?? undefined;
+    const used = env.apisportsUsedToday ?? 0;
+    if (quota !== undefined && used >= quota) {
+      skipped.push({
+        provider: APISPORTS,
+        reason: `quota journalier atteint (${used}/${quota} requêtes)`,
+      });
+    } else {
+      providers.push(
+        createApiSportsProvider({ apiKey: env.apisportsKey, dailyQuota: quota }),
+      );
+    }
+  } else {
     skipped.push({ provider: APISPORTS, reason: "clé APISPORTS_KEY absente" });
-    return { providers, skipped };
   }
 
-  const quota = env.apisportsQuota ?? undefined;
-  const used = env.apisportsUsedToday ?? 0;
-  if (quota !== undefined && used >= quota) {
-    skipped.push({
-      provider: APISPORTS,
-      reason: `quota journalier atteint (${used}/${quota} requêtes)`,
-    });
-    return { providers, skipped };
-  }
-
-  providers.push(
-    createApiSportsProvider({ apiKey: env.apisportsKey, dailyQuota: quota }),
-  );
   return { providers, skipped };
 }
 
@@ -62,29 +102,19 @@ export type SyncKind = "calendar" | "live" | "standings";
 /**
  * L'ordre de préférence par nature de synchronisation.
  *
- * Il n'y a pas de « meilleur fournisseur » dans l'absolu, et c'est la leçon de
- * la première synchronisation : le calendrier d'ESPN était irréprochable —
- * 182 matchs, les 14 clubs rapprochés — pendant que son classement renvoyait
- * le tableau final de la saison précédente.
+ * TheSportsDB en tête partout : 30 req/min, pas de quota journalier, données
+ * décalées de 5-10 min (acceptable pour des pronostics). Highlightly en second
+ * (100 req/jour, mais API structurée et fiable). ESPN en troisième (gratuit
+ * mais non documenté). API-Sports en dernier (100 req/jour, saisons limitées
+ * en gratuit).
  *
- * Le quota interdit par ailleurs de tout confier à API-Sports : 100 requêtes
- * par jour contre 288 réveils du planificateur les jours de match. Mettre le
- * direct chez lui l'épuiserait avant la mi-temps.
- *
- * D'où un ordre par nature, et non un ordre global. Ces valeurs vivent dans
- * `app_settings` (`sync.provider_order`) : les changer ne demande pas de
- * redéploiement.
+ * Ces valeurs vivent dans `app_settings` (`sync.provider_order`) : les changer
+ * ne demande pas de redéploiement.
  */
 export const DEFAULT_PROVIDER_ORDER: Record<SyncKind, string[]> = {
-  calendar: [ESPN, APISPORTS],
-  live: [ESPN, APISPORTS],
-  // Le classement avait été confié à API-Sports d'abord, ESPN renvoyant la
-  // saison précédente. Mais l'offre gratuite d'API-Sports ne dessert que les
-  // saisons 2022 à 2024 : « Free plans do not have access to this season ».
-  // Le placer en tête gaspillait une requête à chaque passage pour un refus
-  // certain. Il reste dans la chaîne — il ne coûte rien tant qu'on ne
-  // l'appelle pas, et l'ordre se change en base le jour d'un abonnement.
-  standings: [ESPN, APISPORTS],
+  calendar: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
+  live: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
+  standings: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
 };
 
 /** L'ordre retenu pour une nature donnée, avec repli sur les valeurs ci-dessus. */
@@ -207,4 +237,4 @@ export function describeError(error: unknown): string {
   return String(error);
 }
 
-export { APISPORTS, ESPN };
+export { APISPORTS, ESPN, HIGHLIGHTLY, THESPORTSDB };
