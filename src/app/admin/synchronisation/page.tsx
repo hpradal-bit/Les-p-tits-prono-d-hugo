@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Card, Label } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadSettings, setting } from "@/lib/settings";
-import { SyncButtons } from "./_components/sync-buttons";
+import { SyncButtons, type SeasonChoice } from "./_components/sync-buttons";
 
 export const metadata: Metadata = { title: "Synchronisation — Admin" };
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ function ago(iso: string): string {
 export default async function SynchronisationPage() {
   const admin = createAdminClient();
 
-  const [settings, runsResult, refsResult, fixturesResult] = await Promise.all([
+  const [settings, runsResult, refsResult, fixturesResult, seasonsResult] = await Promise.all([
     loadSettings(admin),
     admin
       .from("sync_runs")
@@ -51,11 +51,27 @@ export default async function SynchronisationPage() {
       .limit(8),
     admin.from("external_refs").select("provider, entity_type"),
     admin.from("fixtures").select("id, kickoff_confirmed", { count: "exact" }),
+    admin
+      .from("seasons")
+      .select("id, label, status, competitions:competition_id (name)")
+      .order("starts_on", { ascending: false }),
   ]);
 
   const runs = runsResult.data ?? [];
   const refs = refsResult.data ?? [];
   const fixtures = fixturesResult.data ?? [];
+
+  const seasons: SeasonChoice[] = (seasonsResult.data ?? []).map((s) => {
+    const competition = (Array.isArray(s.competitions) ? s.competitions[0] : s.competitions) as
+      | { name?: string }
+      | null;
+    return {
+      id: s.id as string,
+      label: s.label as string,
+      competition: competition?.name ?? "Compétition",
+      isActive: s.status === "active",
+    };
+  });
 
   const aliases = setting<Record<string, string>>(settings, "sync.team_aliases", {});
   const aliasCount = Object.keys(aliases).length;
@@ -129,7 +145,7 @@ export default async function SynchronisationPage() {
             puis relancent le calcul des points.
           </p>
         </div>
-        <SyncButtons />
+        <SyncButtons seasons={seasons} />
       </Card>
 
       <Card className="flex flex-col gap-3 p-4">

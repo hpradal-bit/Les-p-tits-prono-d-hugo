@@ -1484,7 +1484,13 @@ export async function updateNotificationRules(
    lui, elle est de cliquer.
    --------------------------------------------------------------------------- */
 
-const syncSchema = z.object({ reason: z.string().optional() });
+const syncSchema = z.object({
+  reason: z.string().optional(),
+  // Choisir la saison permet d'éprouver la chaîne sur une compétition qui
+  // joue *maintenant*, sans attendre que le Top 14 commence. Absent, on
+  // retombe sur la saison active.
+  seasonId: z.string().uuid().optional().or(z.literal("").transform(() => undefined)),
+});
 
 /** Ce que l'écran doit lire, quel que soit le type de synchronisation. */
 function describeUnmatched(unmatched: string[]): string[] {
@@ -1505,11 +1511,16 @@ async function runSync<T extends { status: string; provider: string; requestsUse
 ): Promise<AdminActionState> {
   try {
     const ctx = await requireAdmin();
-    const parsed = syncSchema.safeParse({ reason: formData.get("reason") });
+    const parsed = syncSchema.safeParse({
+      reason: formData.get("reason"),
+      seasonId: formData.get("seasonId") ?? undefined,
+    });
     const reason = normalizeReason(parsed.success ? parsed.data.reason : undefined);
 
     const admin = createAdminClient();
-    const syncCtx = await createSyncContext(admin);
+    const syncCtx = await createSyncContext(admin, {
+      seasonId: parsed.success ? parsed.data.seasonId : undefined,
+    });
     const report = await run(syncCtx);
 
     await logAdminAction(admin, {
