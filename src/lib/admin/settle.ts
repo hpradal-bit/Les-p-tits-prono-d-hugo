@@ -13,6 +13,9 @@ import { computeStandings } from "@/lib/standings/engine";
 import { computeSummaryValues, type SummaryFixture } from "@/lib/feed/summary";
 import { fillSummary } from "@/lib/feed/render";
 import { loadSettings, setting } from "@/lib/settings";
+import { awardRoundBadges } from "@/lib/badges/actions";
+import { streaksBySeason } from "@/lib/stats/streaks";
+import { persistStreaks } from "@/lib/stats/persist";
 
 export async function settleRound(
   roundId: string,
@@ -48,10 +51,15 @@ export async function settleRound(
   // 2. Résolution des pouvoirs
   await resolveRoundPowers(roundId);
 
-  // 3. Résumé de journée
+  // 3. Badges et séries — même modèle que les pouvoirs : une fonction pure
+  // décide, la clôture écrit et publie l'événement que le Vestiaire raconte.
+  const badgeSummary = await awardRoundBadges(roundId);
+  await persistRoundStreaks(admin, seasonId);
+
+  // 4. Résumé de journée
   const summaryLines = await generateRoundSummary(admin, seasonId, roundId, round.number as number, round.name as string);
 
-  // 4. Événement round_settled avec le résumé dans le payload
+  // 5. Événement round_settled avec le résumé dans le payload
   await admin.from("events").insert({
     kind: "round_settled",
     season_id: seasonId,
@@ -63,16 +71,16 @@ export async function settleRound(
     },
   });
 
-  // 5. Transition de statut
+  // 6. Transition de statut
   await admin
     .from("rounds")
     .update({ status: "settled", settled_at: new Date().toISOString() })
     .eq("id", roundId);
 
-  // 6. Snapshot du classement dans standings_snapshots
+  // 7. Snapshot du classement dans standings_snapshots
   await saveStandingsSnapshot(admin, seasonId, roundId);
 
-  // 7. Journal admin
+  // 8. Journal admin
   await logAdminAction(admin, {
     adminId: ctx.userId,
     action: "round.settled",
@@ -97,6 +105,7 @@ export async function settleRound(
     details: [
       `${scoreSummary.fixtures} matchs, ${scoreSummary.predictions} pronostics notés`,
       `${scoreSummary.exactScores} score(s) exact(s)`,
+      ...(badgeSummary.message && !badgeSummary.message.startsWith("Aucun") ? [badgeSummary.message] : []),
       ...(summaryLines.length > 0 ? ["Résumé publié dans le Vestiaire"] : []),
     ],
   };
@@ -209,4 +218,24 @@ async function saveStandingsSnapshot(
       { onConflict: "season_id,round_id,kind" },
     );
   }
+}
+
+/**
+ * Reconstruit les séries de toute la saison et les écrit dans `streaks`.
+ *
+ * Même portée « officiel » que le classement figé et les badges au même
+ * instant : les trois racontent la même journée. La table n'est qu'un cache —
+ * on la recalcule entièrement plutôt que de tenter une mise à jour
+ * incrémentale, à ce nombre de joueurs et de journées le coût est négligeable.
+ */
+async function persistRoundStreaks(
+  admin: ReturnType<typeof createAdminClient>,
+  seasonId: string,
+): Promise<void> {
+  const season = await loadActiveSeason(admin);
+  if (!season) return;
+
+  const data = await loadStandingsData(admin, season);
+  const streaks = streaksBySeason(data.entries, "official");
+  await persistStreaks(admin, streaks, seasonId);
 }

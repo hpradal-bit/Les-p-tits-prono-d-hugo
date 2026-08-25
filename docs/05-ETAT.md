@@ -28,8 +28,8 @@ Remplies : `teams` (14), `fixtures` (182), `rounds` (26), `powers` (5),
 | Table | Conséquence |
 |---|---|
 | `tokens` | personne n'a de crédit, aucun pouvoir activable |
-| `user_badges` | aucun badge attribué, rien ne les décerne |
-| `streaks` | la logique existe (`src/lib/stats/streaks.ts`) mais rien ne l'alimente |
+| ~~`user_badges`~~ | ✅ attribués à la clôture de journée via `awardRoundBadges` |
+| ~~`streaks`~~ | ✅ mis à jour à la clôture de journée via `persistRoundStreaks` |
 | `notification_preferences` | pas d'écran de réglage par joueur |
 | `standings_snapshots` | se remplira à la première clôture de journée |
 
@@ -44,6 +44,10 @@ Remplies : `teams` (14), `fixtures` (182), `rounds` (26), `powers` (5),
 - Synchronisation : 4 fournisseurs en chaîne, jamais de saisie manuelle
 - Pouvoirs : 5 implémentés (Joker, Duel, Espion, Oracle, Sabotage), résolus à
   la clôture, avec coût en crédits paramétrable depuis l'admin
+- Badges : 6 badges seed (machine, en_feu, sniper, spirale, patron, remontada),
+  moteur pur, registre de règles extensible (streak/count/superlative), attribués
+  automatiquement à la clôture de journée dans `settleRound`
+- Séries : `streaks` mise à jour à la clôture, cache reconstruit intégralement
 
 ## Système de crédits (migration 0031)
 
@@ -58,9 +62,10 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
 
 ## À faire ensuite
 
-1. **Badges** — `user_badges` vide. Attribuer à la clôture de journée, dans
-   `settleRound`, sur le même modèle que la résolution des pouvoirs.
-2. **Séries** — brancher `src/lib/stats/streaks.ts` sur la clôture.
+1. ~~**Badges**~~ — ✅ fait. Moteur pur dans `src/lib/badges/engine.ts`,
+   registre extensible dans `rules.ts`, câblé dans `settleRound`. 16 tests.
+2. ~~**Séries**~~ — ✅ fait. Persistance dans `src/lib/stats/persist.ts`,
+   appelée à la clôture dans `settleRound`. 4 tests ajoutés.
 3. **Notifications** — écran de préférences par joueur.
 4. **Pouvoirs « Coming soon »** — §36 du cahier des charges : afficher grisés
    les pouvoirs à venir, comme ailleurs dans l'application.

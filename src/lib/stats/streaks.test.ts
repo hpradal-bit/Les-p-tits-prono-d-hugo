@@ -1,48 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { chronological, isGood, playerStreaks, streakOf, streaksBySeason } from "./streaks.ts";
+import type { ScoreEntry } from "../standings/engine.ts";
+import type { ScoreLevel } from "../types.ts";
 
-// `streaks.ts` utilise `@/lib/standings/engine` (alias Next.js), ce qui ne
-// fonctionne pas directement avec `node --test`. On re-importe les fonctions
-// pures qui n'ont pas de dependance `@/` via un chemin relatif sur le source.
-// `streakOf` n'a besoin que de `boolean[]`, c'est le coeur du calcul.
+// `streaks.ts` et le moteur de classement dont il dépend n'importent plus rien
+// par l'alias `@/` : le lanceur de Node charge donc le vrai fichier, et ce test
+// vérifie le code livré plutôt qu'une copie.
 
-// Import direct impossible a cause de l'alias @/ — on duplique le minimum.
-// Les deux fonctions ci-dessous sont des copies exactes du fichier source ;
-// elles sont testees ici pour valider la logique sans toucher au cablage.
+const POINTS: Record<ScoreLevel, number> = {
+  wrong: 0,
+  winner: 1,
+  winner_and_margin: 3,
+  exact_score: 10,
+};
 
-type ScoreLevel = "wrong" | "winner" | "winner_and_margin" | "exact_score";
-
-interface MinimalEntry {
-  fixtureId: string;
-  kickoffAt: string;
-  level: ScoreLevel;
-}
-
-function isGood(entry: MinimalEntry): boolean {
-  return entry.level !== "wrong";
-}
-
-function chronological<T extends { kickoffAt: string; fixtureId: string }>(entries: T[]): T[] {
-  return [...entries].sort((a, b) => {
-    if (a.kickoffAt !== b.kickoffAt) return a.kickoffAt < b.kickoffAt ? -1 : 1;
-    return a.fixtureId < b.fixtureId ? -1 : a.fixtureId > b.fixtureId ? 1 : 0;
-  });
-}
-
-function streakOf(flags: boolean[]): { current: number; best: number } {
-  let best = 0;
-  let run = 0;
-  for (const flag of flags) {
-    run = flag ? run + 1 : 0;
-    if (run > best) best = run;
-  }
-  let current = 0;
-  for (let i = flags.length - 1; i >= 0 && flags[i]; i -= 1) current += 1;
-  return { current, best };
-}
-
-function entry(level: ScoreLevel, kickoffAt = "2026-09-05T20:00:00Z", fixtureId = "f1"): MinimalEntry {
-  return { fixtureId, kickoffAt, level };
+function entry(
+  level: ScoreLevel,
+  kickoffAt = "2026-09-05T20:00:00Z",
+  fixtureId = "f1",
+  overrides: Partial<ScoreEntry> = {},
+): ScoreEntry {
+  return {
+    userId: "alice",
+    roundId: "r1",
+    fixtureId,
+    kickoffAt,
+    fixtureStatus: "official",
+    points: POINTS[level],
+    level,
+    ...overrides,
+  };
 }
 
 // --- streakOf ----------------------------------------------------------------
@@ -156,4 +144,50 @@ test("serie complete : 3 bons, 1 rate, 2 bons", () => {
   assert.equal(good.best, 3);
   assert.equal(bad.current, 0);
   assert.equal(bad.best, 1);
+});
+
+// --- playerStreaks / streaksBySeason -----------------------------------------
+
+test("playerStreaks : les deux natures de serie en une passe", () => {
+  const s = playerStreaks([
+    entry("winner", "2026-09-05T20:00:00Z", "f1"),
+    entry("wrong", "2026-09-06T14:00:00Z", "f2"),
+    entry("wrong", "2026-09-06T16:00:00Z", "f3"),
+    entry("exact_score", "2026-09-07T14:00:00Z", "f4"),
+  ]);
+  assert.equal(s.good.current, 1);
+  assert.equal(s.good.best, 1);
+  assert.equal(s.bad.current, 0);
+  assert.equal(s.bad.best, 2);
+});
+
+test("playerStreaks : l'ordre d'entree n'a pas d'importance", () => {
+  const chrono = [
+    entry("winner", "2026-09-05T20:00:00Z", "f1"),
+    entry("winner", "2026-09-06T14:00:00Z", "f2"),
+    entry("wrong", "2026-09-07T14:00:00Z", "f3"),
+  ];
+  const shuffled = [chrono[2], chrono[0], chrono[1]];
+  assert.deepEqual(playerStreaks(shuffled), playerStreaks(chrono));
+});
+
+test("streaksBySeason : une serie par joueur", () => {
+  const entries = [
+    entry("winner", "2026-09-05T20:00:00Z", "f1", { userId: "alice" }),
+    entry("winner", "2026-09-06T14:00:00Z", "f2", { userId: "alice" }),
+    entry("wrong", "2026-09-05T20:00:00Z", "f1", { userId: "bob" }),
+  ];
+  const map = streaksBySeason(entries, "official");
+  assert.equal(map.get("alice")?.good.best, 2);
+  assert.equal(map.get("bob")?.good.best, 0);
+  assert.equal(map.get("bob")?.bad.best, 1);
+});
+
+test("streaksBySeason : la portee officielle ecarte les matchs non officiels", () => {
+  const entries = [
+    entry("winner", "2026-09-05T20:00:00Z", "f1", { fixtureStatus: "finished" }),
+    entry("winner", "2026-09-06T14:00:00Z", "f2"),
+  ];
+  assert.equal(streaksBySeason(entries, "official").get("alice")?.good.best, 1);
+  assert.equal(streaksBySeason(entries, "live").get("alice")?.good.best, 2);
 });

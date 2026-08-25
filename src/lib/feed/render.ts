@@ -169,6 +169,16 @@ const RENDERERS: Record<string, Renderer> = {
     }
     return { emoji, tone: "neutral", text: `${name} résolu.` };
   },
+
+  badge_earned: (e) => {
+    const emoji = str(e.payload, "badge_emoji") ?? "🏅";
+    const name = str(e.payload, "badge_name") ?? "un badge";
+    return {
+      emoji,
+      tone: "gold",
+      text: `${e.actorName ?? "Quelqu'un"} décroche le badge ${name} !`,
+    };
+  },
 };
 
 /** Rend un événement, ou `null` s'il n'a rien à raconter au groupe. */

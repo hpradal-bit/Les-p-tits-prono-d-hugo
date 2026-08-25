@@ -9,7 +9,7 @@ export type FeedFilter = "tout" | "jeu" | "pouvoirs" | "messages";
 
 const FILTER_KINDS: Record<FeedFilter, string[] | null> = {
   tout: null,
-  jeu: ["exact_score", "leader_change", "overtake", "bad_streak", "fixture_finished", "round_locked", "round_settled", "auto_prediction"],
+  jeu: ["exact_score", "leader_change", "overtake", "bad_streak", "fixture_finished", "round_locked", "round_settled", "auto_prediction", "badge_earned"],
   pouvoirs: ["power_declared", "power_resolved"],
   messages: [],
 };

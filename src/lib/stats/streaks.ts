@@ -9,9 +9,9 @@
  * Fonctions pures : mêmes entrées, mêmes sorties, testables et rejouables.
  */
 
-import type { ScoreEntry, StandingsScope } from "@/lib/standings/engine";
-import { currentStreak, matchesScope } from "@/lib/standings/engine";
-import type { Uuid } from "@/lib/types";
+import type { ScoreEntry, StandingsScope } from "../standings/engine.ts";
+import { currentStreak, matchesScope } from "../standings/engine.ts";
+import type { Uuid } from "../types.ts";
 
 /** Les deux natures de série suivies par le jeu. */
 export type StreakKind = "good" | "bad";
