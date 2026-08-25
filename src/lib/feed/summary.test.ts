@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { computeSummaryValues, type SummaryInput, type SummaryFixture } from "./summary";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { computeSummaryValues, type SummaryInput, type SummaryFixture } from "./summary.ts";
 import type { StandingsRow, StandingsTable } from "@/lib/standings/engine";
 
 function makePlayer(id: string, first: string) {
@@ -68,34 +69,34 @@ describe("computeSummaryValues", () => {
   it("calcule toutes les valeurs du résumé", () => {
     const values = computeSummaryValues(makeInput());
 
-    expect(values.n).toBe(5);
-    expect(values.round).toBe("Journée 5");
-    expect(values.leader).toBe("Hugo");
-    expect(values.pts).toBe(45);
-    expect(values.meilleur_joueur).toBe("Hugo");
-    expect(values.pts_j).toBe(18);
+    assert.equal(values.n, 5);
+    assert.equal(values.round, "Journée 5");
+    assert.equal(values.leader, "Hugo");
+    assert.equal(values.pts, 45);
+    assert.equal(values.meilleur_joueur, "Hugo");
+    assert.equal(values.pts_j, 18);
   });
 
   it("identifie la plus grosse chute au classement", () => {
     const values = computeSummaryValues(makeInput());
 
-    expect(values.plus_grosse_chute).toBe("Léa");
-    expect(values.avant).toBe(1);
-    expect(values.apres).toBe(2);
+    assert.equal(values.plus_grosse_chute, "Léa");
+    assert.equal(values.avant, 1);
+    assert.equal(values.apres, 2);
   });
 
   it("agrège les niveaux de tous les joueurs", () => {
     const values = computeSummaryValues(makeInput());
 
-    expect(values.n_exacts).toBe(2);
-    expect(values.n_vainqueurs).toBe(13);
+    assert.equal(values.n_exacts, 2);
+    assert.equal(values.n_vainqueurs, 13);
   });
 
   it("identifie le match le plus mal pronostiqué", () => {
     const values = computeSummaryValues(makeInput());
 
-    expect(values.match).toBe("La Rochelle - Racing");
-    expect(values.n_erreurs).toBe(4);
+    assert.equal(values.match, "La Rochelle - Racing");
+    assert.equal(values.n_erreurs, 4);
   });
 
   it("renvoie null si personne n'a chuté", () => {
@@ -105,9 +106,9 @@ describe("computeSummaryValues", () => {
     }
     const values = computeSummaryValues(input);
 
-    expect(values.plus_grosse_chute).toBeNull();
-    expect(values.avant).toBeNull();
-    expect(values.apres).toBeNull();
+    assert.equal(values.plus_grosse_chute, null);
+    assert.equal(values.avant, null);
+    assert.equal(values.apres, null);
   });
 
   it("renvoie null pour le match si aucune erreur", () => {
@@ -115,8 +116,8 @@ describe("computeSummaryValues", () => {
       makeInput({ fixtures: [{ homeTeam: "A", awayTeam: "B", wrongCount: 0 }] }),
     );
 
-    expect(values.match).toBeNull();
-    expect(values.n_erreurs).toBeNull();
+    assert.equal(values.match, null);
+    assert.equal(values.n_erreurs, null);
   });
 
   it("gère un classement vide sans erreur", () => {
@@ -125,8 +126,8 @@ describe("computeSummaryValues", () => {
       makeInput({ roundStandings: empty, overallStandings: makeTable([], "overall"), fixtures: [] }),
     );
 
-    expect(values.leader).toBeNull();
-    expect(values.meilleur_joueur).toBeNull();
-    expect(values.n_exacts).toBe(0);
+    assert.equal(values.leader, null);
+    assert.equal(values.meilleur_joueur, null);
+    assert.equal(values.n_exacts, 0);
   });
 });

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { joker } from "./kinds/joker.ts";
 import { duel } from "./kinds/duel.ts";
 import type { Power, PowerUsage, ResolveContext } from "./types.ts";
@@ -34,10 +35,10 @@ describe("joker", () => {
       roundTotals: new Map([["alice", 7]]),
     };
     const res = joker.resolve(ctx);
-    expect(res.adjustments).toHaveLength(1);
-    expect(res.adjustments[0].userId).toBe("alice");
-    expect(res.adjustments[0].delta).toBe(3);
-    expect(res.outcome.bonus).toBe(3);
+    assert.equal(res.adjustments.length, 1);
+    assert.equal(res.adjustments[0].userId, "alice");
+    assert.equal(res.adjustments[0].delta, 3);
+    assert.equal(res.outcome.bonus, 3);
   });
 
   it("0 pts sur le match = pas d'ajustement", () => {
@@ -48,8 +49,8 @@ describe("joker", () => {
       roundTotals: new Map([["alice", 4]]),
     };
     const res = joker.resolve(ctx);
-    expect(res.adjustments).toHaveLength(0);
-    expect(res.outcome.bonus).toBe(0);
+    assert.equal(res.adjustments.length, 0);
+    assert.equal(res.outcome.bonus, 0);
   });
 
   it("utilise le multiplicateur de la config", () => {
@@ -60,7 +61,7 @@ describe("joker", () => {
       roundTotals: new Map([["alice", 10]]),
     };
     const res = joker.resolve(ctx);
-    expect(res.adjustments[0].delta).toBe(20);
+    assert.equal(res.adjustments[0].delta, 20);
   });
 
   it("valide la déclaration — fixture requise", () => {
@@ -68,13 +69,13 @@ describe("joker", () => {
       initiatorId: "a", targetId: null, fixtureId: null,
       power: makePower("joker"), standings: [],
     });
-    expect(r1.valid).toBe(false);
+    assert.equal(r1.valid, false);
 
     const r2 = joker.validateDeclaration({
       initiatorId: "a", targetId: null, fixtureId: "fix-1",
       power: makePower("joker"), standings: [],
     });
-    expect(r2.valid).toBe(true);
+    assert.equal(r2.valid, true);
   });
 });
 
@@ -91,10 +92,10 @@ describe("duel", () => {
       roundTotals: new Map([["alice", 12], ["bob", 8]]),
     };
     const res = duel.resolve(ctx);
-    expect(res.adjustments).toHaveLength(2);
-    expect(res.adjustments.find((a) => a.userId === "alice")?.delta).toBe(8);
-    expect(res.adjustments.find((a) => a.userId === "bob")?.delta).toBe(-8);
-    expect(res.outcome.winnerId).toBe("alice");
+    assert.equal(res.adjustments.length, 2);
+    assert.equal(res.adjustments.find((a) => a.userId === "alice")?.delta, 8);
+    assert.equal(res.adjustments.find((a) => a.userId === "bob")?.delta, -8);
+    assert.equal(res.outcome.winnerId, "alice");
   });
 
   it("la cible gagne → transfert inversé", () => {
@@ -109,9 +110,9 @@ describe("duel", () => {
       roundTotals: new Map([["alice", 5], ["bob", 9]]),
     };
     const res = duel.resolve(ctx);
-    expect(res.adjustments.find((a) => a.userId === "bob")?.delta).toBe(5);
-    expect(res.adjustments.find((a) => a.userId === "alice")?.delta).toBe(-5);
-    expect(res.outcome.winnerId).toBe("bob");
+    assert.equal(res.adjustments.find((a) => a.userId === "bob")?.delta, 5);
+    assert.equal(res.adjustments.find((a) => a.userId === "alice")?.delta, -5);
+    assert.equal(res.outcome.winnerId, "bob");
   });
 
   it("égalité → aucun transfert", () => {
@@ -126,8 +127,8 @@ describe("duel", () => {
       roundTotals: new Map([["alice", 7], ["bob", 7]]),
     };
     const res = duel.resolve(ctx);
-    expect(res.adjustments).toHaveLength(0);
-    expect(res.outcome.winner).toBeNull();
+    assert.equal(res.adjustments.length, 0);
+    assert.equal(res.outcome.winner, null);
   });
 
   it("valide la cible — doit être mieux classée", () => {
@@ -140,12 +141,12 @@ describe("duel", () => {
     const ok = duel.validateDeclaration({
       initiatorId: "alice", targetId: "bob", fixtureId: null, power, standings,
     });
-    expect(ok.valid).toBe(true);
+    assert.equal(ok.valid, true);
 
     const bad = duel.validateDeclaration({
       initiatorId: "bob", targetId: "alice", fixtureId: null, power, standings,
     });
-    expect(bad.valid).toBe(false);
+    assert.equal(bad.valid, false);
   });
 
   it("refuse de se défier soi-même", () => {
@@ -153,6 +154,6 @@ describe("duel", () => {
       initiatorId: "alice", targetId: "alice", fixtureId: null,
       power: makePower("duel"), standings: [],
     });
-    expect(r.valid).toBe(false);
+    assert.equal(r.valid, false);
   });
 });
