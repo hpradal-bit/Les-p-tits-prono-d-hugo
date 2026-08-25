@@ -133,6 +133,41 @@ const RENDERERS: Record<string, Renderer> = {
       text: reason ? `Intervention de l'arbitre — ${reason}` : `Intervention de l'arbitre — ${label}`,
     };
   },
+
+  power_declared: (e) => {
+    const emoji = str(e.payload, "power_emoji") ?? "⚡";
+    const name = str(e.payload, "power_name") ?? "un pouvoir";
+    const target = e.targetName ? ` contre ${e.targetName}` : "";
+    return {
+      emoji,
+      tone: "neutral",
+      text: `${e.actorName ?? "Quelqu'un"} active ${name}${target} !`,
+    };
+  },
+
+  power_resolved: (e) => {
+    const emoji = str(e.payload, "power_emoji") ?? "⚡";
+    const name = str(e.payload, "power_name") ?? "un pouvoir";
+    const outcome = e.payload.outcome as Record<string, unknown> | null;
+    const winner = outcome?.winnerId as string | null;
+    const transferred = num(outcome ?? {}, "transferred");
+    if (winner && transferred) {
+      return {
+        emoji,
+        tone: "gold",
+        text: `${name} résolu : ${transferred} point${transferred > 1 ? "s" : ""} transférés !`,
+      };
+    }
+    const bonus = num(outcome ?? {}, "bonus");
+    if (bonus && bonus > 0) {
+      return {
+        emoji,
+        tone: "good",
+        text: `${e.actorName ?? "Quelqu'un"} empoche ${bonus} point${bonus > 1 ? "s" : ""} bonus grâce à ${name}.`,
+      };
+    }
+    return { emoji, tone: "neutral", text: `${name} résolu.` };
+  },
 };
 
 /** Rend un événement, ou `null` s'il n'a rien à raconter au groupe. */

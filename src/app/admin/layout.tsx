@@ -9,6 +9,7 @@ const TABS = [
   { href: "/admin/synchronisation", label: "Synchro" },
   { href: "/admin/bareme", label: "Barème" },
   { href: "/admin/bonus", label: "Bonus" },
+  { href: "/admin/pouvoirs", label: "Pouvoirs" },
   { href: "/admin/joueurs", label: "Joueurs" },
   { href: "/admin/push-settings", label: "Notifications" },
   { href: "/admin/journal", label: "Journal" },
