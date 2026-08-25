@@ -3,6 +3,8 @@ import { Card, Label } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSeasonId } from "@/lib/admin/queries";
 import { loadAllPowers } from "@/lib/powers/queries";
+import { creditCost, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
+import { loadSettings, setting } from "@/lib/settings";
 import { PowerPanel, TokenGrantForm } from "./_components/power-panel";
 
 export const metadata: Metadata = { title: "Pouvoirs — Admin" };
@@ -12,6 +14,12 @@ export default async function AdminPowersPage() {
   const admin = createAdminClient();
   const seasonId = await currentSeasonId(admin);
   const powers = await loadAllPowers(admin);
+  const settings = await loadSettings(admin);
+  const fallbackCost = setting<number>(
+    settings,
+    "powers.default_credit_cost",
+    FALLBACK_CREDIT_COST,
+  );
 
   const { data: tokenRows } = await admin
     .from("tokens")
@@ -35,6 +43,7 @@ export default async function AdminPowersPage() {
               name: p.name,
               emoji: p.emoji,
               isActive: p.isActive,
+              cost: creditCost(p, fallbackCost),
             }))}
           />
         </Card>

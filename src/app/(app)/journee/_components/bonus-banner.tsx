@@ -119,7 +119,9 @@ function MiniAnswerForm({ item }: { item: BonusItem }) {
           );
         })}
         {hasDuplicates && (
-          <p className="text-[11px] font-semibold text-wrong">Chaque equipe ne peut etre choisie qu'une fois.</p>
+          <p className="text-[11px] font-semibold text-wrong">
+            Chaque équipe ne peut être choisie qu&apos;une fois.
+          </p>
         )}
         <Button
           size="sm"

@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
 import { currentSeasonId } from "@/lib/admin/queries";
-import { requirePower } from "./registry.ts";
+import { getPower, requirePower } from "./registry.ts";
 import {
   loadActivePowers,
   loadUserTokens,
@@ -16,6 +16,8 @@ import {
   loadFixtureScoresForRound,
   loadRoundTotals,
 } from "./queries.ts";
+import { creditCost, creditLabel, FALLBACK_CREDIT_COST } from "./credits.ts";
+import { loadSettings, setting } from "@/lib/settings";
 import type { AdminActionState } from "@/lib/admin/types";
 import type { ResolveContext } from "./types.ts";
 
@@ -56,16 +58,21 @@ export async function declarePower(
   const existing = await loadUserRoundUsage(admin, user.id, parsed.data.roundId);
   if (existing) return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
 
+  const settings = await loadSettings(admin);
+  const fallbackCost = setting<number>(settings, "powers.default_credit_cost", FALLBACK_CREDIT_COST);
+  const cost = creditCost(power, fallbackCost);
+
   const tokens = await loadUserTokens(admin, user.id, seasonId);
-  const availableToken = tokens.find((t) => t.status === "available");
-  if (!availableToken) return { ok: false, message: "Tu n'as plus de token disponible." };
+  const availableTokens = tokens.filter((t) => t.status === "available");
+  if (availableTokens.length < cost) {
+    return {
+      ok: false,
+      message: `${power.name} coûte ${creditLabel(cost)}, il ne t'en reste que ${availableTokens.length}.`,
+    };
+  }
+  const spentTokens = availableTokens.slice(0, cost);
 
   if (pk.needsTarget || pk.needsFixture) {
-    const { data: standingsRows } = await admin
-      .from("point_adjustments")
-      .select("user_id")
-      .eq("season_id", seasonId);
-
     const { data: profiles } = await admin
       .from("profiles")
       .select("id")
@@ -105,19 +112,34 @@ export async function declarePower(
     if (!validation.valid) return { ok: false, message: validation.error ?? "Déclaration invalide." };
   }
 
-  const snapshotBefore: Record<string, unknown> = {};
+  // Le coût est figé dans le snapshot : rééquilibrer un pouvoir plus tard ne doit
+  // pas réécrire l'histoire d'une utilisation passée (§39 du cahier des charges).
+  const snapshotBefore: Record<string, unknown> = { creditCost: cost };
   if (parsed.data.fixtureId) snapshotBefore.fixtureId = parsed.data.fixtureId;
   if (parsed.data.targetId) snapshotBefore.targetId = parsed.data.targetId;
 
-  const { error: tokenErr } = await admin
+  const spentIds = spentTokens.map((t) => t.id);
+
+  // `eq("status", "available")` garde la réservation atomique : deux déclarations
+  // concurrentes ne peuvent pas dépenser le même crédit.
+  const { data: reserved, error: tokenErr } = await admin
     .from("tokens")
     .update({ status: "used", used_at: new Date().toISOString() })
-    .eq("id", availableToken.id)
-    .eq("status", "available");
-  if (tokenErr) return { ok: false, message: "Erreur lors de l'utilisation du token." };
+    .in("id", spentIds)
+    .eq("status", "available")
+    .select("id");
+
+  const reservedIds = ((reserved ?? []) as Array<{ id: string }>).map((t) => t.id);
+
+  if (tokenErr || reservedIds.length < cost) {
+    if (reservedIds.length > 0) {
+      await admin.from("tokens").update({ status: "available", used_at: null }).in("id", reservedIds);
+    }
+    return { ok: false, message: "Tes crédits viennent de changer, réessaie." };
+  }
 
   const { error: usageErr } = await admin.from("power_usages").insert({
-    token_id: availableToken.id,
+    token_id: reservedIds[0],
     power_id: power.id,
     initiator_id: user.id,
     target_id: parsed.data.targetId ?? null,
@@ -127,7 +149,7 @@ export async function declarePower(
   });
 
   if (usageErr) {
-    await admin.from("tokens").update({ status: "available", used_at: null }).eq("id", availableToken.id);
+    await admin.from("tokens").update({ status: "available", used_at: null }).in("id", reservedIds);
     return { ok: false, message: usageErr.message };
   }
 
@@ -137,12 +159,20 @@ export async function declarePower(
     round_id: parsed.data.roundId,
     actor_id: user.id,
     target_id: parsed.data.targetId ?? null,
-    payload: { power_code: power.code, power_emoji: power.emoji, power_name: power.name },
+    payload: {
+      power_code: power.code,
+      power_emoji: power.emoji,
+      power_name: power.name,
+      credit_cost: cost,
+    },
   });
 
   revalidatePath("/journee");
   revalidatePath("/classement");
-  return { ok: true, message: `${power.emoji} ${power.name} activé !` };
+  return {
+    ok: true,
+    message: `${power.emoji} ${power.name} activé — ${creditLabel(cost)} dépensés.`,
+  };
 }
 
 export async function cancelPower(
@@ -156,7 +186,7 @@ export async function cancelPower(
 
   const { data: usage } = await admin
     .from("power_usages")
-    .select("id, token_id, initiator_id, state, round_id")
+    .select("id, token_id, initiator_id, state, round_id, snapshot_before")
     .eq("id", usageId)
     .single();
 
@@ -174,10 +204,31 @@ export async function cancelPower(
   }
 
   await admin.from("power_usages").update({ state: "cancelled" }).eq("id", usageId);
-  await admin.from("tokens").update({ status: "available", used_at: null }).eq("id", usage.token_id as string);
+
+  // On restitue exactement ce qui avait été dépensé, coût figé au moment de la
+  // déclaration. Les anciennes utilisations n'ont pas de coût en snapshot : elles
+  // valaient un crédit.
+  const snapshot = (usage.snapshot_before as Record<string, unknown> | null) ?? {};
+  const spent = typeof snapshot.creditCost === "number" ? snapshot.creditCost : 1;
+
+  const { data: toRestore } = await admin
+    .from("tokens")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("status", "used")
+    .order("used_at", { ascending: false })
+    .limit(spent);
+
+  const restoreIds = ((toRestore ?? []) as Array<{ id: string }>).map((t) => t.id);
+  if (restoreIds.length > 0) {
+    await admin.from("tokens").update({ status: "available", used_at: null }).in("id", restoreIds);
+  }
 
   revalidatePath("/journee");
-  return { ok: true, message: "Pouvoir annulé, token restitué." };
+  return {
+    ok: true,
+    message: `Pouvoir annulé, ${creditLabel(restoreIds.length)} restitués.`,
+  };
 }
 
 export async function resolveRoundPowers(
@@ -200,12 +251,20 @@ export async function resolveRoundPowers(
   const roundTotals = await loadRoundTotals(admin, roundId);
 
   let resolved = 0;
+  const skipped: string[] = [];
 
   for (const usage of active) {
     const power = powerMap.get(usage.powerId);
     if (!power) continue;
 
-    const pk = requirePower(power.code);
+    // Un pouvoir présent en base mais sans implémentation ne doit pas faire
+    // échouer la clôture entière : on le laisse en attente et on continue.
+    const pk = getPower(power.code);
+    if (!pk) {
+      skipped.push(power.code);
+      continue;
+    }
+
     const ctx_resolve: ResolveContext = { usage, power, fixtureScores, roundTotals };
     const result = pk.resolve(ctx_resolve);
 
@@ -232,21 +291,24 @@ export async function resolveRoundPowers(
       })
       .eq("id", usage.id);
 
-    if (result.adjustments.length > 0) {
-      await admin.from("events").insert({
-        kind: "power_resolved",
-        season_id: seasonId,
-        round_id: roundId,
-        actor_id: usage.initiatorId,
-        target_id: usage.targetId,
-        payload: {
-          power_code: power.code,
-          power_emoji: power.emoji,
-          power_name: power.name,
-          outcome: result.outcome,
-        },
-      });
-    }
+    // L'événement est émis même sans ajustement de points : l'Espion ne déplace
+    // aucun point mais le Vestiaire doit quand même raconter qu'il a été utilisé.
+    await admin.from("events").insert({
+      kind: "power_resolved",
+      season_id: seasonId,
+      round_id: roundId,
+      actor_id: usage.initiatorId,
+      target_id: usage.targetId,
+      payload: {
+        power_code: power.code,
+        power_emoji: power.emoji,
+        power_name: power.name,
+        outcome: result.outcome,
+        delta: result.adjustments
+          .filter((a) => a.userId === usage.initiatorId)
+          .reduce((sum, a) => sum + a.delta, 0),
+      },
+    });
 
     resolved++;
   }
@@ -265,6 +327,10 @@ export async function resolveRoundPowers(
   return {
     status: "success",
     message: `${resolved} pouvoir(s) résolu(s).`,
+    details:
+      skipped.length > 0
+        ? [`Sans implémentation, laissés en attente : ${skipped.join(", ")}`]
+        : undefined,
   };
 }
 
@@ -273,7 +339,7 @@ export async function grantTokens(
 ): Promise<AdminActionState> {
   const schema = z.object({
     period: z.enum(["first_half", "second_half", "full_season"]),
-    count: z.number().int().min(1).max(10),
+    count: z.number().int().min(1).max(50),
   });
 
   const ctx = await requireAdmin();
@@ -317,6 +383,59 @@ export async function grantTokens(
   return {
     status: "success",
     message: `${parsed.data.count * memberCount} token(s) distribués à ${memberCount} joueur(s).`,
+  };
+}
+
+/**
+ * Rééquilibrer un pouvoir depuis l'admin. Le coût vit dans `powers.config`, pas
+ * dans le code : changer un prix ne doit jamais demander un redéploiement.
+ * Les utilisations déjà déclarées gardent le coût figé dans leur snapshot.
+ */
+export async function setPowerCost(
+  input: unknown,
+): Promise<AdminActionState> {
+  const schema = z.object({
+    powerId: z.string().uuid(),
+    cost: z.number().int().min(0).max(100),
+  });
+
+  const ctx = await requireAdmin();
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { status: "error", message: "Coût invalide (0 à 100)." };
+
+  const admin = createAdminClient();
+
+  const { data: power } = await admin
+    .from("powers")
+    .select("id, name, config")
+    .eq("id", parsed.data.powerId)
+    .single();
+  if (!power) return { status: "error", message: "Pouvoir introuvable." };
+
+  const config = ((power.config as Record<string, unknown>) ?? {});
+  const before = config.credit_cost ?? null;
+
+  const { error } = await admin
+    .from("powers")
+    .update({ config: { ...config, credit_cost: parsed.data.cost } })
+    .eq("id", parsed.data.powerId);
+  if (error) return { status: "error", message: error.message };
+
+  await logAdminAction(admin, {
+    adminId: ctx.userId,
+    action: "settings.updated",
+    entityType: "app_setting",
+    entityId: parsed.data.powerId,
+    before: { credit_cost: before },
+    after: { credit_cost: parsed.data.cost },
+    reason: `Coût de ${power.name as string} : ${parsed.data.cost} crédit(s)`,
+  });
+
+  revalidatePath("/admin/pouvoirs");
+  revalidatePath("/journee");
+  return {
+    status: "success",
+    message: `${power.name as string} coûte désormais ${creditLabel(parsed.data.cost)}.`,
   };
 }
 

@@ -9,6 +9,7 @@ import { currentSeasonId } from "@/lib/admin/queries";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
+import { creditCost, powerEffect, powerRules, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
 import { loadSettings, setting } from "@/lib/settings";
 import { PlayerAvatar } from "../_components/player-avatar";
 import { NotificationPrompt } from "../_components/notification-prompt";
@@ -61,6 +62,12 @@ export default async function JourneePage({
   );
 
   const profiles = ((allProfiles.data ?? []) as Array<{ id: string; display_name: string; first_name: string }>);
+  const fallbackCost = setting<number>(
+    appSettings,
+    "powers.default_credit_cost",
+    FALLBACK_CREDIT_COST,
+  );
+
   const powerOptions = activePowers.map((p) => {
     const pk = getPower(p.code);
     return {
@@ -70,6 +77,10 @@ export default async function JourneePage({
       emoji: p.emoji,
       needsTarget: pk?.needsTarget ?? false,
       needsFixture: pk?.needsFixture ?? false,
+      cost: creditCost(p, fallbackCost),
+      description: p.description,
+      effect: powerEffect(p),
+      rules: powerRules(p),
     };
   });
 
@@ -96,6 +107,10 @@ export default async function JourneePage({
         fixtureName: myUsage.snapshotBefore.fixtureId
           ? fixtureOptions.find((f) => f.id === myUsage.snapshotBefore.fixtureId)?.label ?? null
           : null,
+        cost:
+          typeof myUsage.snapshotBefore.creditCost === "number"
+            ? myUsage.snapshotBefore.creditCost
+            : 1,
       }
     : null;
 
