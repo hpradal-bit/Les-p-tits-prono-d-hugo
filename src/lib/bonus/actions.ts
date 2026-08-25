@@ -147,6 +147,7 @@ export async function openBonusQuestion(
 
   revalidatePath("/admin/bonus");
   revalidatePath("/questions");
+  revalidatePath("/journee");
   return { status: "success", message: "Question ouverte et notifications envoyées." };
 }
 
@@ -172,6 +173,7 @@ export async function closeBonusQuestion(
 
   revalidatePath("/admin/bonus");
   revalidatePath("/questions");
+  revalidatePath("/journee");
   return { status: "success", message: "Question fermée." };
 }
 
@@ -253,6 +255,7 @@ export async function settleBonusQuestion(
 
   revalidatePath("/admin/bonus");
   revalidatePath("/questions");
+  revalidatePath("/journee");
   revalidatePath("/classement");
   return {
     status: "success",
@@ -305,6 +308,7 @@ export async function answerBonusQuestion(
   if (error) return { ok: false, message: error.message };
 
   revalidatePath("/questions");
+  revalidatePath("/journee");
   return { ok: true, message: "Réponse enregistrée !" };
 }
 
