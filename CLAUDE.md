@@ -1,7 +1,12 @@
 # Les p'tits pronos d'Hugo — consignes de développement
 
 Application privée de pronostics sportifs entre amis. Rugby / Top 14 / saison 2026-2027.
-Lire `docs/00-AUDIT.md` avant toute décision d'architecture.
+
+**À lire en début de session, dans cet ordre :**
+
+1. `docs/05-ETAT.md` — où on en est, ce qui bloque, quoi faire ensuite.
+2. `docs/04-CAHIER-DES-CHARGES.md` — la spec produit, qui tranche les désaccords.
+3. `docs/00-AUDIT.md` — avant toute décision d'architecture.
 
 ## Contexte
 
