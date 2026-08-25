@@ -80,7 +80,14 @@ export default async function Top14Page() {
               {rows.map((row) => {
                 const diff = row.pointsFor - row.pointsAgainst;
                 return (
-                  <tr key={row.team.id}>
+                  <tr
+                    key={row.team.id}
+                    className={cn(
+                      row.position <= 2 && "bg-winner-soft/30",
+                      row.position > 2 && row.position <= 6 && "bg-sage-soft/30",
+                      row.position >= rows.length - 1 && "bg-wrong-soft/30",
+                    )}
+                  >
                     <td className="tabular py-2.5 pl-3 pr-2 font-mono text-xs text-ink-faint">
                       {row.position}
                     </td>

@@ -12,7 +12,7 @@ export default function InstallerPage() {
           Trois étapes
         </span>
         <h1 className="font-display text-[28px] leading-tight text-ink">
-          Mets les pronos sur ton écran d&apos;accueil
+          Installe VESTIAIRE sur ton écran d&apos;accueil
         </h1>
         <p className="mt-1 text-[14px] leading-relaxed text-ink-muted">
           L&apos;app s&apos;ouvre alors comme une vraie application, sans barre d&apos;adresse,

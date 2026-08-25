@@ -119,12 +119,14 @@ export default async function JourneePage({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
             {board.round.name} · Top 14
           </span>
-          <h1 className="font-display text-[32px] leading-none text-ink">Ma journée</h1>
+          <h1 className="font-display text-[32px] leading-none text-ink">
+            Salut {viewer.firstName} 👋
+          </h1>
           <Link href="/regles" className="mt-0.5 w-fit text-[12.5px] font-semibold text-clay underline">
             Comment on joue ?
           </Link>
         </div>
-        <Link href={`/profil/${viewer.id}`}>
+        <Link href="/profil">
           <PlayerAvatar
             player={{
               userId: viewer.id,
@@ -133,7 +135,7 @@ export default async function JourneePage({
               avatarKind: viewer.avatarKind,
               avatarValue: viewer.avatarValue,
             }}
-            size={42}
+            size={48}
           />
         </Link>
       </header>
