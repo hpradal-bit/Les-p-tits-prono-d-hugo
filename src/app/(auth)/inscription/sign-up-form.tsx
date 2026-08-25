@@ -16,7 +16,7 @@ export function SignUpForm({ defaultInviteCode = "" }: { defaultInviteCode?: str
       <Field
         label="Code d'invitation"
         htmlFor="inviteCode"
-        hint={defaultInviteCode ? "Déjà rempli par ton lien d'invitation." : "Hugo te l'a donné. Sans lui, pas d'entrée."}
+        hint={defaultInviteCode ? "Déjà rempli par ton lien d'invitation." : "Demande-le à l'admin du groupe."}
         errors={errors.inviteCode}
       >
         <Input

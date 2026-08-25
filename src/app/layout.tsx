@@ -24,14 +24,14 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Les p'tits pronos d'Hugo",
-    template: "%s · Les p'tits pronos d'Hugo",
+    default: "VESTIAIRE",
+    template: "%s · VESTIAIRE",
   },
-  description: "Pronostics du Top 14 entre amis.",
-  applicationName: "Les p'tits pronos",
+  description: "Des potes, des pronos, du kiff.",
+  applicationName: "VESTIAIRE",
   appleWebApp: {
     capable: true,
-    title: "Les p'tits pronos",
+    title: "VESTIAIRE",
     statusBarStyle: "default",
   },
   formatDetection: { telephone: false },

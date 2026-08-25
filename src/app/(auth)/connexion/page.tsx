@@ -18,7 +18,7 @@ export default async function ConnexionPage({
         <h1 className="font-display text-3xl tracking-tight text-ink">
           Content de te revoir
         </h1>
-        <p className="text-ink-muted">La J1, c&apos;est le samedi 5 septembre 2026.</p>
+        <p className="text-ink-muted">Des potes, des pronos, du kiff.</p>
       </div>
 
       {inscrit ? (

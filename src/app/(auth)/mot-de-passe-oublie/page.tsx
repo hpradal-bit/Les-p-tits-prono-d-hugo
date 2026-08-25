@@ -22,8 +22,8 @@ export default function MotDePasseOubliePage() {
       </Card>
 
       <p className="text-center text-[13px] leading-relaxed text-ink-faint">
-        Le courriel n&apos;arrive pas ? Hugo peut réinitialiser ton mot de passe
-        depuis l&apos;espace d&apos;administration.
+        Le courriel n&apos;arrive pas ? L&apos;admin du groupe peut réinitialiser
+        ton mot de passe depuis l&apos;espace d&apos;administration.
       </p>
 
       <p className="text-center text-[14px] text-ink-muted">

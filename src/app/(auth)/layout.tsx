@@ -12,10 +12,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           href="/"
           className="font-mono text-[11px] uppercase tracking-[0.18em] text-clay"
         >
-          Top 14 · Saison 2026/2027
+          Des potes, des pronos, du kiff
         </Link>
-        <p className="font-display text-2xl leading-tight tracking-tight text-ink">
-          Les p&apos;tits pronos d&apos;Hugo
+        <p className="font-display text-[32px] leading-none tracking-tight text-ink">
+          VESTIAIRE
         </p>
       </header>
 

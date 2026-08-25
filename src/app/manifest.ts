@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Les p'tits pronos d'Hugo",
-    short_name: "Les p'tits pronos",
-    description: "Pronostics du Top 14 entre amis.",
+    name: "VESTIAIRE",
+    short_name: "VESTIAIRE",
+    description: "Des potes, des pronos, du kiff.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

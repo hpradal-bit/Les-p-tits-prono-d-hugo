@@ -592,3 +592,82 @@ export async function loadMatchCenter(
     isLocked,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Historique du classement (snapshots par journée)                           */
+/* -------------------------------------------------------------------------- */
+
+export interface StandingsHistoryPoint {
+  userId: string;
+  firstName: string;
+  positions: (number | null)[];
+}
+
+export interface StandingsHistory {
+  roundLabels: string[];
+  players: StandingsHistoryPoint[];
+}
+
+export async function loadStandingsHistory(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<StandingsHistory> {
+  const { data, error } = await sb
+    .from("standings_snapshots")
+    .select("round_id, standings")
+    .eq("season_id", seasonId)
+    .eq("kind", "overall")
+    .order("frozen_at");
+  if (error) throw error;
+
+  const snapshots = (data ?? []) as Array<{
+    round_id: string;
+    standings: Array<{ position: number; player: { userId: string; firstName: string } }>;
+  }>;
+
+  if (snapshots.length === 0) return { roundLabels: [], players: [] };
+
+  const { data: roundRows, error: roundError } = await sb
+    .from("rounds")
+    .select("id, number, name")
+    .eq("season_id", seasonId)
+    .order("number");
+  if (roundError) throw roundError;
+
+  const roundMap = new Map<string, { number: number; name: string }>();
+  for (const r of (roundRows ?? []) as Array<{ id: string; number: number; name: string }>) {
+    roundMap.set(r.id, r);
+  }
+
+  const orderedRoundIds = snapshots
+    .map((s) => s.round_id)
+    .filter((id) => roundMap.has(id))
+    .sort((a, b) => (roundMap.get(a)!.number - roundMap.get(b)!.number));
+
+  const roundLabels = orderedRoundIds.map((id) => `J${roundMap.get(id)!.number}`);
+
+  const allPlayerIds = new Set<string>();
+  const playerNames = new Map<string, string>();
+  for (const snap of snapshots) {
+    for (const row of snap.standings) {
+      allPlayerIds.add(row.player.userId);
+      if (!playerNames.has(row.player.userId)) {
+        playerNames.set(row.player.userId, row.player.firstName);
+      }
+    }
+  }
+
+  const snapshotByRound = new Map(snapshots.map((s) => [s.round_id, s.standings]));
+
+  const players: StandingsHistoryPoint[] = [...allPlayerIds].map((userId) => ({
+    userId,
+    firstName: playerNames.get(userId) ?? "Joueur",
+    positions: orderedRoundIds.map((roundId) => {
+      const snap = snapshotByRound.get(roundId);
+      const row = snap?.find((r) => r.player.userId === userId);
+      return row?.position ?? null;
+    }),
+  }));
+
+  return { roundLabels, players };
+}

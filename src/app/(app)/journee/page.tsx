@@ -9,7 +9,9 @@ import { currentSeasonId } from "@/lib/admin/queries";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
+import { loadSettings, setting } from "@/lib/settings";
 import { PlayerAvatar } from "../_components/player-avatar";
+import { NotificationPrompt } from "../_components/notification-prompt";
 import { getViewer } from "@/lib/auth/session";
 import { MatchCard } from "./_components/match-card";
 import { BonusBanner } from "./_components/bonus-banner";
@@ -38,13 +40,16 @@ export default async function JourneePage({
   const seasonId = await currentSeasonId(admin);
   const currentRoundId = board.round.id;
 
-  const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles] = await Promise.all([
+  const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles, appSettings] = await Promise.all([
     listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
     loadActivePowers(admin),
     loadUserTokens(admin, viewer.id, seasonId),
     loadRoundUsages(admin, currentRoundId),
     admin.from("profiles").select("id, display_name, first_name").eq("is_active", true),
+    loadSettings(admin),
   ]);
+
+  const vapidKey = setting<string>(appSettings, "push_notifications.vapid_public_key", "");
 
   const bonusItems = allBonusItems.filter(
     (b) => !b.question.roundId || b.question.roundId === currentRoundId,
@@ -147,6 +152,8 @@ export default async function JourneePage({
           </span>
         )}
       </div>
+
+      {vapidKey && <NotificationPrompt vapidPublicKey={vapidKey} />}
 
       <BonusBanner items={bonusItems} />
 

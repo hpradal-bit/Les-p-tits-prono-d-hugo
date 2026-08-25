@@ -21,10 +21,12 @@ import {
   loadActiveSeason,
   loadRoundFixtures,
   loadStandingsData,
+  loadStandingsHistory,
   type RoundFixture,
 } from "@/lib/standings/queries";
 import { Podium } from "./_components/podium";
 import { StandingsList } from "./_components/standings-list";
+import { StandingsGraph } from "./_components/standings-graph";
 import { RoundFixtures } from "./_components/round-fixtures";
 import { Segmented, RoundPicker } from "./_components/controls";
 
@@ -95,7 +97,10 @@ export default async function ClassementPage({
     );
   }
 
-  const data = await loadStandingsData(sb, season);
+  const [data, history] = await Promise.all([
+    loadStandingsData(sb, season),
+    loadStandingsHistory(sb, season.id),
+  ]);
   const scope = SCOPE_OF[query.portee];
   const kind = KIND_OF[query.vue];
   const played = playedRounds(data.rounds, data.entries, scope);
@@ -201,6 +206,19 @@ export default async function ClassementPage({
             {" L'évolution se lit par rapport à la journée précédente."}
           </p>
         </>
+      )}
+
+      {query.vue === "general" && history.roundLabels.length >= 2 && (
+        <StandingsGraph
+          players={history.players.map((p) => ({
+            userId: p.userId,
+            firstName: p.firstName,
+            color: "",
+            positions: p.positions,
+          }))}
+          roundLabels={history.roundLabels}
+          viewerId={user?.id ?? null}
+        />
       )}
 
       {fixtures.length > 0 && (
