@@ -14,10 +14,17 @@ export default async function AdminBonusPage() {
   const seasonId = await currentSeasonId(admin);
   const questions = await listQuestions(admin, seasonId);
 
-  const { data: seasonTeams } = await admin
-    .from("season_teams")
-    .select("teams(id, name)")
-    .eq("season_id", seasonId);
+  const [{ data: seasonTeams }, { data: rounds }] = await Promise.all([
+    admin
+      .from("season_teams")
+      .select("teams(id, name)")
+      .eq("season_id", seasonId),
+    admin
+      .from("rounds")
+      .select("id, name, number")
+      .eq("season_id", seasonId)
+      .order("number", { ascending: true }),
+  ]);
 
   const teams: { value: string; label: string }[] = (seasonTeams ?? [])
     .map((st) => {
@@ -32,7 +39,14 @@ export default async function AdminBonusPage() {
       <section className="flex flex-col gap-3">
         <Label>Nouvelle question</Label>
         <Card className="p-4">
-          <CreateForm teams={teams} />
+          <CreateForm
+          teams={teams}
+          rounds={(rounds ?? []).map((r) => ({
+            id: r.id as string,
+            name: r.name as string,
+            number: r.number as number,
+          }))}
+        />
         </Card>
       </section>
 

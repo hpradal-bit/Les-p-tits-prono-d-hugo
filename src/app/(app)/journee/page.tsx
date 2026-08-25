@@ -31,7 +31,11 @@ export default async function JourneePage({
 
   const admin = createAdminClient();
   const seasonId = await currentSeasonId(admin);
-  const bonusItems = await listOpenQuestionsWithAnswer(admin, seasonId, viewer.id);
+  const allBonusItems = await listOpenQuestionsWithAnswer(admin, seasonId, viewer.id);
+  const currentRoundId = board.round.id;
+  const bonusItems = allBonusItems.filter(
+    (b) => !b.question.roundId || b.question.roundId === currentRoundId,
+  );
 
   const lockLabel = board.nextLockAt
     ? new Date(board.nextLockAt).toLocaleString("fr-FR", {

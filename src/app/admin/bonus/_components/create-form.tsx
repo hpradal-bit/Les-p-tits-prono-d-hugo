@@ -10,10 +10,17 @@ interface TeamOption {
   label: string;
 }
 
-export function CreateForm({ teams }: { teams: TeamOption[] }) {
+interface RoundOption {
+  id: string;
+  name: string;
+  number: number;
+}
+
+export function CreateForm({ teams, rounds }: { teams: TeamOption[]; rounds: RoundOption[] }) {
   const kinds = allKinds();
   const [kind, setKind] = useState(kinds[0]?.kind ?? "");
   const [prompt, setPrompt] = useState("");
+  const [roundId, setRoundId] = useState<string>("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -21,6 +28,7 @@ export function CreateForm({ teams }: { teams: TeamOption[] }) {
   const [count, setCount] = useState(3);
   const [ptsExact, setPtsExact] = useState(5);
   const [ptsPodium, setPtsPodium] = useState(2);
+  const [rankFrom, setRankFrom] = useState<"top" | "bottom">("top");
 
   // Oui/Non et Choix unique
   const [ptsCorrect, setPtsCorrect] = useState(3);
@@ -71,10 +79,11 @@ export function CreateForm({ teams }: { teams: TeamOption[] }) {
     const payload: Record<string, unknown> = {
       kind,
       prompt: prompt.trim(),
+      ...(roundId ? { roundId } : {}),
     };
 
     if (isPodium) {
-      payload.config = { options: teams, count };
+      payload.config = { options: teams, count, ...(rankFrom === "bottom" ? { rankFrom: "bottom" } : {}) };
       payload.scoring = { exact_position: ptsExact, in_podium: ptsPodium };
     } else if (isChoice) {
       const validOptions = options.filter((o) => o.label.trim());
@@ -130,6 +139,28 @@ export function CreateForm({ teams }: { teams: TeamOption[] }) {
         )}
       </div>
 
+      {/* Journee (optionnel) */}
+      {rounds.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-semibold text-ink">Rattacher a une journee (optionnel)</label>
+          <select
+            value={roundId}
+            onChange={(e) => setRoundId(e.target.value)}
+            className="rounded-lg border border-line bg-surface px-3 py-2.5 text-[14px] text-ink"
+          >
+            <option value="">Saison entiere</option>
+            {rounds.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-[12px] text-ink-faint">
+            {roundId ? "La question sera visible uniquement sur cette journee." : "La question sera visible toute la saison."}
+          </p>
+        </div>
+      )}
+
       {/* Question */}
       <div className="flex flex-col gap-1.5">
         <label className="text-[13px] font-semibold text-ink">Question</label>
@@ -157,21 +188,35 @@ export function CreateForm({ teams }: { teams: TeamOption[] }) {
           <div className="rounded-lg border border-line bg-surface-sunk p-3">
             <p className="mb-2 text-[13px] font-semibold text-ink">Configuration du podium</p>
 
-            <div className="flex items-center gap-3">
-              <label className="text-[13px] text-ink-muted">Nombre de places</label>
-              <select
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-                className="w-16 rounded-md border border-line bg-surface px-2 py-1.5 text-center text-[14px] font-bold text-ink"
-              >
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <label className="text-[13px] text-ink-muted">Type</label>
+                <select
+                  value={rankFrom}
+                  onChange={(e) => setRankFrom(e.target.value as "top" | "bottom")}
+                  className="rounded-md border border-line bg-surface px-2 py-1.5 text-[14px] font-bold text-ink"
+                >
+                  <option value="top">Les premiers (Top)</option>
+                  <option value="bottom">Les derniers (Bottom)</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-[13px] text-ink-muted">Nombre de places</label>
+                <select
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                  className="w-16 rounded-md border border-line bg-surface px-2 py-1.5 text-center text-[14px] font-bold text-ink"
+                >
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <p className="mt-2 text-[12px] text-ink-faint">
               {teams.length} equipes du championnat seront proposees dans les menus deroulants.
+              {rankFrom === "bottom" && " Le reglement automatique lira le classement par le bas."}
             </p>
 
             {/* Apercu des menus */}

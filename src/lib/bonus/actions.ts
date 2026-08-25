@@ -326,14 +326,15 @@ export async function settleBonusFromStandings(
     return { status: "error", message: "La question doit être ouverte ou fermée." };
   }
 
-  const config = q.config as { options: { value: string; label: string }[]; count: number };
+  const config = q.config as { options: { value: string; label: string }[]; count: number; rankFrom?: "top" | "bottom" };
   const count = config.count ?? 3;
+  const fromBottom = config.rankFrom === "bottom";
 
   const { data: standings, error: standErr } = await admin
     .from("competition_standings")
     .select("team_id, position")
     .eq("season_id", q.season_id as string)
-    .order("position", { ascending: true })
+    .order("position", { ascending: !fromBottom })
     .limit(count);
 
   if (standErr || !standings || standings.length === 0) {
