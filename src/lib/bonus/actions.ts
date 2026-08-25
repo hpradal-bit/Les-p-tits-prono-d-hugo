@@ -18,6 +18,7 @@ const createSchema = z.object({
   roundId: z.string().uuid().nullable().optional(),
   config: z.unknown().optional(),
   scoring: z.unknown().optional(),
+  deadlineMinutes: z.number().int().min(0).optional(),
 });
 
 const settleSchema = z.object({
@@ -51,12 +52,17 @@ export async function createBonusQuestion(
   const admin = createAdminClient();
   const seasonId = await currentSeasonId(admin);
 
+  const deadlineMinutes = parsed.data.deadlineMinutes ?? null;
+  const storedConfig = deadlineMinutes
+    ? { ...(config as Record<string, unknown>), deadlineMinutes }
+    : config;
+
   const { data, error } = await admin.from("bonus_questions").insert({
     season_id: seasonId,
     round_id: parsed.data.roundId ?? null,
     kind: parsed.data.kind,
     prompt: parsed.data.prompt,
-    config,
+    config: storedConfig,
     scoring,
     status: "draft",
     created_by: ctx.userId,
@@ -84,16 +90,27 @@ export async function openBonusQuestion(
 
   const { data: q } = await admin
     .from("bonus_questions")
-    .select("id, status, prompt")
+    .select("id, status, prompt, config")
     .eq("id", questionId)
     .single();
 
   if (!q) return { status: "error", message: "Question introuvable." };
   if (q.status !== "draft") return { status: "error", message: "Seul un brouillon peut être ouvert." };
 
+  const now = new Date();
+  const cfg = q.config as Record<string, unknown> | null;
+  const deadlineMin = typeof cfg?.deadlineMinutes === "number" ? cfg.deadlineMinutes : null;
+  const closesAt = deadlineMin
+    ? new Date(now.getTime() + deadlineMin * 60_000).toISOString()
+    : null;
+
   const { error } = await admin
     .from("bonus_questions")
-    .update({ status: "open", opens_at: new Date().toISOString() })
+    .update({
+      status: "open",
+      opens_at: now.toISOString(),
+      ...(closesAt ? { closes_at: closesAt } : {}),
+    })
     .eq("id", questionId);
   if (error) return { status: "error", message: error.message };
 

@@ -53,6 +53,36 @@ export async function listOpenQuestions(
   return (data ?? []).map(toQuestion);
 }
 
+export async function listOpenQuestionsWithAnswer(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+  viewerId: Uuid,
+): Promise<{ question: BonusQuestion; myAnswer: BonusAnswerRow | null }[]> {
+  const questions = await listOpenQuestions(sb, seasonId);
+  if (questions.length === 0) return [];
+
+  const ids = questions.map((q) => q.id);
+  const { data: answers } = await sb
+    .from("bonus_answers")
+    .select("question_id, user_id, answer, updated_at")
+    .in("question_id", ids)
+    .eq("user_id", viewerId);
+
+  const answerMap = new Map<string, BonusAnswerRow>();
+  for (const a of answers ?? []) {
+    answerMap.set(a.question_id as string, {
+      userId: a.user_id as string,
+      answer: a.answer,
+      updatedAt: a.updated_at as string,
+    });
+  }
+
+  return questions.map((q) => ({
+    question: q,
+    myAnswer: answerMap.get(q.id) ?? null,
+  }));
+}
+
 export async function getQuestion(
   sb: SupabaseClient,
   questionId: Uuid,

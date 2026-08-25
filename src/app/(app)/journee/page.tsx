@@ -4,9 +4,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card } from "@/components/ui";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { currentSeasonId } from "@/lib/admin/queries";
+import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { PlayerAvatar } from "../_components/player-avatar";
 import { getViewer } from "@/lib/auth/session";
 import { MatchCard } from "./_components/match-card";
+import { BonusBanner } from "./_components/bonus-banner";
 
 export const metadata: Metadata = { title: "Ce week-end" };
 export const dynamic = "force-dynamic";
@@ -24,6 +28,10 @@ export default async function JourneePage({
     getViewer(),
   ]);
   if (!board || !viewer) redirect("/connexion");
+
+  const admin = createAdminClient();
+  const seasonId = await currentSeasonId(admin);
+  const bonusItems = await listOpenQuestionsWithAnswer(admin, seasonId, viewer.id);
 
   const lockLabel = board.nextLockAt
     ? new Date(board.nextLockAt).toLocaleString("fr-FR", {
@@ -66,6 +74,8 @@ export default async function JourneePage({
           </span>
         )}
       </div>
+
+      <BonusBanner items={bonusItems} />
 
       {board.fixtures.length === 0 ? (
         <Card className="p-8 text-center">

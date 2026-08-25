@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui";
 import { getKind } from "@/lib/bonus/registry";
 import {
@@ -10,6 +13,35 @@ import { AnswerForm } from "./answer-form";
 interface Props {
   view: BonusQuestionView;
   namesById: Map<string, string>;
+}
+
+function DeadlineCountdown({ closesAt }: { closesAt: string }) {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    function tick() {
+      const diff = new Date(closesAt).getTime() - Date.now();
+      if (diff <= 0) {
+        setRemaining("Termine");
+        return;
+      }
+      const d = Math.floor(diff / 86_400_000);
+      const h = Math.floor((diff % 86_400_000) / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      if (d > 0) setRemaining(`${d}j ${h}h`);
+      else if (h > 0) setRemaining(`${h}h ${m}min`);
+      else setRemaining(`${m}min`);
+    }
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [closesAt]);
+
+  return (
+    <span className="rounded-full bg-clay-soft px-2.5 py-0.5 text-[11px] font-semibold text-clay">
+      {remaining}
+    </span>
+  );
 }
 
 const OUTCOME_STYLE = {
@@ -28,11 +60,16 @@ export function QuestionCard({ view, namesById }: Props) {
     <Card className="overflow-hidden">
       <div className="border-b border-line px-4 py-3">
         <p className="text-[16px] font-bold text-ink">{question.prompt}</p>
-        {kd && (
-          <p className="mt-1 text-[12px] text-ink-faint">
-            {kd.describeScoring(question.scoring, question.config)}
-          </p>
-        )}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {kd && (
+            <p className="text-[12px] text-ink-faint">
+              {kd.describeScoring(question.scoring, question.config)}
+            </p>
+          )}
+          {canAnswer && question.closesAt && (
+            <DeadlineCountdown closesAt={question.closesAt} />
+          )}
+        </div>
       </div>
 
       <div className="px-4 py-3">

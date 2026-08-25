@@ -215,6 +215,25 @@ export function QuestionCard({ question }: { question: BonusQuestion }) {
             {question.roundName && (
               <span className="text-[11px] text-ink-faint">{question.roundName}</span>
             )}
+            {question.closesAt && question.status === "open" && (
+              <span className="text-[11px] text-ink-faint">
+                Fermeture : {new Date(question.closesAt).toLocaleString("fr-FR", {
+                  day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                })}
+              </span>
+            )}
+            {!question.closesAt && question.status === "draft" && (() => {
+              const cfg = question.config as Record<string, unknown> | null;
+              const dm = typeof cfg?.deadlineMinutes === "number" ? cfg.deadlineMinutes : null;
+              if (!dm) return null;
+              const d = Math.floor(dm / (24 * 60));
+              const h = Math.floor((dm % (24 * 60)) / 60);
+              return (
+                <span className="text-[11px] text-ink-faint">
+                  Delai : {d > 0 ? `${d}j` : ""}{h > 0 ? ` ${h}h` : ""} apres ouverture
+                </span>
+              );
+            })()}
           </div>
         </div>
       </div>
