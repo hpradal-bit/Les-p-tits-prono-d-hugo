@@ -95,11 +95,12 @@ const RENDERERS: Record<string, Renderer> = {
 
   round_settled: (e) => {
     const round = str(e.payload, "round_name") ?? "La journée";
-    return {
-      emoji: "🏆",
-      tone: "good",
-      text: `${round} est terminée. Le classement est à jour.`,
-    };
+    const summary = e.payload.summary;
+    const lines = Array.isArray(summary) ? (summary as string[]) : [];
+    const text = lines.length > 0
+      ? lines.join("\n")
+      : `${round} est terminée. Le classement est à jour.`;
+    return { emoji: "🏆", tone: "good", text };
   },
 
   fixture_finished: (e) => {

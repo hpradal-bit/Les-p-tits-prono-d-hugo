@@ -60,7 +60,7 @@ export default async function VestiairePage() {
             <li key={item.id}>
               <Card className={`p-4 ${item.rendered ? TONE[item.rendered.tone] : "border-line"}`}>
                 {item.rendered ? (
-                  <p className="text-[15px] leading-snug text-ink">
+                  <p className="whitespace-pre-wrap text-[15px] leading-snug text-ink">
                     <span className="mr-1.5" aria-hidden>{item.rendered.emoji}</span>
                     {item.rendered.text}
                   </p>

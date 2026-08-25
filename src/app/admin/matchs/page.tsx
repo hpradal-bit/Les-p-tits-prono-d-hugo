@@ -6,6 +6,7 @@ import { loadRounds, loadRoundFixtures } from "@/lib/admin/queries";
 import { ResultForm } from "./_components/result-form";
 import { RecomputeForm } from "./_components/recompute-form";
 import { DefaultsForm } from "./_components/defaults-form";
+import { SettleForm } from "./_components/settle-form";
 
 export const metadata: Metadata = { title: "Matchs" };
 export const dynamic = "force-dynamic";
@@ -80,6 +81,7 @@ export default async function AdminMatchsPage({
         </div>
         <RecomputeForm roundId={current.id} />
         <DefaultsForm roundId={current.id} />
+        <SettleForm roundId={current.id} disabled={current.status === "settled" || withResult < fixtures.length} />
       </div>
 
       <ul className="flex flex-col gap-3">

@@ -306,6 +306,28 @@ export async function applyRoundDefaultsAction(
   }
 }
 
+/**
+ * Clôture une journée : recalcul, résolution des pouvoirs, résumé, snapshot.
+ *
+ * Étape terminale du cycle de vie d'une journée : après ça, plus rien ne
+ * bouge — les points sont définitifs et le résumé est publié au Vestiaire.
+ */
+export async function settleRoundAction(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const { settleRound } = await import("./settle");
+    const roundId = formData.get("roundId");
+    if (typeof roundId !== "string" || roundId.length === 0) {
+      return adminFail("Journée introuvable.");
+    }
+    return await settleRound(roundId);
+  } catch (error) {
+    return handle(error);
+  }
+}
+
 /** Relance le calcul de toute une journée. Idempotent : rejouable sans risque. */
 export async function recomputeRoundAction(
   _prev: AdminActionState,
