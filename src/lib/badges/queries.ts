@@ -44,6 +44,16 @@ export async function loadActiveBadges(sb: SupabaseClient): Promise<BadgeDefinit
   return ((data ?? []) as RawBadgeRow[]).map(toBadge);
 }
 
+/** Tous les badges, actifs ou non. Pour l'écran d'administration. */
+export async function loadAllBadges(sb: SupabaseClient): Promise<BadgeDefinition[]> {
+  const { data, error } = await sb
+    .from("badges")
+    .select("id, code, name, emoji, description, rule, is_active")
+    .order("created_at");
+  if (error) throw error;
+  return ((data ?? []) as RawBadgeRow[]).map(toBadge);
+}
+
 /** Les clés `userId:badgeId` déjà décernées sur la saison. */
 export async function loadEarnedKeys(
   sb: SupabaseClient,
