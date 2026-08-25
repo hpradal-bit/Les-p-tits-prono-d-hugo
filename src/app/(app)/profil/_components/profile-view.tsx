@@ -34,13 +34,20 @@ export function ProfileView({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="flex items-center gap-4 p-5">
-        <PlayerAvatar player={profile.player} size={64} />
-        <div className="min-w-0">
-          <h1 className="truncate font-display text-2xl tracking-tight text-ink">
+      <Card className="flex flex-col items-center gap-3 p-6">
+        <div className="relative">
+          <PlayerAvatar player={profile.player} size={80} />
+          {profile.played > 0 && (
+            <span className="absolute -bottom-1 -right-1 flex size-8 items-center justify-center rounded-full bg-clay font-mono text-[13px] font-bold text-surface shadow-sm">
+              {profile.rank}
+            </span>
+          )}
+        </div>
+        <div className="text-center">
+          <h1 className="font-display text-[26px] leading-none tracking-tight text-ink">
             {profile.player.displayName}
           </h1>
-          <p className="font-mono text-[12px] text-ink-muted">
+          <p className="mt-1 font-mono text-[12px] text-ink-muted">
             {profile.played === 0
               ? "Pas encore de pronostic"
               : `${profile.rank}${profile.rank === 1 ? "er" : "e"} sur ${profile.fieldSize} · ${profile.points} pt${profile.points > 1 ? "s" : ""}`}

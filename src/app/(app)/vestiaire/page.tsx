@@ -3,8 +3,10 @@ import Link from "next/link";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
 import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queries";
+import { loadLastDebrief } from "@/lib/feed/debrief";
 import { ReactionBar } from "./_components/reaction-bar";
 import { PostForm } from "./_components/post-form";
+import { RoundDebrief } from "./_components/round-debrief";
 
 export const metadata: Metadata = { title: "Le Vestiaire" };
 export const dynamic = "force-dynamic";
@@ -43,7 +45,11 @@ export default async function VestiairePage({
   searchParams: Promise<{ filtre?: string }>;
 }) {
   const { filtre } = FilterSchema.parse(await searchParams);
-  const [items, choices] = await Promise.all([loadFeed(filtre), loadReactionChoices()]);
+  const [items, choices, debrief] = await Promise.all([
+    loadFeed(filtre),
+    loadReactionChoices(),
+    loadLastDebrief(),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,6 +77,8 @@ export default async function VestiairePage({
           </Link>
         ))}
       </div>
+
+      <RoundDebrief data={debrief} />
 
       <Card className="p-4">
         <PostForm />
