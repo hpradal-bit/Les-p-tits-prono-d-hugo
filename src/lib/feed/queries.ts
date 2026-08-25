@@ -5,8 +5,18 @@ import { getViewer } from "@/lib/auth/session";
 import { renderEvent, RENDERED_KINDS, type FeedEvent, type RenderedEvent } from "./render";
 import type { Uuid } from "@/lib/types";
 
+export type FeedFilter = "tout" | "jeu" | "pouvoirs" | "messages";
+
+const FILTER_KINDS: Record<FeedFilter, string[] | null> = {
+  tout: null,
+  jeu: ["exact_score", "leader_change", "overtake", "bad_streak", "fixture_finished", "round_locked", "round_settled", "auto_prediction"],
+  pouvoirs: ["power_declared", "power_resolved"],
+  messages: [],
+};
+
 export interface FeedItem {
   id: Uuid;
+  kind: string | null;
   createdAt: string;
   /** Publication automatique issue d'un événement, ou mot d'un joueur. */
   rendered: RenderedEvent | null;
@@ -52,7 +62,7 @@ async function projectEvents(groupId: Uuid): Promise<void> {
 }
 
 /** Le fil du groupe, du plus récent au plus ancien. */
-export async function loadFeed(): Promise<FeedItem[]> {
+export async function loadFeed(filter: FeedFilter = "tout"): Promise<FeedItem[]> {
   const viewer = await getViewer();
   if (!viewer) return [];
 
@@ -62,7 +72,7 @@ export async function loadFeed(): Promise<FeedItem[]> {
   const settings = await loadSettings(sb);
   const pageSize = setting<number>(settings, "feed.page_size", 25);
 
-  const { data: posts, error } = await sb
+  let query = sb
     .from("feed_posts")
     .select(`id, body, created_at, event_id,
              author:author_id (display_name),
@@ -73,6 +83,12 @@ export async function loadFeed(): Promise<FeedItem[]> {
     .eq("is_hidden", false)
     .order("created_at", { ascending: false })
     .limit(pageSize);
+
+  if (filter === "messages") {
+    query = query.is("event_id", null);
+  }
+
+  const { data: posts, error } = await query;
   if (error) throw error;
 
   const ids = (posts ?? []).map((p) => p.id as string);
@@ -117,12 +133,18 @@ export async function loadFeed(): Promise<FeedItem[]> {
 
     return {
       id: p.id as string,
+      kind: raw?.kind ?? null,
       createdAt: (p.created_at as string),
       rendered,
       body: (p.body as string | null) ?? null,
       authorName: one<{ display_name: string }>(p.author)?.display_name ?? null,
       reactions: (byPost.get(p.id as string) ?? []).sort((a, b) => b.count - a.count),
     };
+  }).filter((item) => {
+    const allowed = FILTER_KINDS[filter];
+    if (allowed === null) return true;
+    if (allowed.length === 0) return item.kind === null;
+    return item.kind !== null && allowed.includes(item.kind);
   });
 }
 

@@ -78,6 +78,8 @@ export interface StandingsRow {
   adjustmentPoints: number;
   /** Nombre de pronostics notés dans la fenêtre. */
   played: number;
+  /** Les 5 derniers résultats (du plus récent au plus ancien), pour les pastilles de forme. */
+  recentForm: ScoreLevel[];
   counts: Record<ScoreLevel, number>;
   /** Part de pronostics rapportant au moins un point. `null` si rien de joué. */
   successRate: number | null;
@@ -238,6 +240,7 @@ interface RawRow {
   tally: Tally;
   points: number;
   streak: StreakInfo | null;
+  recentForm: ScoreLevel[];
 }
 
 function buildRows(
@@ -286,11 +289,18 @@ function buildRows(
 
   return input.players.map((player) => {
     const tally = tallies.get(player.userId)!;
+    const playerHistory = history.get(player.userId)!;
+    const sorted = [...playerHistory].sort((a, b) => {
+      if (a.kickoffAt !== b.kickoffAt) return a.kickoffAt < b.kickoffAt ? -1 : 1;
+      return a.fixtureId < b.fixtureId ? -1 : a.fixtureId > b.fixtureId ? 1 : 0;
+    });
+    const recentForm = sorted.slice(-5).reverse().map((e) => e.level);
     return {
       player,
       tally,
       points: tally.predictionPoints + tally.bonusPoints + tally.adjustmentPoints,
-      streak: currentStreak(history.get(player.userId)!),
+      streak: currentStreak(playerHistory),
+      recentForm,
     };
   });
 }
@@ -373,6 +383,7 @@ export function computeStandings(
         bonusPoints: row.tally.bonusPoints,
         adjustmentPoints: row.tally.adjustmentPoints,
         played: row.tally.played,
+        recentForm: row.recentForm,
         counts: { ...row.tally.counts },
         successRate: row.tally.played > 0 ? row.tally.correct / row.tally.played : null,
         streak: row.streak,

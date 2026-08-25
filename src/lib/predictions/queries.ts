@@ -9,7 +9,7 @@ import {
   type ExactAttempt,
 } from "./exact-score";
 import { isLockedAt, nextLockAt } from "./lock";
-import type { JourneyBoard, JourneyFixture, ParticipationRow, PredictionDraft } from "./types";
+import type { JourneyBoard, JourneyFixture, ParticipationRow, PredictionDraft, PredictionScore, RoundSummary } from "./types";
 
 /* ---------------------------------------------------------------------------
    Lecture de l'écran « Ma journée ».
@@ -54,6 +54,11 @@ interface RoundRow {
   ends_at: string | null;
 }
 
+interface PredictionScoreRow {
+  points: number;
+  breakdown: Record<string, unknown>;
+}
+
 interface PredictionRow {
   fixture_id: string;
   outcome: "home" | "draw" | "away";
@@ -62,13 +67,14 @@ interface PredictionRow {
   exact_home_score: number | null;
   exact_away_score: number | null;
   is_auto: boolean;
+  prediction_scores: PredictionScoreRow[] | null;
 }
 
 const FIXTURE_COLUMNS =
   "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute";
 
 const PREDICTION_COLUMNS =
-  "fixture_id, outcome, margin_bucket_id, margin_value, exact_home_score, exact_away_score, is_auto";
+  "fixture_id, outcome, margin_bucket_id, margin_value, exact_home_score, exact_away_score, is_auto, prediction_scores(points, breakdown)";
 
 function toTeam(r: TeamRow): Team {
   return {
@@ -123,6 +129,13 @@ function toDraft(p: PredictionRow): PredictionDraft {
   };
 }
 
+function toScore(p: PredictionRow): PredictionScore | null {
+  const scores = p.prediction_scores;
+  if (!scores || !Array.isArray(scores) || scores.length === 0) return null;
+  const s = scores[0];
+  return { points: s.points, level: String(s.breakdown?.level ?? "wrong_winner") };
+}
+
 /**
  * La journée à afficher par défaut : la première dont la fin n'est pas passée.
  * En fin de saison, on retombe sur la dernière journée jouée.
@@ -172,28 +185,33 @@ export async function loadJourneyBoard(
   const sb = await createClient();
   const now = new Date();
 
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) return null;
-
-  // --- Saison active ---------------------------------------------------------
-  const { data: season } = await sb
-    .from("seasons")
-    .select("id")
-    .eq("status", "active")
-    .order("starts_on", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!season) return null;
+  // --- Étape 1 : auth + saison en parallèle --------------------------------
+  const [{ data: { user } }, { data: season }] = await Promise.all([
+    sb.auth.getUser(),
+    sb.from("seasons")
+      .select("id")
+      .eq("status", "active")
+      .order("starts_on", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (!user || !season) return null;
   const seasonId = season.id as string;
 
-  // --- Journées --------------------------------------------------------------
-  const { data: roundRows } = await sb
-    .from("rounds")
-    .select("id, season_id, number, name, status, starts_at, ends_at")
-    .eq("season_id", seasonId)
-    .order("number");
+  // --- Étape 2 : journées + pronos + barème + réglages en parallèle ---------
+  const [{ data: roundRows }, { data: predictionRows }, ruleset, settings] =
+    await Promise.all([
+      sb.from("rounds")
+        .select("id, season_id, number, name, status, starts_at, ends_at")
+        .eq("season_id", seasonId)
+        .order("number"),
+      sb.from("predictions")
+        .select(PREDICTION_COLUMNS)
+        .eq("user_id", user.id),
+      loadRuleset(sb, seasonId),
+      loadSettings(sb),
+    ]);
+
   const rounds = (roundRows ?? []) as RoundRow[];
   if (rounds.length === 0) return null;
 
@@ -208,45 +226,27 @@ export async function loadJourneyBoard(
   const previous = index > 0 ? rounds[index - 1] : null;
   const next = index < rounds.length - 1 ? rounds[index + 1] : null;
 
-  // --- Matchs de la saison (91 lignes : on charge tout, c'est plus simple) ---
-  const { data: fixtureRows } = await sb
-    .from("fixtures")
-    .select(FIXTURE_COLUMNS)
-    .in(
-      "round_id",
-      rounds.map((r) => r.id),
-    )
-    .order("kickoff_at");
-  const seasonFixtures = (fixtureRows ?? []) as FixtureRow[];
-
-  const roundFixtureRows = seasonFixtures.filter((f) => f.round_id === roundRow.id);
-
-  // --- Clubs -----------------------------------------------------------------
-  const teamIds = Array.from(
-    new Set(roundFixtureRows.flatMap((f) => [f.home_team_id, f.away_team_id])),
-  );
-  const { data: teamRows } = await sb
-    .from("teams")
-    .select("id, code, name, short_name, city, logo_url, primary_color, secondary_color")
-    .in("id", teamIds);
-  const teams = new Map<string, Team>(
-    ((teamRows ?? []) as TeamRow[]).map((t) => [t.id, toTeam(t)]),
-  );
-
-  // --- Mes pronostics (RLS : les miens, et ceux des autres seulement une fois
-  //     le match verrouillé — on ne demande que les miens de toute façon) ----
-  const { data: predictionRows } = await sb
-    .from("predictions")
-    .select(PREDICTION_COLUMNS)
-    .eq("user_id", user.id);
   const myPredictions = new Map<string, PredictionRow>(
     ((predictionRows ?? []) as PredictionRow[]).map((p) => [p.fixture_id, p]),
   );
-
-  // --- Barème & réglages -----------------------------------------------------
-  const ruleset: Ruleset = await loadRuleset(sb, seasonId);
-  const settings = await loadSettings(sb);
   const timeZone = setting(settings, "timezone", "Europe/Paris");
+
+  // --- Étape 3 : matchs + clubs + participation en parallèle ----------------
+  const [{ data: fixtureRows }, { data: teamRows }, participation] = await Promise.all([
+    sb.from("fixtures")
+      .select(FIXTURE_COLUMNS)
+      .in("round_id", rounds.map((r) => r.id))
+      .order("kickoff_at"),
+    sb.from("teams")
+      .select("id, code, name, short_name, city, logo_url, primary_color, secondary_color"),
+    loadParticipation(sb, roundRow.id),
+  ]);
+
+  const seasonFixtures = (fixtureRows ?? []) as FixtureRow[];
+  const roundFixtureRows = seasonFixtures.filter((f) => f.round_id === roundRow.id);
+  const teams = new Map<string, Team>(
+    ((teamRows ?? []) as TeamRow[]).map((t) => [t.id, toTeam(t)]),
+  );
 
   // --- Scores exacts déjà tentés sur la saison ------------------------------
   const attempts: ExactAttempt[] = seasonFixtures
@@ -279,6 +279,7 @@ export async function loadJourneyBoard(
           monthKey,
         }),
         monthKey,
+        score: prediction ? toScore(prediction) : null,
       } satisfies JourneyFixture;
     })
     .filter((f): f is JourneyFixture => f !== null);
@@ -295,6 +296,13 @@ export async function loadJourneyBoard(
       : monthKeyOf(now.toISOString(), timeZone),
   });
 
+  const allRounds: RoundSummary[] = rounds.map((r) => ({
+    id: r.id,
+    number: r.number,
+    name: r.name,
+    status: r.status,
+  }));
+
   return {
     userId: user.id,
     seasonId,
@@ -303,6 +311,7 @@ export async function loadJourneyBoard(
       ? { id: previous.id, number: previous.number, name: previous.name }
       : null,
     nextRound: next ? { id: next.id, number: next.number, name: next.name } : null,
+    allRounds,
     fixtures,
     ruleset,
     exactScoreBudget: budget,
@@ -314,7 +323,7 @@ export async function loadJourneyBoard(
       now,
     ),
     hasProvisionalKickoffs: fixtures.some((f) => !f.fixture.kickoffConfirmed),
-    participation: await loadParticipation(sb, roundRow.id),
+    participation,
     timeZone,
     serverNow: now.toISOString(),
   };

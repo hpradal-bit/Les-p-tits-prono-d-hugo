@@ -1,11 +1,24 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { z } from "zod";
 import { Card, Label } from "@/components/ui";
-import { loadFeed, loadReactionChoices } from "@/lib/feed/queries";
+import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queries";
 import { ReactionBar } from "./_components/reaction-bar";
 import { PostForm } from "./_components/post-form";
 
 export const metadata: Metadata = { title: "Le Vestiaire" };
 export const dynamic = "force-dynamic";
+
+const FilterSchema = z.object({
+  filtre: z.enum(["tout", "jeu", "pouvoirs", "messages"]).catch("tout"),
+});
+
+const FILTER_LABELS: { value: FeedFilter; label: string }[] = [
+  { value: "tout", label: "Tout" },
+  { value: "jeu", label: "Jeu" },
+  { value: "pouvoirs", label: "Pouvoirs" },
+  { value: "messages", label: "Messages" },
+];
 
 const TONE: Record<string, string> = {
   neutral: "border-line",
@@ -24,8 +37,13 @@ function ago(iso: string) {
   return days === 1 ? "hier" : `il y a ${days} jours`;
 }
 
-export default async function VestiairePage() {
-  const [items, choices] = await Promise.all([loadFeed(), loadReactionChoices()]);
+export default async function VestiairePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filtre?: string }>;
+}) {
+  const { filtre } = FilterSchema.parse(await searchParams);
+  const [items, choices] = await Promise.all([loadFeed(filtre), loadReactionChoices()]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -36,6 +54,22 @@ export default async function VestiairePage() {
         <p className="text-[14px] text-ink-muted">
           Ce qui se dit sur le groupe, et ce que le jeu raconte tout seul.
         </p>
+      </div>
+
+      <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
+        {FILTER_LABELS.map((f) => (
+          <Link
+            key={f.value}
+            href={f.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${f.value}`}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+              filtre === f.value
+                ? "bg-clay text-surface"
+                : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
+            }`}
+          >
+            {f.label}
+          </Link>
+        ))}
       </div>
 
       <Card className="p-4">

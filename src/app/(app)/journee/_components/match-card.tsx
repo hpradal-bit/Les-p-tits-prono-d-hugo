@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TeamLogo } from "@/components/ui";
-import type { JourneyFixture } from "@/lib/predictions/types";
+import type { JourneyFixture, PredictionScore } from "@/lib/predictions/types";
 import type { Ruleset } from "@/lib/types";
 
 /** Le libellé du pronostic du joueur, en clair. */
@@ -18,6 +18,23 @@ function draftLabel(item: JourneyFixture, ruleset: Ruleset): string | null {
   }
   const bucket = ruleset.buckets.find((b) => b.id === d.marginBucketId);
   return bucket ? `${side} ${bucket.label}` : side;
+}
+
+const LEVEL_BADGE: Record<string, { label: string; className: string }> = {
+  exact_score: { label: "Score exact", className: "bg-perfect-soft text-perfect" },
+  winner_and_margin: { label: "Parfait", className: "bg-winner-soft text-winner" },
+  winner: { label: "Bon", className: "bg-sage-soft text-sage" },
+  wrong: { label: "Raté", className: "bg-surface-sunk text-ink-faint" },
+};
+
+function ScoreBadge({ score }: { score: PredictionScore }) {
+  const badge = LEVEL_BADGE[score.level];
+  if (!badge) return null;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.className}`}>
+      +{score.points} · {badge.label}
+    </span>
+  );
 }
 
 function kickoffLabel(iso: string, timeZone: string, confirmed: boolean) {
@@ -101,9 +118,12 @@ export function MatchCard({
       </div>
 
       {label && (
-        <div className="mt-2.5 flex items-center gap-2 border-t border-line pt-2.5 text-[12px] text-ink-muted">
-          Ton prono : {label}
-          {item.isAuto && <span title="Joué automatiquement au verrouillage">😴</span>}
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5 text-[12px] text-ink-muted">
+          <span>
+            Ton prono : {label}
+            {item.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
+          </span>
+          {item.score && <ScoreBadge score={item.score} />}
         </div>
       )}
     </Link>

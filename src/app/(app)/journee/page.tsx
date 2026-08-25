@@ -14,6 +14,7 @@ import { getViewer } from "@/lib/auth/session";
 import { MatchCard } from "./_components/match-card";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
+import { RoundNav } from "./_components/round-nav";
 
 export const metadata: Metadata = { title: "Ce week-end" };
 export const dynamic = "force-dynamic";
@@ -121,6 +122,8 @@ export default async function JourneePage({
           size={42}
         />
       </header>
+
+      <RoundNav rounds={board.allRounds} currentNumber={board.round.number} />
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full bg-clay-soft px-3 py-1.5 text-[12px] font-semibold text-clay">

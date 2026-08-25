@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<StandingsRow> & { position: number; points: 
     bonusPoints: 0,
     adjustmentPoints: 0,
     played: 7,
+    recentForm: [],
     counts: { wrong: 2, winner: 3, winner_and_margin: 1, exact_score: 1, ...overrides.counts },
     successRate: 0.71,
     streak: null,

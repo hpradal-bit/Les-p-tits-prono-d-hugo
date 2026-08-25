@@ -10,6 +10,12 @@ export interface PredictionDraft {
   exactAwayScore: number | null;
 }
 
+/** Résultat du scoring sur un pronostic. */
+export interface PredictionScore {
+  points: number;
+  level: string;
+}
+
 /** Un match de la journée, prêt à être affiché. */
 export interface JourneyFixture {
   fixture: Fixture;
@@ -23,6 +29,8 @@ export interface JourneyFixture {
   exactScore: ExactScoreVerdict;
   /** Mois du coup d'envoi dans le fuseau du jeu — sert au découpage du quota. */
   monthKey: string;
+  /** Points gagnés sur ce match, si le match a un résultat et un prono. */
+  score: PredictionScore | null;
 }
 
 /** Combien de matchs chacun a joués — sans rien révéler du contenu. */
@@ -37,6 +45,14 @@ export interface ParticipationRow {
   missing: number;
 }
 
+/** Résumé d'une journée pour le bandeau de navigation. */
+export interface RoundSummary {
+  id: Uuid;
+  number: number;
+  name: string;
+  status: string;
+}
+
 /** Tout ce dont l'écran « Ma journée » a besoin, en un seul objet. */
 export interface JourneyBoard {
   userId: Uuid;
@@ -45,6 +61,8 @@ export interface JourneyBoard {
   /** Les journées voisines, pour la navigation. */
   previousRound: { id: Uuid; number: number; name: string } | null;
   nextRound: { id: Uuid; number: number; name: string } | null;
+  /** Toutes les journées de la saison, pour le bandeau de navigation. */
+  allRounds: RoundSummary[];
   fixtures: JourneyFixture[];
   /** Le barème en vigueur : tranches, quotas, points. Rien n'est en dur à l'écran. */
   ruleset: Ruleset;
