@@ -7,7 +7,7 @@ import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSeasonId } from "@/lib/admin/queries";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
-import { loadActivePowers, loadUserTokens, loadUserRoundUsage, loadRoundUsages } from "@/lib/powers/queries";
+import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
 import { PlayerAvatar } from "../_components/player-avatar";
 import { getViewer } from "@/lib/auth/session";
@@ -15,6 +15,7 @@ import { MatchCard } from "./_components/match-card";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { RoundNav } from "./_components/round-nav";
+import { Countdown } from "./_components/countdown";
 
 export const metadata: Metadata = { title: "Ce week-end" };
 export const dynamic = "force-dynamic";
@@ -93,11 +94,18 @@ export default async function JourneePage({
       }
     : null;
 
-  const lockLabel = board.nextLockAt
-    ? new Date(board.nextLockAt).toLocaleString("fr-FR", {
-        weekday: "short", hour: "2-digit", minute: "2-digit", timeZone: board.timeZone,
-      }).replace(".", "")
-    : null;
+  const toPlay = board.fixtures.filter(
+    (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
+  );
+  const live = board.fixtures.filter((f) => f.fixture.status === "live");
+  const done = board.fixtures.filter(
+    (f) => f.fixture.status === "finished" || f.fixture.status === "official",
+  );
+  const locked = board.fixtures.filter(
+    (f) => f.isLocked && f.fixture.status !== "live" && f.fixture.status !== "finished" && f.fixture.status !== "official",
+  );
+
+  const totalPoints = board.fixtures.reduce((sum, f) => sum + (f.score?.points ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -106,21 +114,23 @@ export default async function JourneePage({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
             {board.round.name} · Top 14
           </span>
-          <h1 className="font-display text-[32px] leading-none text-ink">Ce week-end</h1>
+          <h1 className="font-display text-[32px] leading-none text-ink">Ma journée</h1>
           <Link href="/regles" className="mt-0.5 w-fit text-[12.5px] font-semibold text-clay underline">
             Comment on joue ?
           </Link>
         </div>
-        <PlayerAvatar
-          player={{
-            userId: viewer.id,
-            firstName: viewer.firstName,
-            displayName: viewer.displayName,
-            avatarKind: viewer.avatarKind,
-            avatarValue: viewer.avatarValue,
-          }}
-          size={42}
-        />
+        <Link href={`/profil/${viewer.id}`}>
+          <PlayerAvatar
+            player={{
+              userId: viewer.id,
+              firstName: viewer.firstName,
+              displayName: viewer.displayName,
+              avatarKind: viewer.avatarKind,
+              avatarValue: viewer.avatarValue,
+            }}
+            size={42}
+          />
+        </Link>
       </header>
 
       <RoundNav rounds={board.allRounds} currentNumber={board.round.number} />
@@ -130,9 +140,10 @@ export default async function JourneePage({
           {board.fixtures.length} match{board.fixtures.length > 1 ? "s" : ""}
           {board.hasProvisionalKickoffs && " · horaires provisoires"}
         </span>
-        {lockLabel && (
-          <span className="rounded-full bg-sage-soft px-3 py-1.5 text-[12px] font-semibold text-sage">
-            Verrou {lockLabel}
+        {board.nextLockAt && <Countdown targetIso={board.nextLockAt} />}
+        {done.length > 0 && (
+          <span className="rounded-full bg-winner-soft px-3 py-1.5 text-[12px] font-semibold text-winner">
+            {totalPoints} pt{totalPoints > 1 ? "s" : ""} marqué{totalPoints > 1 ? "s" : ""}
           </span>
         )}
       </div>
@@ -154,13 +165,39 @@ export default async function JourneePage({
           <p className="text-ink-muted">Aucun match sur cette journée.</p>
         </Card>
       ) : (
-        <ul className="flex flex-col gap-2.5">
-          {board.fixtures.map((item) => (
-            <li key={item.fixture.id}>
-              <MatchCard item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-4">
+          {toPlay.length > 0 && (
+            <MatchSection title="À jouer" count={toPlay.length}>
+              {toPlay.map((item) => (
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+              ))}
+            </MatchSection>
+          )}
+
+          {locked.length > 0 && (
+            <MatchSection title="Verrouillés" count={locked.length}>
+              {locked.map((item) => (
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+              ))}
+            </MatchSection>
+          )}
+
+          {live.length > 0 && (
+            <MatchSection title="En cours" count={live.length}>
+              {live.map((item) => (
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+              ))}
+            </MatchSection>
+          )}
+
+          {done.length > 0 && (
+            <MatchSection title="Terminés" count={done.length}>
+              {done.map((item) => (
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+              ))}
+            </MatchSection>
+          )}
+        </div>
       )}
 
       {board.remainingToPlay > 0 && (
@@ -181,5 +218,34 @@ export default async function JourneePage({
         </p>
       )}
     </div>
+  );
+}
+
+function MatchSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+          {title}
+        </h2>
+        <span className="rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-bold text-ink-faint">
+          {count}
+        </span>
+      </div>
+      <ul className="flex flex-col gap-2.5">
+        {Array.isArray(children)
+          ? children.map((child, i) => <li key={i}>{child}</li>)
+          : <li>{children}</li>
+        }
+      </ul>
+    </section>
   );
 }
