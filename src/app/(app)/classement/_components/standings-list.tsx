@@ -3,6 +3,7 @@
  * taux de réussite et série en cours.
  */
 
+import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Card } from "@/components/ui";
 import { PlayerAvatar } from "../../_components/player-avatar";
@@ -30,13 +31,14 @@ export function StandingsList({
         {rows.map((row) => {
           const isViewer = row.player.userId === viewerId;
           return (
-            <li
-              key={row.player.userId}
-              className={cn(
-                "flex items-center gap-3 px-3 py-3 sm:px-4",
-                isViewer && "bg-clay-soft/60",
-              )}
-            >
+            <li key={row.player.userId}>
+              <Link
+                href={isViewer ? "/profil" : `/profil/${row.player.userId}`}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-3 transition hover:bg-surface-sunk sm:px-4",
+                  isViewer && "bg-clay-soft/60",
+                )}
+              >
               <span
                 className={cn(
                   "tabular w-6 shrink-0 text-center font-mono text-sm font-semibold",
@@ -68,6 +70,7 @@ export function StandingsList({
               <span className="tabular w-12 shrink-0 text-right font-mono text-lg font-bold text-ink">
                 {row.points}
               </span>
+              </Link>
             </li>
           );
         })}

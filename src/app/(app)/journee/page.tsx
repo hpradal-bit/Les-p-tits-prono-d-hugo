@@ -17,7 +17,7 @@ import { PowerBanner } from "./_components/power-banner";
 import { RoundNav } from "./_components/round-nav";
 import { Countdown } from "./_components/countdown";
 
-export const metadata: Metadata = { title: "Ce week-end" };
+export const metadata: Metadata = { title: "Ma journée" };
 export const dynamic = "force-dynamic";
 
 const params = z.object({ j: z.coerce.number().int().min(1).max(30).optional() });
