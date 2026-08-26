@@ -112,6 +112,29 @@ export function TeamLogo({ team, size = 32 }: { team: Team; size?: number }) {
   );
 }
 
+/** Le logo d'une compétition (Top 14, Pro D2…) — jamais d'emoji ni d'initiales à défaut. */
+export function CompetitionLogo({
+  name,
+  logoUrl,
+  size = 32,
+}: {
+  name: string;
+  logoUrl: string | null | undefined;
+  size?: number;
+}) {
+  if (!logoUrl) return null;
+  return (
+    <Image
+      src={logoUrl}
+      alt={name}
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 export function LiveBadge() {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-live-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-live">

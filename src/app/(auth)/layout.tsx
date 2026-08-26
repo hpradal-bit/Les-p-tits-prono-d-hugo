@@ -15,7 +15,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           Des potes, des pronos, du kiff
         </Link>
         <p className="font-display text-[32px] leading-none tracking-tight text-ink">
-          VESTIAIRE
+          LE VESTIAIRE
         </p>
       </header>
 

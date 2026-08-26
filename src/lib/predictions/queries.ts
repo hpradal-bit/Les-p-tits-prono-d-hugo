@@ -198,7 +198,7 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
   const [{ data: { user } }, { data: league }] = await Promise.all([
     sb.auth.getUser(),
     sb.from("leagues")
-      .select("competition_id, competitions:competition_id!inner(name)")
+      .select("competition_id, competitions:competition_id!inner(name, logo_url)")
       .eq("id", opts.leagueId)
       .maybeSingle(),
   ]);
@@ -206,6 +206,7 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
 
   const competitionRow = Array.isArray(league.competitions) ? league.competitions[0] : league.competitions;
   const competitionName = (competitionRow as { name: string } | null)?.name ?? "Compétition";
+  const competitionLogoUrl = (competitionRow as { logo_url: string | null } | null)?.logo_url ?? null;
 
   const { data: season } = await sb
     .from("seasons")
@@ -327,6 +328,7 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
     seasonId,
     leagueId: opts.leagueId,
     competitionName,
+    competitionLogoUrl,
     round: toRound(roundRow),
     previousRound: previous
       ? { id: previous.id, number: previous.number, name: previous.name }

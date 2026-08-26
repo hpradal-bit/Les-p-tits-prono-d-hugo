@@ -108,7 +108,7 @@ export async function settleRound(
       `${scoreSummary.fixtures} matchs, ${scoreSummary.predictions} pronostics notés`,
       `${scoreSummary.exactScores} score(s) exact(s)`,
       ...(badgeSummary.message && !badgeSummary.message.startsWith("Aucun") ? [badgeSummary.message] : []),
-      ...(summaryLines.length > 0 ? ["Résumé publié dans le Vestiaire"] : []),
+      ...(summaryLines.length > 0 ? ["Résumé publié dans la zone de chambrage"] : []),
     ],
   };
 }

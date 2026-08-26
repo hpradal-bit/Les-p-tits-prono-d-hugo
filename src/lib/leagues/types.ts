@@ -9,6 +9,8 @@ export interface League {
   competitionId: Uuid;
   competitionCode: string;
   competitionName: string;
+  /** Le logo de la compétition (Top 14, Pro D2…) — distinct du logo de la ligue elle-même. */
+  competitionLogoUrl: string | null;
   name: string;
   logoUrl: string | null;
   slogan: string | null;
@@ -23,6 +25,7 @@ export interface LeagueMembership {
   leagueName: string;
   competitionCode: string;
   competitionName: string;
+  competitionLogoUrl: string | null;
   role: LeagueRole;
   joinedAt: string;
 }

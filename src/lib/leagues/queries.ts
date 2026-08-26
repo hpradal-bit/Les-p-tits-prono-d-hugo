@@ -10,11 +10,12 @@ import type { League, LeagueMemberRow, LeagueMembership, Uuid } from "./types.ts
 interface CompetitionRow {
   code: string;
   name: string;
+  logo_url: string | null;
 }
 
 function competitionOf(row: CompetitionRow | CompetitionRow[] | null): CompetitionRow {
   const one = Array.isArray(row) ? row[0] : row;
-  return one ?? { code: "?", name: "Compétition" };
+  return one ?? { code: "?", name: "Compétition", logo_url: null };
 }
 
 /** Les ligues du joueur connecté, triées par ancienneté d'adhésion. */
@@ -25,7 +26,7 @@ export async function loadMyLeagues(
   const { data, error } = await sb
     .from("league_members")
     .select(
-      "role, joined_at, leagues!inner(id, name, competitions:competition_id!inner(code, name))",
+      "role, joined_at, leagues!inner(id, name, competitions:competition_id!inner(code, name, logo_url))",
     )
     .eq("user_id", userId)
     .order("joined_at");
@@ -47,6 +48,7 @@ export async function loadMyLeagues(
       leagueName: league.name,
       competitionCode: competition.code,
       competitionName: competition.name,
+      competitionLogoUrl: competition.logo_url,
       role: row.role,
       joinedAt: row.joined_at,
     };
@@ -61,7 +63,7 @@ export async function loadLeagueById(
   const { data, error } = await sb
     .from("leagues")
     .select(
-      "id, competition_id, name, logo_url, slogan, join_key, created_by, created_at, competitions:competition_id!inner(code, name)",
+      "id, competition_id, name, logo_url, slogan, join_key, created_by, created_at, competitions:competition_id!inner(code, name, logo_url)",
     )
     .eq("id", leagueId)
     .maybeSingle();
@@ -74,6 +76,7 @@ export async function loadLeagueById(
     competitionId: data.competition_id,
     competitionCode: competition.code,
     competitionName: competition.name,
+    competitionLogoUrl: competition.logo_url,
     name: data.name,
     logoUrl: data.logo_url,
     slogan: data.slogan,
@@ -126,6 +129,7 @@ export async function loadLeagueMembers(
 export interface CatalogueCompetition {
   code: string;
   name: string;
+  logoUrl: string | null;
   playable: boolean;
 }
 
@@ -143,19 +147,19 @@ export interface CatalogueSport {
 export async function loadCatalogue(sb: SupabaseClient): Promise<CatalogueSport[]> {
   const { data, error } = await sb
     .from("sports")
-    .select("code, name, competitions(code, name, is_active)")
+    .select("code, name, competitions(code, name, logo_url, is_active)")
     .order("name");
   if (error) throw error;
 
   return ((data ?? []) as unknown as Array<{
     code: string;
     name: string;
-    competitions: Array<{ code: string; name: string; is_active: boolean }>;
+    competitions: Array<{ code: string; name: string; logo_url: string | null; is_active: boolean }>;
   }>).map((sport) => ({
     code: sport.code,
     name: sport.name,
     competitions: (sport.competitions ?? [])
-      .map((c) => ({ code: c.code, name: c.name, playable: c.is_active }))
+      .map((c) => ({ code: c.code, name: c.name, logoUrl: c.logo_url, playable: c.is_active }))
       .sort((a, b) => a.name.localeCompare(b.name, "fr")),
   }));
 }

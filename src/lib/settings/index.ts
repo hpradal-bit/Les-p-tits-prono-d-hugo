@@ -81,6 +81,54 @@ export function pickVersionAt<T extends RulesetPeriod>(versions: T[], at: Date):
  * noté avec le barème qui s'appliquait au moment où ses pronostics ont été
  * verrouillés — c'est celui sous lequel les joueurs ont joué.
  */
+/**
+ * Le barème d'une autre saison du même sport, quand la saison demandée n'en a
+ * pas encore le sien.
+ *
+ * Les règles d'un sport (barème, tranches d'écart, pouvoirs) sont censées
+ * être les mêmes pour toutes ses compétitions — Top 14 et Pro D2 jouent au
+ * même rugby (§3 du cahier des charges). Copier le barème d'une compétition
+ * vers l'autre à la main (ce qui a été fait une fois pour la Pro D2,
+ * migration 0032) marche, mais oblige à y repenser à chaque nouvelle
+ * compétition. Ce repli fait la même chose automatiquement : une saison sans
+ * barème hérite de celui, le plus récent, d'une autre saison de son sport.
+ */
+async function loadRulesetFromSameSport(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<Array<{ id: Uuid; version: number; rules: unknown; effective_from: string; effective_to: string | null }>> {
+  const { data: season } = await sb
+    .from("seasons")
+    .select("competitions:competition_id!inner(sport_id)")
+    .eq("id", seasonId)
+    .maybeSingle();
+  const competition = season?.competitions as { sport_id: string } | { sport_id: string }[] | undefined;
+  const sportId = (Array.isArray(competition) ? competition[0] : competition)?.sport_id;
+  if (!sportId) return [];
+
+  const { data: siblingSeasons } = await sb
+    .from("seasons")
+    .select("id, competitions:competition_id!inner(sport_id)")
+    .eq("competitions.sport_id", sportId);
+  const seasonIds = ((siblingSeasons ?? []) as Array<{ id: string }>)
+    .map((s) => s.id)
+    .filter((id) => id !== seasonId);
+  if (seasonIds.length === 0) return [];
+
+  const { data: versions } = await sb
+    .from("scoring_rulesets")
+    .select("id, version, rules, effective_from, effective_to")
+    .in("season_id", seasonIds)
+    .order("version", { ascending: false });
+  return (versions ?? []) as Array<{
+    id: Uuid;
+    version: number;
+    rules: unknown;
+    effective_from: string;
+    effective_to: string | null;
+  }>;
+}
+
 export async function loadRulesetAt(
   sb: SupabaseClient,
   seasonId: Uuid,
@@ -93,8 +141,11 @@ export async function loadRulesetAt(
     .order("version", { ascending: false });
   if (error) throw error;
 
+  const ownRules = versions ?? [];
+  const rulesRows = ownRules.length > 0 ? ownRules : await loadRulesetFromSameSport(sb, seasonId);
+
   const rs = pickVersionAt(
-    (versions ?? []).map((v) => ({
+    rulesRows.map((v) => ({
       id: v.id as Uuid,
       version: v.version as number,
       rules: v.rules,
@@ -103,7 +154,7 @@ export async function loadRulesetAt(
     })),
     at,
   );
-  if (!rs) throw new Error(`Aucun barème pour la saison ${seasonId}.`);
+  if (!rs) throw new Error(`Aucun barème pour la saison ${seasonId}, ni pour son sport.`);
 
   const { data: rows, error: bErr } = await sb
     .from("margin_buckets")

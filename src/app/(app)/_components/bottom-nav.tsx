@@ -102,7 +102,7 @@ function IconShield({ className }: { className?: string }) {
 const PLAYER_TABS: Tab[] = [
   { href: "/journee", label: "Ma journée", matches: ["/journee", "/match"], icon: IconBall },
   { href: "/classement", label: "Classement", matches: ["/classement"], icon: IconTrophy },
-  { href: "/vestiaire", label: "Vestiaire", matches: ["/vestiaire"], icon: IconChat },
+  { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat },
   { href: "/profil", label: "Profil", matches: ["/profil", "/reglages", "/questions"], icon: IconUser },
 ];
 

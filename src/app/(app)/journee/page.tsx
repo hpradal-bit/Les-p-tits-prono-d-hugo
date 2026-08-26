@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { Card } from "@/components/ui";
+import { Card, CompetitionLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { createClient } from "@/lib/supabase/server";
@@ -154,7 +154,8 @@ export default async function JourneePage({
 
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+            <CompetitionLogo name={board.competitionName} logoUrl={board.competitionLogoUrl} size={16} />
             {board.round.name} · {board.competitionName}
           </span>
           <h1 className="font-display text-[32px] leading-none text-ink">

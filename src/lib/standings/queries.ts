@@ -29,17 +29,26 @@ export interface SeasonRef {
   id: Uuid;
   label: string;
   competitionName: string;
+  competitionLogoUrl: string | null;
 }
 
 export interface RoundInfo extends RoundRef {
   status: RoundStatus;
 }
 
-type CompetitionRow = { name: string } | { name: string }[] | null;
+type CompetitionRow =
+  | { name: string; logo_url: string | null }
+  | { name: string; logo_url: string | null }[]
+  | null;
 
 function competitionName(row: CompetitionRow): string {
   const one = Array.isArray(row) ? row[0] : row;
   return one?.name ?? "Compétition";
+}
+
+function competitionLogoUrl(row: CompetitionRow): string | null {
+  const one = Array.isArray(row) ? row[0] : row;
+  return one?.logo_url ?? null;
 }
 
 /**
@@ -52,7 +61,7 @@ function competitionName(row: CompetitionRow): string {
 export async function loadActiveSeason(sb: SupabaseClient, leagueId: Uuid): Promise<SeasonRef | null> {
   const { data: league, error: leagueError } = await sb
     .from("leagues")
-    .select("competition_id, competitions:competition_id!inner(name)")
+    .select("competition_id, competitions:competition_id!inner(name, logo_url)")
     .eq("id", leagueId)
     .maybeSingle();
   if (leagueError) throw leagueError;
@@ -67,7 +76,12 @@ export async function loadActiveSeason(sb: SupabaseClient, leagueId: Uuid): Prom
   if (error) throw error;
   const row = data?.[0] as { id: string; label: string } | undefined;
   return row
-    ? { id: row.id, label: row.label, competitionName: competitionName(league.competitions as CompetitionRow) }
+    ? {
+        id: row.id,
+        label: row.label,
+        competitionName: competitionName(league.competitions as CompetitionRow),
+        competitionLogoUrl: competitionLogoUrl(league.competitions as CompetitionRow),
+      }
     : null;
 }
 
@@ -83,7 +97,7 @@ export async function loadSeasonForRound(sb: SupabaseClient, roundId: Uuid): Pro
 export async function loadSeasonById(sb: SupabaseClient, seasonId: Uuid): Promise<SeasonRef | null> {
   const { data, error } = await sb
     .from("seasons")
-    .select("id, label, competitions:competition_id!inner(name)")
+    .select("id, label, competitions:competition_id!inner(name, logo_url)")
     .eq("id", seasonId)
     .maybeSingle();
   if (error) throw error;
@@ -92,6 +106,7 @@ export async function loadSeasonById(sb: SupabaseClient, seasonId: Uuid): Promis
     id: data.id as string,
     label: data.label as string,
     competitionName: competitionName(data.competitions as CompetitionRow),
+    competitionLogoUrl: competitionLogoUrl(data.competitions as CompetitionRow),
   };
 }
 

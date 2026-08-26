@@ -24,14 +24,14 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "VESTIAIRE",
-    template: "%s · VESTIAIRE",
+    default: "LE VESTIAIRE",
+    template: "%s · LE VESTIAIRE",
   },
   description: "Des potes, des pronos, du kiff.",
-  applicationName: "VESTIAIRE",
+  applicationName: "LE VESTIAIRE",
   appleWebApp: {
     capable: true,
-    title: "VESTIAIRE",
+    title: "LE VESTIAIRE",
     statusBarStyle: "default",
   },
   formatDetection: { telephone: false },

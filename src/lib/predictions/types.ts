@@ -60,6 +60,7 @@ export interface JourneyBoard {
   /** La ligue affichée — chaque ligue a son propre classement et sa propre navigation. */
   leagueId: Uuid;
   competitionName: string;
+  competitionLogoUrl: string | null;
   round: Round;
   /** Les journées voisines, pour la navigation. */
   previousRound: { id: Uuid; number: number; name: string } | null;

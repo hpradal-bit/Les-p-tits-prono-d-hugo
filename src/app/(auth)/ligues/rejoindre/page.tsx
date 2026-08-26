@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Label } from "@/components/ui";
+import { CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { loadCatalogue } from "@/lib/leagues/queries.ts";
@@ -35,7 +35,10 @@ export default async function CatalogueLiguesPage() {
                     href={`/ligues/rejoindre/${c.code}`}
                     className="flex items-center justify-between rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 shadow-[var(--shadow-card)] transition active:scale-[0.995]"
                   >
-                    <span className="font-semibold text-ink">{c.name}</span>
+                    <span className="flex items-center gap-2.5">
+                      <CompetitionLogo name={c.name} logoUrl={c.logoUrl} size={28} />
+                      <span className="font-semibold text-ink">{c.name}</span>
+                    </span>
                     <span className="text-ink-faint">→</span>
                   </Link>
                 ) : (
@@ -44,7 +47,10 @@ export default async function CatalogueLiguesPage() {
                     aria-disabled
                     className="flex items-center justify-between rounded-[var(--radius-card)] border border-line bg-surface-sunk px-4 py-3 opacity-55"
                   >
-                    <span className="font-semibold text-ink-muted">{c.name}</span>
+                    <span className="flex items-center gap-2.5">
+                      <CompetitionLogo name={c.name} logoUrl={c.logoUrl} size={28} />
+                      <span className="font-semibold text-ink-muted">{c.name}</span>
+                    </span>
                     <span aria-hidden>🔒</span>
                   </div>
                 ),

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Card, Label } from "@/components/ui";
+import { Card, CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { loadMyLeagues } from "@/lib/leagues/queries.ts";
@@ -37,11 +37,14 @@ export default async function AccueilPage() {
                 className="block rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)] transition active:scale-[0.995]"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-display text-lg text-ink">{l.leagueName}</span>
-                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-                      {l.competitionName}
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <CompetitionLogo name={l.competitionName} logoUrl={l.competitionLogoUrl} size={36} />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-display text-lg text-ink">{l.leagueName}</span>
+                      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-faint">
+                        {l.competitionName}
+                      </span>
+                    </div>
                   </div>
                   <span className="text-ink-faint">→</span>
                 </div>

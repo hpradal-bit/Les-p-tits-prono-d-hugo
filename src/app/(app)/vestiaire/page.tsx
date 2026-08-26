@@ -12,7 +12,7 @@ import { ReactionBar } from "./_components/reaction-bar";
 import { PostForm } from "./_components/post-form";
 import { RoundDebrief } from "./_components/round-debrief";
 
-export const metadata: Metadata = { title: "Le Vestiaire" };
+export const metadata: Metadata = { title: "Zone de chambrage" };
 export const dynamic = "force-dynamic";
 
 const FilterSchema = z.object({
@@ -71,7 +71,7 @@ export default async function VestiairePage({
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-display text-2xl tracking-tight text-ink">
-          Le Vestiaire
+          Zone de chambrage
         </h1>
         <p className="text-[14px] text-ink-muted">
           Ce qui se dit sur la ligue, et ce que le jeu raconte tout seul.
@@ -122,7 +122,7 @@ export default async function VestiairePage({
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <span className="text-3xl" aria-hidden>🏉</span>
           <p className="font-display text-[17px] text-ink">
-            Le vestiaire est encore vide
+            La zone de chambrage est encore vide
           </p>
           <p className="max-w-[36ch] text-[14px] text-ink-muted">
             Il se remplira tout seul dès la première journée : scores exacts,

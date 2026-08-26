@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { Card, Label } from "@/components/ui";
+import { Card, CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { loadLeagueById, loadLeagueMembers, loadMyLeagues } from "@/lib/leagues/queries.ts";
@@ -41,12 +41,15 @@ export default async function MaLiguePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-col gap-0.5">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
-          {league.competitionName}
-        </span>
-        <h1 className="font-display text-[28px] leading-none text-ink">{league.name}</h1>
-        {league.slogan && <p className="text-[13.5px] italic text-ink-muted">{league.slogan}</p>}
+      <header className="flex items-center gap-3">
+        <CompetitionLogo name={league.competitionName} logoUrl={league.competitionLogoUrl} size={44} />
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+            {league.competitionName}
+          </span>
+          <h1 className="font-display text-[28px] leading-none text-ink">{league.name}</h1>
+          {league.slogan && <p className="text-[13.5px] italic text-ink-muted">{league.slogan}</p>}
+        </div>
       </header>
 
       {myLeagues.length > 1 && (

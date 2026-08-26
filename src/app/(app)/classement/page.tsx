@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { Card, Label } from "@/components/ui";
+import { Card, CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import {
@@ -173,6 +173,7 @@ export default async function ClassementPage({
           ? `Après la ${referenceRound.name.toLowerCase()}`
           : `${season.competitionName} · ${season.label}`
       }
+      logo={<CompetitionLogo name={season.competitionName} logoUrl={season.competitionLogoUrl} size={30} />}
       banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
     >
       <div className="flex flex-col gap-3">
@@ -214,24 +215,25 @@ export default async function ClassementPage({
         />
       )}
 
+      {/* Le classement reste visible même sans le moindre résultat : une ligue
+          qui vient de se créer doit voir ses membres, à 0 point, plutôt qu'un
+          écran vide qui laisserait croire à une panne. */}
+      <StandingsList rows={table.rows} viewerId={user?.id ?? null} />
       {table.referenceRoundId === null ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">
           {query.portee === "officiel"
-            ? "Aucun résultat n'est encore officiel. Le classement officiel s'ouvrira dès la validation des premiers matchs."
-            : "Le classement s'ouvrira dès les premiers résultats de la saison."}
+            ? "Aucun résultat n'est encore officiel. Le classement officiel s'affinera dès la validation des premiers matchs."
+            : "Le classement s'affinera dès les premiers résultats de la saison."}
         </Card>
       ) : (
-        <>
-          <StandingsList rows={table.rows} viewerId={user?.id ?? null} />
-          <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
-            {query.vue === "general" && countedRounds.length > 0 &&
-              `Cumul de ${countedRounds[0].name} à ${countedRounds[countedRounds.length - 1].name}.`}
-            {query.vue === "forme" && countedRounds.length > 0 &&
-              `Les ${DEFAULT_FORM_WINDOW} dernières journées : ${countedRounds[0].name} → ${countedRounds[countedRounds.length - 1].name}.`}
-            {query.vue === "journee" && referenceRound && `Points marqués sur la ${referenceRound.name}.`}
-            {" L'évolution se lit par rapport à la journée précédente."}
-          </p>
-        </>
+        <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
+          {query.vue === "general" && countedRounds.length > 0 &&
+            `Cumul de ${countedRounds[0].name} à ${countedRounds[countedRounds.length - 1].name}.`}
+          {query.vue === "forme" && countedRounds.length > 0 &&
+            `Les ${DEFAULT_FORM_WINDOW} dernières journées : ${countedRounds[0].name} → ${countedRounds[countedRounds.length - 1].name}.`}
+          {query.vue === "journee" && referenceRound && `Points marqués sur la ${referenceRound.name}.`}
+          {" L'évolution se lit par rapport à la journée précédente."}
+        </p>
       )}
 
       {query.vue === "general" && history.roundLabels.length >= 2 && (
@@ -274,11 +276,14 @@ function roundNumber(
 function PageShell({
   title,
   subtitle,
+  logo,
   banner,
   children,
 }: {
   title: string;
   subtitle: string;
+  /** Le logo de la compétition affichée, à côté du titre. */
+  logo?: React.ReactNode;
   /** Le podium vit dans le bandeau, comme sur la maquette. */
   banner?: React.ReactNode;
   children: React.ReactNode;
@@ -290,7 +295,10 @@ function PageShell({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-surface/70">
             {subtitle}
           </span>
-          <h1 className="font-display text-[30px] leading-none">{title}</h1>
+          <div className="flex items-center gap-2.5">
+            {logo}
+            <h1 className="font-display text-[30px] leading-none">{title}</h1>
+          </div>
         </div>
         {banner}
       </header>
