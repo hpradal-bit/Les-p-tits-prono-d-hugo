@@ -180,7 +180,11 @@ export default async function JourneePage({
         </Link>
       </header>
 
-      <RoundNav rounds={board.allRounds} currentNumber={board.round.number} />
+      <RoundNav
+        rounds={board.allRounds}
+        currentNumber={board.round.number}
+        competitionCode={board.competitionCode}
+      />
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full bg-clay-soft px-3 py-1.5 text-[12px] font-semibold text-clay">
@@ -218,7 +222,7 @@ export default async function JourneePage({
           {toPlay.length > 0 && (
             <MatchSection title="À jouer" count={toPlay.length}>
               {toPlay.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
               ))}
             </MatchSection>
           )}
@@ -226,7 +230,7 @@ export default async function JourneePage({
           {locked.length > 0 && (
             <MatchSection title="Verrouillés" count={locked.length}>
               {locked.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
               ))}
             </MatchSection>
           )}
@@ -234,7 +238,7 @@ export default async function JourneePage({
           {live.length > 0 && (
             <MatchSection title="En cours" count={live.length}>
               {live.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
               ))}
             </MatchSection>
           )}
@@ -242,7 +246,7 @@ export default async function JourneePage({
           {done.length > 0 && (
             <MatchSection title="Terminés" count={done.length}>
               {done.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
               ))}
             </MatchSection>
           )}

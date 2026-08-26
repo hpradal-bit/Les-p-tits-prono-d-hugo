@@ -59,10 +59,13 @@ export function PronoForm({
   item,
   roundId,
   ruleset,
+  competitionCode,
 }: {
   item: JourneyFixture;
   roundId: Uuid;
   ruleset: Ruleset;
+  /** La compétition en cours : sans elle, l'envoi renverrait vers le Top 14. */
+  competitionCode: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -102,7 +105,7 @@ export function PronoForm({
         setError(result.rejected[fixture.id] ?? result.message);
         return;
       }
-      router.push("/journee");
+      router.push(`/journee?ligue=${competitionCode}`);
       router.refresh();
     });
   }

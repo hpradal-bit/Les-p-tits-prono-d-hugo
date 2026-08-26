@@ -450,6 +450,8 @@ export interface MatchCenterData {
   /** Le pronostic du joueur connecté, visible même avant le verrouillage. */
   mine: MatchPrediction | null;
   isLocked: boolean;
+  /** La compétition du match — pour relier vers la bonne bulle de /journee. */
+  competitionCode: string;
 }
 
 export async function loadMatchCenter(
@@ -484,7 +486,7 @@ export async function loadMatchCenter(
 
   const [teamsRes, roundRes, predictionsRes] = await Promise.all([
     sb.from("teams").select(TEAM_COLUMNS).in("id", [raw.home_team_id, raw.away_team_id]),
-    sb.from("rounds").select("id, number, name").eq("id", raw.round_id).maybeSingle(),
+    sb.from("rounds").select("id, number, name, season_id").eq("id", raw.round_id).maybeSingle(),
     sb
       .from("predictions")
       .select(
@@ -503,7 +505,24 @@ export async function loadMatchCenter(
   const awayTeam = teams.get(raw.away_team_id);
   if (!homeTeam || !awayTeam) return null;
 
-  const round = roundRes.data as { id: string; number: number; name: string } | null;
+  const round = roundRes.data as
+    | { id: string; number: number; name: string; season_id: string }
+    | null;
+
+  // La compétition du match, pour relier « Faire mon prono » vers la bonne
+  // bulle : sans elle, ce lien retomberait toujours sur le Top 14.
+  let competitionCode = "top14";
+  if (round?.season_id) {
+    const { data: seasonRow } = await sb
+      .from("seasons")
+      .select("competitions:competition_id!inner(code)")
+      .eq("id", round.season_id)
+      .maybeSingle();
+    const competition = Array.isArray(seasonRow?.competitions)
+      ? seasonRow.competitions[0]
+      : seasonRow?.competitions;
+    competitionCode = (competition as { code: string } | undefined)?.code ?? "top14";
+  }
 
   const fixture: MatchFixture = {
     id: raw.id,
@@ -623,6 +642,7 @@ export async function loadMatchCenter(
     predictions: isLocked ? predictions : [],
     mine: viewerId ? (predictions.find((p) => p.player.userId === viewerId) ?? null) : null,
     isLocked,
+    competitionCode,
   };
 }
 

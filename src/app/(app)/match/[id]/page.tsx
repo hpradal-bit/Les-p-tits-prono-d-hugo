@@ -37,7 +37,7 @@ export default async function MatchPage({
   const data = await loadMatchCenter(sb, parsed.data, viewer.id);
   if (!data) notFound();
 
-  const { fixture, predictions, mine, isLocked } = data;
+  const { fixture, predictions, mine, isLocked, competitionCode } = data;
   const home = fixture.homeTeam.shortName;
   const away = fixture.awayTeam.shortName;
 
@@ -107,7 +107,7 @@ export default async function MatchPage({
               </p>
             )}
             <Link
-              href={`/journee/${fixture.id}`}
+              href={`/journee/${fixture.id}?ligue=${competitionCode}`}
               className="mt-1 rounded-full bg-clay py-3 text-center text-[15px] font-bold text-surface"
             >
               {mine ? "Modifier mon prono" : "Faire mon prono"}

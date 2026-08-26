@@ -69,6 +69,14 @@ active). Identifiant de saison : `648c2e2f-88a7-46f0-b687-7010b0fb944a`.
   des saisons supplémentaires en direct via `EXTRA_SYNC_SEASON_IDS`
   (`worker/wrangler.toml`) — posé sur la Pro D2 pour le banc d'essai, à vider
   une fois le Top 14 lancé.
+  ⚠️ Corrigé le 26 août : cliquer sur un match Pro D2 depuis `/journee`
+  renvoyait un **404**. La bulle changeait bien de compétition sur la liste,
+  mais chaque lien qui en sortait (une carte de match, le sélecteur de
+  journée, l'envoi d'un prono, le retour depuis le Match Center) oubliait le
+  paramètre `?ligue=`, donc retombait sur le Top 14 par défaut — la page du
+  prono cherchait alors un match Pro D2 dans la mauvaise saison et ne le
+  trouvait pas. `MatchCard`, `RoundNav`, `PronoForm` et `loadMatchCenter`
+  portent maintenant tous la compétition d'un bout à l'autre.
   Reste non traité : `groups.active_season_id` (singulier, inutilisé par ce
   chantier), et les pouvoirs/crédits (`powers/actions.ts`) qui continuent de
   lire « la » saison active — sans conséquence tant qu'aucun pouvoir n'est

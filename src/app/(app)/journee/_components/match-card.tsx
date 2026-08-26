@@ -48,10 +48,13 @@ export function MatchCard({
   item,
   ruleset,
   timeZone,
+  competitionCode,
 }: {
   item: JourneyFixture;
   ruleset: Ruleset;
   timeZone: string;
+  /** La compétition affichée : sans elle, la page du prono retomberait sur le Top 14. */
+  competitionCode: string;
 }) {
   const { fixture } = item;
   const live = fixture.status === "live";
@@ -61,7 +64,11 @@ export function MatchCard({
 
   return (
     <Link
-      href={item.isLocked ? `/match/${fixture.id}` : `/journee/${fixture.id}`}
+      href={
+        item.isLocked
+          ? `/match/${fixture.id}`
+          : `/journee/${fixture.id}?ligue=${competitionCode}`
+      }
       className="block rounded-[28px] bg-surface p-3 shadow-[var(--shadow-card)] transition active:scale-[0.995]"
     >
       <div className="flex items-center justify-between gap-2">
