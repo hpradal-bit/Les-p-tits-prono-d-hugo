@@ -16,6 +16,56 @@ Fichier de reprise. À lire en début de session, avec `CLAUDE.md` et
 Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 `.env.local` (ignoré par git). Ne jamais les écrire ici.
 
+## Ligues privées (26 août, en cours — plan complet dans `/root/.claude/plans/purrfect-snuggling-backus.md`)
+
+Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
+plusieurs par compétition, chacune avec ses membres, sa clé, son classement,
+son espace d'administration. Deux incréments livrés ; la suite est identifiée
+mais pas encore faite.
+
+**Livré :**
+- Tables `leagues`/`league_members` (migration `0033_leagues.sql`).
+- RLS resserrée sur les deux politiques les plus sensibles : `profiles_read`
+  et `predictions_read` (après verrouillage) ne s'ouvrent plus à « tout le
+  groupe », mais aux seuls coéquipiers d'une ligue commune
+  (`shares_any_league`, `shares_league_for_fixture`).
+- Les deux ligues réelles existent : « Prono des copains » (Top 14, clé
+  `COPAINS`) et « Ligue test » (Pro D2, clé `PRODTEST`) — mêmes membres,
+  mêmes rôles qu'avant, aucune perte de données.
+- Catalogue décoratif (football, basketball, tennis, cyclisme + compétitions,
+  `is_active=false`) pour l'écran « Rejoindre une ligue ».
+- Parcours complet : `/accueil`, `/ligues/rejoindre`,
+  `/ligues/rejoindre/[competitionCode]`, `/ligues/creer`, `(app)/ligue`
+  (« Ma ligue » — infos, clé, membres, édition réservée à l'administrateur
+  de CETTE ligue). Redirection après connexion adaptée
+  (`src/app/page.tsx`) : sans ligue → accueil, une seule → dedans
+  directement, plusieurs → accueil pour choisir.
+- `src/lib/leagues/*` : lecture, écriture (rejoindre/créer/modifier/
+  régénérer la clé/gérer les membres), génération de clé pure et testée.
+
+**Décision de séquencement (documentée dans le plan, à relire avant de
+continuer) :** l'inscription reste fermée au code général existant. Ouvrir
+l'inscription à une clé de ligue à de vrais inconnus est un chantier séparé,
+volontairement reporté après que le cloisonnement soit prouvé solide.
+
+**Pont temporaire, à ne pas oublier :** `/journee` et `/classement`
+utilisent toujours `?ligue=top14|prod2` (code de compétition), pas encore
+`?league=<id>`. Ça tient tant qu'une compétition n'a qu'une seule ligue —
+casse le jour où deux ligues partagent une compétition.
+
+**Pas encore fait (périmètre du plan, non commencé) :**
+- Faire basculer `/journee`, `/classement`, `loadJourneyBoard`,
+  `loadStandingsData`, `loadMatchCenter` sur l'identifiant de ligue plutôt
+  que le code de compétition — c'est ce qui rend le classement réellement
+  propre à chaque ligue.
+- `saveStandingsSnapshot` (`settle.ts`), stats perso (`stats/queries.ts` +
+  pages profil) : encore calculés globalement, pas par ligue.
+- Fil social (`feed_posts.group_id` → `league_id`), badges/séries,
+  crédits/pouvoirs (`tokens`/`power_usages`) : toujours scopés par groupe/
+  saison entière, pas encore par ligue.
+- Deux bugs préexistants repérés (saison Top 14 par défaut sans le vouloir) :
+  `src/app/(app)/regles/page.tsx` et `src/app/(app)/match/[id]/points/page.tsx`.
+
 ## Base de données
 
 40 tables, RLS active partout. Migrations appliquées jusqu'à **0031**.
