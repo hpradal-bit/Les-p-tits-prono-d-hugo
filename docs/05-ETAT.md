@@ -137,8 +137,11 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
    demandée couvrait toute la saison (400 jours), donc ce n'est pas une
    troncature de notre côté : TheSportsDB n'a, pour l'instant, pas publié
    plus loin pour cette ligue. Le calendrier se complètera de lui-même à
-   la synchro quotidienne suivante, sans action à faire. Highlightly reste
-   hors chaîne (pas de `HIGHLIGHTLY_KEY`) — normal, pas un bug.
+   la synchro quotidienne suivante, sans action à faire.
+   `HIGHLIGHTLY_KEY` posée dans Vercel le 26 août (clé RapidAPI personnelle,
+   offre gratuite 100 req/jour) : Highlightly est actif en second recours,
+   derrière TheSportsDB. La chaîne tient maintenant à deux fournisseurs
+   indépendants avant de retomber sur ESPN puis API-Sports.
 1. **Admin → Synchronisation** : choisir « Pro D2 » dans le sélecteur de
    compétition, lancer « Synchroniser le calendrier » puis « Relever les
    scores » une première fois à la main pour vérifier que la chaîne répond.
