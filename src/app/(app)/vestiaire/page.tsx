@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
+import { getViewer } from "@/lib/auth/session";
+import { createClient } from "@/lib/supabase/server";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queries";
 import { loadLastDebrief } from "@/lib/feed/debrief";
 import { ReactionBar } from "./_components/reaction-bar";
@@ -13,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 const FilterSchema = z.object({
   filtre: z.enum(["tout", "jeu", "pouvoirs", "messages"]).catch("tout"),
+  league: z.string().uuid().optional(),
 });
 
 const FILTER_LABELS: { value: FeedFilter; label: string }[] = [
@@ -42,14 +47,25 @@ function ago(iso: string) {
 export default async function VestiairePage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtre?: string }>;
+  searchParams: Promise<{ filtre?: string; league?: string }>;
 }) {
-  const { filtre } = FilterSchema.parse(await searchParams);
+  const viewer = await getViewer();
+  if (!viewer) redirect("/connexion");
+
+  const sb = await createClient();
+  const { filtre, league: requested } = FilterSchema.parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+  const { leagueId, leagues: myLeagues } = resolved;
+
   const [items, choices, debrief] = await Promise.all([
-    loadFeed(filtre),
+    loadFeed(leagueId, filtre),
     loadReactionChoices(),
-    loadLastDebrief(),
+    loadLastDebrief(leagueId),
   ]);
+
+  const withLeague = (href: string) =>
+    href.includes("?") ? `${href}&league=${leagueId}` : `${href}?league=${leagueId}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,15 +74,33 @@ export default async function VestiairePage({
           Le Vestiaire
         </h1>
         <p className="text-[14px] text-ink-muted">
-          Ce qui se dit sur le groupe, et ce que le jeu raconte tout seul.
+          Ce qui se dit sur la ligue, et ce que le jeu raconte tout seul.
         </p>
       </div>
+
+      {myLeagues.length > 1 && (
+        <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {myLeagues.map((l) => (
+            <Link
+              key={l.leagueId}
+              href={`/vestiaire?league=${l.leagueId}`}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                l.leagueId === leagueId
+                  ? "bg-clay text-surface"
+                  : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
+              }`}
+            >
+              {l.leagueName}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
         {FILTER_LABELS.map((f) => (
           <Link
             key={f.value}
-            href={f.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${f.value}`}
+            href={withLeague(f.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${f.value}`)}
             className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
               filtre === f.value
                 ? "bg-clay text-surface"
@@ -81,7 +115,7 @@ export default async function VestiairePage({
       <RoundDebrief data={debrief} />
 
       <Card className="p-4">
-        <PostForm />
+        <PostForm leagueId={leagueId} />
       </Card>
 
       {items.length === 0 ? (

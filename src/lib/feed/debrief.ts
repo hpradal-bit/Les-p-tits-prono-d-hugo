@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { loadActiveSeason } from "@/lib/standings/queries";
 import type { StandingsRow } from "@/lib/standings/engine";
+import type { Uuid } from "@/lib/types";
 
 interface DebriefData {
   roundName: string;
@@ -15,16 +17,14 @@ interface DebriefData {
   worstMatchErrors: number | null;
 }
 
-export async function loadLastDebrief(): Promise<DebriefData | null> {
+export async function loadLastDebrief(leagueId: Uuid): Promise<DebriefData | null> {
   const sb = await createClient();
 
-  const { data: seasons } = await sb
-    .from("seasons")
-    .select("id")
-    .eq("status", "active")
-    .limit(1);
-  const seasonId = (seasons as Array<{ id: string }> | null)?.[0]?.id;
-  if (!seasonId) return null;
+  // La saison de la ligue, jamais « la » saison active : deux ligues sur des
+  // compétitions différentes peuvent vivre en même temps (règle n° 5).
+  const season = await loadActiveSeason(sb, leagueId);
+  if (!season) return null;
+  const seasonId = season.id;
 
   const { data: roundSnap } = await sb
     .from("standings_snapshots")

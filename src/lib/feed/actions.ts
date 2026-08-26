@@ -55,7 +55,7 @@ export async function toggleReaction(formData: FormData): Promise<void> {
   revalidatePath("/vestiaire");
 }
 
-/** Publie un mot dans le Vestiaire. */
+/** Publie un mot dans le Vestiaire d'une ligue. */
 export async function publishPost(
   _prev: ActionState,
   formData: FormData,
@@ -68,15 +68,20 @@ export async function publishPost(
   const maxLength = setting<number>(settings, "feed.post_max_length", 500);
 
   const parsed = z
-    .object({ body: z.string().trim().min(1).max(maxLength) })
-    .safeParse({ body: formData.get("body") });
+    .object({
+      body: z.string().trim().min(1).max(maxLength),
+      leagueId: z.string().uuid(),
+    })
+    .safeParse({ body: formData.get("body"), leagueId: formData.get("leagueId") });
 
   if (!parsed.success) {
     return failure(`Un message entre 1 et ${maxLength} caractères.`);
   }
 
+  // `feed_posts_insert` (RLS) refuse déjà toute ligue dont le joueur n'est
+  // pas membre : pas besoin de le revérifier ici.
   const { error } = await sb.from("feed_posts").insert({
-    group_id: viewer.groupId,
+    league_id: parsed.data.leagueId,
     author_id: viewer.id,
     body: parsed.data.body,
   });

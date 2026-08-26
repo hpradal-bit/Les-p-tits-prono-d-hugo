@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { publishPost } from "@/lib/feed/actions";
 import { IDLE } from "@/lib/auth/action-state";
 
-export function PostForm() {
+export function PostForm({ leagueId }: { leagueId: string }) {
   const [state, action, pending] = useActionState(publishPost, IDLE);
   const ref = useRef<HTMLFormElement>(null);
 
@@ -15,6 +15,7 @@ export function PostForm() {
 
   return (
     <form ref={ref} action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="leagueId" value={leagueId} />
       <textarea
         name="body"
         rows={2}

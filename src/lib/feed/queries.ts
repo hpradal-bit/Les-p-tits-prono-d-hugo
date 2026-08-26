@@ -26,19 +26,25 @@ export interface FeedItem {
 }
 
 /**
- * Projette les événements non encore publiés vers le fil.
+ * Projette les événements non encore publiés vers le fil d'UNE ligue.
  *
- * L'index unique (group_id, event_id) rend l'opération idempotente : la
+ * Un message n'a par nature aucun lien avec une saison — impossible d'en
+ * déduire la ligue. Les événements du jeu, eux, portent tous un `season_id` :
+ * on ne projette dans le fil d'une ligue que ceux dont la saison relève de sa
+ * compétition, pour ne jamais mélanger le récit de deux ligues indépendantes.
+ *
+ * L'index unique (league_id, event_id) rend l'opération idempotente : la
  * rejouer ne crée pas de doublon, même si deux joueurs ouvrent le Vestiaire
  * en même temps.
  */
-async function projectEvents(groupId: Uuid): Promise<void> {
+async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void> {
   const admin = createAdminClient();
 
   const { data: events } = await admin
     .from("events")
-    .select("id")
+    .select("id, seasons:season_id!inner(competition_id)")
     .in("kind", RENDERED_KINDS)
+    .eq("seasons.competition_id", competitionId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (!events || events.length === 0) return;
@@ -46,7 +52,7 @@ async function projectEvents(groupId: Uuid): Promise<void> {
   const { data: existing } = await admin
     .from("feed_posts")
     .select("event_id")
-    .eq("group_id", groupId)
+    .eq("league_id", leagueId)
     .not("event_id", "is", null);
 
   const already = new Set((existing ?? []).map((p) => p.event_id as string));
@@ -56,19 +62,24 @@ async function projectEvents(groupId: Uuid): Promise<void> {
   await admin
     .from("feed_posts")
     .upsert(
-      missing.map((e) => ({ group_id: groupId, event_id: e.id as string })),
-      { onConflict: "group_id,event_id", ignoreDuplicates: true },
+      missing.map((e) => ({ league_id: leagueId, event_id: e.id as string })),
+      { onConflict: "league_id,event_id", ignoreDuplicates: true },
     );
 }
 
-/** Le fil du groupe, du plus récent au plus ancien. */
-export async function loadFeed(filter: FeedFilter = "tout"): Promise<FeedItem[]> {
+/** Le fil d'une ligue, du plus récent au plus ancien. */
+export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Promise<FeedItem[]> {
   const viewer = await getViewer();
   if (!viewer) return [];
 
-  await projectEvents(viewer.groupId);
-
   const sb = await createClient();
+
+  // La compétition de la ligue, pour ne projeter que ses propres événements.
+  const { data: league } = await sb.from("leagues").select("competition_id").eq("id", leagueId).maybeSingle();
+  if (!league) return [];
+
+  await projectEvents(leagueId, league.competition_id);
+
   const settings = await loadSettings(sb);
   const pageSize = setting<number>(settings, "feed.page_size", 25);
 
@@ -79,7 +90,7 @@ export async function loadFeed(filter: FeedFilter = "tout"): Promise<FeedItem[]>
              event:event_id (id, kind, payload, created_at,
                              actor:actor_id (display_name),
                              target:target_id (display_name))`)
-    .eq("group_id", viewer.groupId)
+    .eq("league_id", leagueId)
     .eq("is_hidden", false)
     .order("created_at", { ascending: false })
     .limit(pageSize);

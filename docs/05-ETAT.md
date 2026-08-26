@@ -20,7 +20,7 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 
 Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
 plusieurs par compétition, chacune avec ses membres, sa clé, son classement,
-son espace d'administration. Quatre incréments livrés ; la suite est
+son espace d'administration. Cinq incréments livrés ; la suite est
 identifiée mais pas encore faite.
 
 **Livré :**
@@ -75,6 +75,21 @@ identifiée mais pas encore faite.
   toutes les lectures applicatives de ces tables passent déjà par le client
   de service (RLS contournée), sauf `bonus_scores` dans `loadStandingsData`,
   où le joueur consulte toujours une ligue dont il est membre.
+- **(5ᵉ incrément, 26 août)** Le Vestiaire (`/vestiaire`) est cloisonné par
+  ligue — décision explicite d'Hugo : un fil par ligue, avec sélecteur si
+  plusieurs, plutôt qu'un fil commun. `feed_posts.group_id` (jamais lu par
+  les RLS jusqu'ici) est repointé vers `league_id` (migration
+  `0036_league_scoped_feed.sql`) ; `reactions`/`comments` sont désormais
+  vérifiées par jointure sur `feed_posts.league_id`. Les deux messages déjà
+  publiés basculent vers la ligue historique « Prono des copains », là où
+  ils ont réellement été écrits — un mot du Vestiaire n'ayant par nature
+  aucun lien avec une saison, il n'existait aucune autre façon de les
+  rattacher à une ligue précise. `loadFeed`, `publishPost` et
+  `loadLastDebrief` prennent désormais une ligue ; ce dernier corrige au
+  passage un bug préexistant (`seasons.status='active'` globalement, plutôt
+  que la saison de la ligue affichée). Note de sécurité corrigée en même
+  temps : `feed_posts_insert`/`reactions_write`/`comments_write` ne
+  vérifiaient jusqu'ici que l'auteur, jamais son appartenance au fil visé.
 
 **Décision de séquencement (documentée dans le plan, à relire avant de
 continuer) :** l'inscription reste fermée au code général existant. Ouvrir
@@ -90,18 +105,6 @@ volontairement reporté après que le cloisonnement soit prouvé solide.
   `streaks`) — correct tant qu'une compétition n'a qu'une seule ligue
   (vrai aujourd'hui), à refaire avec une colonne `league_id` le jour où
   deux ligues partagent une compétition.
-- **Fil social (`/vestiaire`), en attente d'une décision produit** : les
-  RLS `feed_posts_read`/`reactions_read`/`comments_read` lisent encore
-  `is_member()`, et l'écriture (`publishPost`, `toggleReaction`) est câblée
-  sur `viewer.groupId` — le groupe unique, pas une ligue. Contrairement aux
-  autres tables, `feed_posts` ne peut pas être rattaché à une ligue par une
-  simple fonction de dérivation : un mot publié dans le Vestiaire n'est lié
-  à aucune saison ni compétition, donc à aucune ligue. Le cloisonner pour de
-  bon demande d'abord de trancher : un fil par ligue avec un sélecteur sur
-  `/vestiaire` (et une question ouverte sur les vieux messages, impossibles
-  à rattacher rétroactivement à une ligue), ou un fil resté volontairement
-  commun à toutes les ligues d'un joueur. Pas commencé tant que ce n'est
-  pas tranché.
 - Crédits/pouvoirs (`tokens`/`power_usages`, `src/lib/powers/*`) : la
   lecture est cloisonnée par ligue depuis la migration `0035` (RLS), mais la
   distribution et la consommation des crédits restent pensées par saison
@@ -110,7 +113,7 @@ volontairement reporté après que le cloisonnement soit prouvé solide.
 ## Base de données
 
 42 tables (dont `leagues`/`league_members`), RLS active partout. Migrations
-appliquées jusqu'à **0035**.
+appliquées jusqu'à **0036**.
 
 ⚠️ Le 26 août, les migrations 0023 à 0030 n'étaient en réalité **jamais
 appliquées** en base malgré ce que ce fichier annonçait — un bug de la 0026
