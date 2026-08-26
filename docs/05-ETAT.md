@@ -117,6 +117,20 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
    dans son code, mais le registre des fournisseurs (`registry.ts`) l'écartait
    de la chaîne avant de lui laisser sa chance. Une clé dédiée reste possible
    plus tard (Patreon 3 $/mois) pour ne plus dépendre du quota partagé.
+0bis. ⚠️ Corrigé le 26 août : `/journee?ligue=prod2` plantait en 500 —
+   « Aucun barème pour la saison … ». La saison Pro D2 (créée par la
+   migration 0025) n'avait jamais reçu de `scoring_rulesets` ni de
+   `margin_buckets` : ces tables sont scopées par saison, jamais partagées.
+   Migration 0032 : copie du barème du Top 14 en vigueur (même cascade de
+   score, mêmes 9 tranches d'écart) vers la Pro D2. Réglable ensuite comme
+   n'importe quelle saison depuis Admin → Barème.
+   Calendrier Pro D2 : la synchro n'a rapporté que 15 matchs / 2 journées
+   (J1 le 27 août, J2 le 3 septembre) en une seule requête — la fenêtre
+   demandée couvrait toute la saison (400 jours), donc ce n'est pas une
+   troncature de notre côté : TheSportsDB n'a, pour l'instant, pas publié
+   plus loin pour cette ligue. Le calendrier se complètera de lui-même à
+   la synchro quotidienne suivante, sans action à faire. Highlightly reste
+   hors chaîne (pas de `HIGHLIGHTLY_KEY`) — normal, pas un bug.
 1. **Admin → Synchronisation** : choisir « Pro D2 » dans le sélecteur de
    compétition, lancer « Synchroniser le calendrier » puis « Relever les
    scores » une première fois à la main pour vérifier que la chaîne répond.
