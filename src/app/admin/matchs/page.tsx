@@ -11,7 +11,16 @@ import { SettleForm } from "./_components/settle-form";
 export const metadata: Metadata = { title: "Matchs" };
 export const dynamic = "force-dynamic";
 
-const params = z.object({ j: z.coerce.number().int().min(1).max(30).optional() });
+const LIGUES = ["top14", "prod2"] as const;
+const LIGUE_LABELS: Record<(typeof LIGUES)[number], string> = {
+  top14: "Top 14",
+  prod2: "Pro D2",
+};
+
+const params = z.object({
+  j: z.coerce.number().int().min(1).max(30).optional(),
+  ligue: z.enum(LIGUES).catch("top14"),
+});
 
 function formatKickoff(iso: string) {
   return new Date(iso).toLocaleString("fr-FR", {
@@ -23,10 +32,10 @@ function formatKickoff(iso: string) {
 export default async function AdminMatchsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ j?: string }>;
+  searchParams: Promise<{ j?: string; ligue?: string }>;
 }) {
-  const rounds = await loadRounds();
-  const { j } = params.catch({}).parse(await searchParams);
+  const { j, ligue } = params.catch({ ligue: "top14" as const }).parse(await searchParams);
+  const rounds = await loadRounds(ligue);
 
   // Par défaut : la première journée non clôturée, celle qui nous occupe.
   const current =
@@ -34,11 +43,35 @@ export default async function AdminMatchsPage({
     rounds.find((r) => r.status !== "settled") ??
     rounds[0];
 
+  const ligueTabs = (
+    <div className="flex gap-1.5">
+      {LIGUES.map((code) => (
+        <Link
+          key={code}
+          href={`/admin/matchs?ligue=${code}`}
+          className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+            code === ligue
+              ? "bg-clay text-white"
+              : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
+          }`}
+        >
+          {LIGUE_LABELS[code]}
+        </Link>
+      ))}
+    </div>
+  );
+
   if (!current) {
     return (
-      <Card className="p-8 text-center">
-        <p className="text-ink-muted">Aucune journée en base.</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {ligueTabs}
+        <Card className="p-8 text-center">
+          <p className="text-ink-muted">
+            Aucune journée en base pour {LIGUE_LABELS[ligue]}. Lance « Synchroniser le calendrier »
+            depuis l&apos;espace Synchro.
+          </p>
+        </Card>
+      </div>
     );
   }
 
@@ -47,6 +80,8 @@ export default async function AdminMatchsPage({
 
   return (
     <div className="flex flex-col gap-4">
+      {ligueTabs}
+
       <Card className="border-sage/40 bg-sage-soft p-4">
         <p className="text-[14px] leading-relaxed text-ink">
           La saisie manuelle est le filet de sécurité : si la synchronisation
@@ -60,7 +95,7 @@ export default async function AdminMatchsPage({
         {rounds.map((r) => (
           <Link
             key={r.id}
-            href={`/admin/matchs?j=${r.number}`}
+            href={`/admin/matchs?ligue=${ligue}&j=${r.number}`}
             className={`rounded-full px-3 py-1 font-mono text-[12px] font-semibold ${
               r.id === current.id
                 ? "bg-clay text-white"

@@ -20,8 +20,18 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 
 40 tables, RLS active partout. Migrations appliquées jusqu'à **0031**.
 
+⚠️ Le 26 août, les migrations 0023 à 0030 n'étaient en réalité **jamais
+appliquées** en base malgré ce que ce fichier annonçait — un bug de la 0026
+(`c.slug` au lieu de `c.code`, et un `on conflict` mal ciblé sur
+`external_refs`) bloquait la chaîne depuis la Pro D2. Corrigé et rejoué en
+base ce jour-là ; `scripts/verify-migrations.sh` confirme maintenant que
+0001 → 0031 s'appliquent proprement de bout en bout sur une base neuve.
+
 Remplies : `teams` (14), `fixtures` (182), `rounds` (26), `powers` (5),
-`badges` (6), `app_settings` (52), `profiles` (1).
+`badges` (6), `app_settings` (52), `profiles` (1). Depuis le 26 août, la
+**Pro D2** existe aussi (`competitions.code = 'prod2'`, saison `2026/2027`
+en statut `draft` — volontairement, elle ne doit pas devenir « la » saison
+active). Identifiant de saison : `648c2e2f-88a7-46f0-b687-7010b0fb944a`.
 
 **Vides, et c'est ce qui bloque le jeu :**
 
@@ -48,6 +58,21 @@ Remplies : `teams` (14), `fixtures` (182), `rounds` (26), `powers` (5),
   moteur pur, registre de règles extensible (streak/count/superlative), attribués
   automatiquement à la clôture de journée dans `settleRound`
 - Séries : `streaks` mise à jour à la clôture, cache reconstruit intégralement
+- **Pro D2 comme banc d'essai (§5-8 en partie)** : `loadActiveSeason`,
+  `loadJourneyBoard` et `loadRounds` filtrent maintenant par **code de
+  compétition** plutôt que par statut « active » — deux compétitions peuvent
+  donc vivre en même temps sans se marcher dessus. Bulles Top 14 / Pro D2 sur
+  `/journee`, `/classement` et `/admin/matchs`. La clôture de journée
+  (`settleRound`) dérive la saison de la journée elle-même (plus de
+  `currentSeasonId`), pour ne pas attribuer badges/séries/instantané de
+  classement à la mauvaise compétition. Le Worker Cloudflare peut synchroniser
+  des saisons supplémentaires en direct via `EXTRA_SYNC_SEASON_IDS`
+  (`worker/wrangler.toml`) — posé sur la Pro D2 pour le banc d'essai, à vider
+  une fois le Top 14 lancé.
+  Reste non traité : `groups.active_season_id` (singulier, inutilisé par ce
+  chantier), et les pouvoirs/crédits (`powers/actions.ts`) qui continuent de
+  lire « la » saison active — sans conséquence tant qu'aucun pouvoir n'est
+  activé sur une journée Pro D2.
 
 ## Système de crédits (migration 0031)
 
@@ -69,8 +94,26 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
 3. **Notifications** — écran de préférences par joueur.
 4. **Pouvoirs « Coming soon »** — §36 du cahier des charges : afficher grisés
    les pouvoirs à venir, comme ailleurs dans l'application.
-5. **Multi-ligue** — §6 à §8 : le Top 14 ne doit être qu'une compétition parmi
-   d'autres. Chantier structurant, à ne pas commencer à la légère.
+5. ~~**Multi-ligue**~~ — pour partie fait le 26 août : Pro D2 en banc d'essai
+   avant le Top 14 (voir « Fait » ci-dessus). Reste : `groups.active_season_id`
+   toujours singulier, écran « Mes compétitions » du cahier des charges non
+   construit, pouvoirs/crédits pas encore scopés par compétition.
+
+## Pour tester la Pro D2 avant jeudi
+
+1. **Admin → Synchronisation** : choisir « Pro D2 » dans le sélecteur de
+   compétition, lancer « Synchroniser le calendrier » puis « Relever les
+   scores » une première fois à la main pour vérifier que la chaîne répond.
+2. Aller sur `/journee?ligue=prod2` (bulle Pro D2) pour pronostiquer.
+3. Pendant le match, le Worker synchronise automatiquement (cadence de 5-10
+   min) grâce à `EXTRA_SYNC_SEASON_IDS` posé dans `worker/wrangler.toml` — pas
+   besoin de cliquer à la main, sauf pour vérifier plus tôt que prévu.
+4. Une fois un match terminé, ses points se calculent seuls (recalcul déclenché
+   par la synchro live, comme au Top 14) : vérifier sur `/journee?ligue=prod2`
+   et `/classement?ligue=prod2`.
+5. Une fois **tous** les matchs d'une journée terminés, clôturer depuis
+   **Admin → Matchs** (bulle Pro D2) pour vérifier badges, séries et
+   instantané de classement.
 
 ## Points ouverts
 

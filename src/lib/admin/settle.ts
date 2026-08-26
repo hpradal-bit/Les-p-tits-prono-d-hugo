@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "./auth";
-import { currentSeasonId } from "./queries";
 import { logAdminAction } from "./log";
 import type { AdminActionState } from "./types";
 import { recomputeRound } from "@/lib/scoring/persist";
 import { resolveRoundPowers } from "@/lib/powers/actions";
-import { loadStandingsData, loadActiveSeason } from "@/lib/standings/queries";
+import { loadStandingsData, loadSeasonById } from "@/lib/standings/queries";
 import { computeStandings } from "@/lib/standings/engine";
 import { computeSummaryValues, type SummaryFixture } from "@/lib/feed/summary";
 import { fillSummary } from "@/lib/feed/render";
@@ -22,17 +21,19 @@ export async function settleRound(
 ): Promise<AdminActionState> {
   const ctx = await requireAdmin();
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
 
   const { data: round } = await admin
     .from("rounds")
-    .select("id, number, name, status")
+    .select("id, number, name, status, season_id")
     .eq("id", roundId)
     .single();
   if (!round) return { status: "error", message: "Journée introuvable." };
   if ((round.status as string) === "settled") {
     return { status: "error", message: "Cette journée est déjà clôturée." };
   }
+  // La saison vient de la journée elle-même, jamais de « la » saison active :
+  // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
+  const seasonId = round.season_id as string;
 
   const { data: fixtureRows } = await admin
     .from("fixtures")
@@ -118,7 +119,7 @@ async function generateRoundSummary(
   roundNumber: number,
   roundName: string,
 ): Promise<string[]> {
-  const season = await loadActiveSeason(admin);
+  const season = await loadSeasonById(admin, seasonId);
   if (!season) return [];
 
   const data = await loadStandingsData(admin, season);
@@ -200,7 +201,7 @@ async function saveStandingsSnapshot(
   seasonId: string,
   roundId: string,
 ): Promise<void> {
-  const season = await loadActiveSeason(admin);
+  const season = await loadSeasonById(admin, seasonId);
   if (!season) return;
 
   const data = await loadStandingsData(admin, season);
@@ -232,7 +233,7 @@ async function persistRoundStreaks(
   admin: ReturnType<typeof createAdminClient>,
   seasonId: string,
 ): Promise<void> {
-  const season = await loadActiveSeason(admin);
+  const season = await loadSeasonById(admin, seasonId);
   if (!season) return;
 
   const data = await loadStandingsData(admin, season);

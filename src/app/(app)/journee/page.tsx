@@ -3,9 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { currentSeasonId } from "@/lib/admin/queries";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
@@ -23,22 +23,45 @@ import { Countdown } from "./_components/countdown";
 export const metadata: Metadata = { title: "Ma journée" };
 export const dynamic = "force-dynamic";
 
-const params = z.object({ j: z.coerce.number().int().min(1).max(30).optional() });
+const LIGUES = ["top14", "prod2"] as const;
+const LIGUE_LABELS: Record<(typeof LIGUES)[number], string> = {
+  top14: "Top 14",
+  prod2: "Pro D2",
+};
+
+const params = z.object({
+  j: z.coerce.number().int().min(1).max(30).optional(),
+  ligue: z.enum(LIGUES).catch("top14"),
+});
 
 export default async function JourneePage({
   searchParams,
 }: {
-  searchParams: Promise<{ j?: string }>;
+  searchParams: Promise<{ j?: string; ligue?: string }>;
 }) {
-  const { j } = params.catch({}).parse(await searchParams);
+  const { j, ligue } = params.catch({ ligue: "top14" as const }).parse(await searchParams);
   const [board, viewer] = await Promise.all([
-    loadJourneyBoard({ roundNumber: j }),
+    loadJourneyBoard({ roundNumber: j, competitionCode: ligue }),
     getViewer(),
   ]);
-  if (!board || !viewer) redirect("/connexion");
+  if (!viewer) redirect("/connexion");
 
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
+
+  if (!board) {
+    return (
+      <div className="flex flex-col gap-3.5">
+        <LigueTabs current={ligue} />
+        <Card className="p-8 text-center">
+          <p className="text-ink-muted">
+            Rien à afficher pour {LIGUE_LABELS[ligue]} pour l&apos;instant.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const seasonId = board.seasonId;
   const currentRoundId = board.round.id;
 
   const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles, appSettings] = await Promise.all([
@@ -129,10 +152,12 @@ export default async function JourneePage({
 
   return (
     <div className="flex flex-col gap-3.5">
+      <LigueTabs current={ligue} />
+
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
-            {board.round.name} · Top 14
+            {board.round.name} · {board.competitionName}
           </span>
           <h1 className="font-display text-[32px] leading-none text-ink">
             Salut {viewer.firstName} 👋
@@ -241,6 +266,28 @@ export default async function JourneePage({
             .join(" · ") || "Tout le monde a joué."}
         </p>
       )}
+    </div>
+  );
+}
+
+/** Bulles de compétition. Changer de ligue repart sur sa journée en cours. */
+function LigueTabs({ current }: { current: (typeof LIGUES)[number] }) {
+  return (
+    <div className="flex gap-1.5">
+      {LIGUES.map((code) => (
+        <Link
+          key={code}
+          href={`/journee?ligue=${code}`}
+          className={cn(
+            "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition",
+            code === current
+              ? "bg-clay text-surface"
+              : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk",
+          )}
+        >
+          {LIGUE_LABELS[code]}
+        </Link>
+      ))}
     </div>
   );
 }

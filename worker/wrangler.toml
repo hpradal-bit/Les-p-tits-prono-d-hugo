@@ -36,6 +36,11 @@ APP_URL = "https://les-p-tits-prono-d-hugo.vercel.app"
 # Heure UTC du passage quotidien (calendrier + classement). 4 h UTC = 6 h à
 # Paris en été : les matchs de la veille sont terminés et corrigés.
 DAILY_HOUR_UTC = "4"
+# Saisons synchronisées en plus de la saison active (Top 14), séparées par des
+# virgules. La Pro D2 sert de banc d'essai avant le 5 septembre : sans cette
+# ligne, elle reste synchronisable seulement à la main depuis l'espace admin.
+# Vider cette valeur (ou retirer la ligne) une fois le Top 14 lancé.
+EXTRA_SYNC_SEASON_IDS = "648c2e2f-88a7-46f0-b687-7010b0fb944a"
 
 # État du planificateur : prochaine vérification du direct, date du dernier
 # passage quotidien. Sans cet espace de noms, le Worker fonctionne quand même,

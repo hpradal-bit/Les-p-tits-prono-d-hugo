@@ -37,10 +37,14 @@ const QuerySchema = z.object({
   vue: z.enum(["general", "journee", "forme"]).catch("general"),
   portee: z.enum(["live", "officiel"]).catch("live"),
   journee: z.coerce.number().int().min(1).max(99).nullable().catch(null),
+  ligue: z.enum(["top14", "prod2"]).catch("top14"),
 });
 
 type View = z.infer<typeof QuerySchema>["vue"];
 type Reach = z.infer<typeof QuerySchema>["portee"];
+type Ligue = z.infer<typeof QuerySchema>["ligue"];
+
+const LIGUE_LABELS: Record<Ligue, string> = { top14: "Top 14", prod2: "Pro D2" };
 
 const KIND_OF: Record<View, StandingsKind> = {
   general: "overall",
@@ -57,13 +61,19 @@ function firstValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function buildHref(params: { vue: View; portee: Reach; journee?: number | null }): string {
+function buildHref(params: {
+  vue: View;
+  portee: Reach;
+  journee?: number | null;
+  ligue: Ligue;
+}): string {
   const search = new URLSearchParams();
   if (params.vue !== "general") search.set("vue", params.vue);
   if (params.portee !== "live") search.set("portee", params.portee);
   if (params.vue === "journee" && params.journee) {
     search.set("journee", String(params.journee));
   }
+  if (params.ligue !== "top14") search.set("ligue", params.ligue);
   const query = search.toString();
   return query ? `/classement?${query}` : "/classement";
 }
@@ -78,6 +88,7 @@ export default async function ClassementPage({
     vue: firstValue(raw.vue),
     portee: firstValue(raw.portee),
     journee: firstValue(raw.journee),
+    ligue: firstValue(raw.ligue),
   });
 
   const sb = await createClient();
@@ -85,7 +96,7 @@ export default async function ClassementPage({
     data: { user },
   } = await sb.auth.getUser();
 
-  const season = await loadActiveSeason(sb);
+  const season = await loadActiveSeason(sb, query.ligue);
   if (!season) {
     return (
       <PageShell title="Classement" subtitle="Aucune saison active">
@@ -131,13 +142,20 @@ export default async function ClassementPage({
       vue: value,
       portee: query.portee,
       journee: value === "journee" ? (referenceRound ? roundNumber(data, referenceRound.id) : null) : null,
+      ligue: query.ligue,
     }),
   }));
 
   const reachOptions = (["live", "officiel"] as Reach[]).map((value) => ({
     value,
     label: value === "live" ? "Live" : "Officiel",
-    href: buildHref({ vue: query.vue, portee: value, journee: query.journee }),
+    href: buildHref({ vue: query.vue, portee: value, journee: query.journee, ligue: query.ligue }),
+  }));
+
+  const ligueOptions = (["top14", "prod2"] as Ligue[]).map((value) => ({
+    value,
+    label: LIGUE_LABELS[value],
+    href: buildHref({ vue: query.vue, portee: query.portee, journee: null, ligue: value }),
   }));
 
   // Les matchs de la journée affichée : la porte d'entrée du Match Center.
@@ -150,11 +168,14 @@ export default async function ClassementPage({
     <PageShell
       title="Le classement"
       subtitle={
-        referenceRound ? `Après la ${referenceRound.name.toLowerCase()}` : `Top 14 · ${season.label}`
+        referenceRound
+          ? `Après la ${referenceRound.name.toLowerCase()}`
+          : `${season.competitionName} · ${season.label}`
       }
       banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
     >
       <div className="flex flex-col gap-3">
+        <Segmented options={ligueOptions} current={query.ligue} label="Compétition" />
         <Segmented options={viewOptions} current={query.vue} label="Type de classement" />
         <Segmented options={reachOptions} current={query.portee} label="Portée du classement" />
         <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
@@ -173,6 +194,7 @@ export default async function ClassementPage({
                   vue: "journee",
                   portee: query.portee,
                   journee: roundNumber(data, played[referenceIndex - 1].id),
+                  ligue: query.ligue,
                 })
               : null
           }
@@ -182,6 +204,7 @@ export default async function ClassementPage({
                   vue: "journee",
                   portee: query.portee,
                   journee: roundNumber(data, played[referenceIndex + 1].id),
+                  ligue: query.ligue,
                 })
               : null
           }

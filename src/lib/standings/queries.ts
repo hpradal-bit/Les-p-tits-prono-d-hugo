@@ -28,23 +28,56 @@ import { explainScore, levelFromBreakdown, parseBreakdown } from "./breakdown";
 export interface SeasonRef {
   id: Uuid;
   label: string;
+  competitionName: string;
 }
 
 export interface RoundInfo extends RoundRef {
   status: RoundStatus;
 }
 
-/** La saison en cours. Sans saison active, il n'y a rien à classer. */
-export async function loadActiveSeason(sb: SupabaseClient): Promise<SeasonRef | null> {
+type CompetitionRow = { name: string } | { name: string }[] | null;
+
+function competitionName(row: CompetitionRow): string {
+  const one = Array.isArray(row) ? row[0] : row;
+  return one?.name ?? "Compétition";
+}
+
+/**
+ * La saison d'une compétition donnée — le Top 14 par défaut.
+ *
+ * Filtrer par code de compétition plutôt que par statut « active » permet à
+ * plusieurs compétitions de vivre en même temps (règle n° 5) : la Pro D2 sert
+ * de banc d'essai avant le Top 14 sans jamais devenir « la » saison active.
+ */
+export async function loadActiveSeason(
+  sb: SupabaseClient,
+  competitionCode = "top14",
+): Promise<SeasonRef | null> {
   const { data, error } = await sb
     .from("seasons")
-    .select("id, label, starts_on")
-    .eq("status", "active")
+    .select("id, label, starts_on, competitions:competition_id!inner(code, name)")
+    .eq("competitions.code", competitionCode)
     .order("starts_on", { ascending: false })
     .limit(1);
   if (error) throw error;
-  const row = data?.[0] as { id: string; label: string } | undefined;
-  return row ? { id: row.id, label: row.label } : null;
+  const row = data?.[0] as { id: string; label: string; competitions: CompetitionRow } | undefined;
+  return row ? { id: row.id, label: row.label, competitionName: competitionName(row.competitions) } : null;
+}
+
+/** La saison d'un identifiant connu — pour retrouver le contexte d'une journée déjà choisie. */
+export async function loadSeasonById(sb: SupabaseClient, seasonId: Uuid): Promise<SeasonRef | null> {
+  const { data, error } = await sb
+    .from("seasons")
+    .select("id, label, competitions:competition_id!inner(name)")
+    .eq("id", seasonId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id as string,
+    label: data.label as string,
+    competitionName: competitionName(data.competitions as CompetitionRow),
+  };
 }
 
 interface RawScoreRow {

@@ -173,6 +173,8 @@ async function loadParticipation(
 export interface LoadJourneyOptions {
   /** Numéro de journée demandé ; à défaut, la journée en cours. */
   roundNumber?: number;
+  /** Code de la compétition demandée ; à défaut, le Top 14 (règle n° 5). */
+  competitionCode?: string;
 }
 
 /**
@@ -184,19 +186,24 @@ export async function loadJourneyBoard(
 ): Promise<JourneyBoard | null> {
   const sb = await createClient();
   const now = new Date();
+  const competitionCode = opts.competitionCode ?? "top14";
 
   // --- Étape 1 : auth + saison en parallèle --------------------------------
+  // Filtrer par code de compétition plutôt que par statut « active » permet à
+  // plusieurs compétitions de vivre en même temps (règle n° 5).
   const [{ data: { user } }, { data: season }] = await Promise.all([
     sb.auth.getUser(),
     sb.from("seasons")
-      .select("id")
-      .eq("status", "active")
+      .select("id, competitions:competition_id!inner(code, name)")
+      .eq("competitions.code", competitionCode)
       .order("starts_on", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
   if (!user || !season) return null;
   const seasonId = season.id as string;
+  const competitionRow = Array.isArray(season.competitions) ? season.competitions[0] : season.competitions;
+  const competitionName = (competitionRow as { name: string } | null)?.name ?? "Compétition";
 
   // --- Étape 2 : journées + pronos + barème + réglages en parallèle ---------
   const [{ data: roundRows }, { data: predictionRows }, ruleset, settings] =
@@ -306,6 +313,8 @@ export async function loadJourneyBoard(
   return {
     userId: user.id,
     seasonId,
+    competitionCode,
+    competitionName,
     round: toRound(roundRow),
     previousRound: previous
       ? { id: previous.id, number: previous.number, name: previous.name }

@@ -21,7 +21,8 @@ select 'thesportsdb', 'season', s.id, '4430:2026-2027',
          'note', 'Clé 123 = offre gratuite partagée. Patreon $3/mois pour une clé dédiée.'
        )
 from seasons s
-where s.label = '2026/2027'
+join competitions c on c.id = s.competition_id
+where c.code = 'top14' and s.label = '2026/2027'
 on conflict (provider, entity_type, entity_id) do nothing;
 
 -- 2. Référence TheSportsDB pour la compétition Top 14
@@ -32,7 +33,7 @@ select 'thesportsdb', 'competition', c.id, '4430',
          'page', 'thesportsdb.com/league/4430-french-top-14'
        )
 from competitions c
-where c.slug = 'top14'
+where c.code = 'top14'
 on conflict (provider, entity_type, entity_id) do nothing;
 
 -- 3. Mettre à jour l'ordre des fournisseurs

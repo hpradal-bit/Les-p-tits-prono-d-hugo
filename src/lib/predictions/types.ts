@@ -57,6 +57,9 @@ export interface RoundSummary {
 export interface JourneyBoard {
   userId: Uuid;
   seasonId: Uuid;
+  /** Code de la compétition affichée (`top14`, `prod2`…). */
+  competitionCode: string;
+  competitionName: string;
   round: Round;
   /** Les journées voisines, pour la navigation. */
   previousRound: { id: Uuid; number: number; name: string } | null;

@@ -26,6 +26,20 @@ const KV_LAST_DAILY = "last_daily_run";
 /** Heure UTC du passage quotidien (calendrier + classement), par défaut 4 h. */
 const DEFAULT_DAILY_HOUR = 4;
 
+/**
+ * Saisons supplémentaires à synchroniser automatiquement, en plus de la
+ * saison active par défaut — la Pro D2 pendant qu'elle sert de banc d'essai,
+ * par exemple. Réglage `EXTRA_SYNC_SEASON_IDS`, identifiants séparés par des
+ * virgules. Vide par défaut : aucun changement de comportement tant que ce
+ * réglage n'est pas posé dans le tableau de bord Cloudflare.
+ */
+function extraSeasonIds(env) {
+  return String(env.EXTRA_SYNC_SEASON_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 const scheduler = {
   /** Réveil programmé par le cron de `wrangler.toml`. */
   async scheduled(event, env, ctx) {
@@ -95,7 +109,14 @@ async function maybeRunLive(env, now, force) {
     }
   }
 
-  const result = await callSync(env, "live");
+  // La saison par défaut, puis chaque saison supplémentaire (Pro D2 pendant
+  // qu'elle sert de banc d'essai) : chacune a son propre calendrier de
+  // matchs, donc sa propre fenêtre de direct.
+  const seasonIds = [undefined, ...extraSeasonIds(env)];
+  const results = [];
+  for (const seasonId of seasonIds) {
+    results.push(await callSync(env, "live", "sync", seasonId));
+  }
 
   // Poser les pronostics par défaut sur les journées dont l'heure est passée.
   // Le verrouillage tombe deux heures avant le coup d'envoi, donc hors fenêtre
@@ -105,23 +126,31 @@ async function maybeRunLive(env, now, force) {
 
   // Chaque cycle est aussi l'occasion de voir si un verrouillage approche.
   await callSync(env, "dispatch", "push");
-  if (result.body && typeof result.body.nextCheckAt === "string") {
-    await state.put(KV_NEXT_LIVE, result.body.nextCheckAt);
+
+  // Le prochain réveil est le plus proche demandé par une saison — celle qui
+  // joue le plus tôt décide de la cadence.
+  const nextChecks = results
+    .map((r) => r.body?.nextCheckAt)
+    .filter((v) => typeof v === "string");
+  if (nextChecks.length > 0) {
+    await state.put(KV_NEXT_LIVE, nextChecks.sort()[0]);
   } else {
     // Réponse inattendue ou route en panne : on réessaie dans un quart d'heure
     // plutôt que de marteler.
     await state.put(KV_NEXT_LIVE, new Date(now.getTime() + 15 * 60_000).toISOString());
   }
 
+  const primary = results[0];
   return {
     job: "live",
-    status: result.status,
-    inWindow: result.body?.inWindow ?? null,
-    fixturesUpdated: result.body?.fixturesUpdated ?? null,
+    status: primary.status,
+    inWindow: results.some((r) => r.body?.inWindow) || null,
+    fixturesUpdated: results.reduce((sum, r) => sum + (r.body?.fixturesUpdated ?? 0), 0),
     // Un pronostic par défaut créé se voit ici : c'est le seul endroit où
     // constater que les oublis sont bien rattrapés.
     defaultsCreated: locked.body?.predictionsCreated ?? null,
-    nextCheckAt: result.body?.nextCheckAt ?? null,
+    nextCheckAt: nextChecks.sort()[0] ?? null,
+    extraSeasons: seasonIds.length - 1,
   };
 }
 
@@ -144,25 +173,33 @@ async function maybeRunDaily(env, now, force) {
     if (!state.enabled && now.getUTCMinutes() >= 5) return null;
   }
 
-  const calendar = await callSync(env, "calendar");
-  const standings = await callSync(env, "standings");
+  const seasonIds = [undefined, ...extraSeasonIds(env)];
+  const calendars = [];
+  const standingsResults = [];
+  for (const seasonId of seasonIds) {
+    calendars.push(await callSync(env, "calendar", "sync", seasonId));
+    standingsResults.push(await callSync(env, "standings", "sync", seasonId));
+  }
   await state.put(KV_LAST_DAILY, today);
 
+  const [calendar] = calendars;
+  const [standings] = standingsResults;
   return {
     job: "daily",
     calendar: {
       status: calendar.status,
       kickoffsConfirmed: calendar.body?.kickoffsConfirmed ?? null,
-      fixturesCreated: calendar.body?.fixturesCreated ?? null,
-      roundsCreated: calendar.body?.roundsCreated ?? null,
+      fixturesCreated: calendars.reduce((sum, r) => sum + (r.body?.fixturesCreated ?? 0), 0),
+      roundsCreated: calendars.reduce((sum, r) => sum + (r.body?.roundsCreated ?? 0), 0),
     },
     standings: { status: standings.status, rowsWritten: standings.body?.rowsWritten ?? null },
+    extraSeasons: seasonIds.length - 1,
   };
 }
 
 // --- Appel des routes --------------------------------------------------------
 
-async function callSync(env, kind, prefix = "sync") {
+async function callSync(env, kind, prefix = "sync", seasonId = undefined) {
   const base = (env.APP_URL ?? "").replace(/\/$/, "");
   if (!base) throw new Error("APP_URL non configurée");
   if (!env.SYNC_SECRET) throw new Error("SYNC_SECRET non configurée");
@@ -173,7 +210,7 @@ async function callSync(env, kind, prefix = "sync") {
       "content-type": "application/json",
       "x-sync-secret": env.SYNC_SECRET,
     },
-    body: "{}",
+    body: JSON.stringify(seasonId ? { seasonId } : {}),
   });
 
   let body = null;

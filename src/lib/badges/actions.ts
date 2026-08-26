@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
-import { currentSeasonId } from "@/lib/admin/queries";
-import { loadActiveSeason, loadStandingsData } from "@/lib/standings/queries";
+import { loadSeasonById, loadStandingsData } from "@/lib/standings/queries";
 import { buildProfiles } from "@/lib/stats/profile";
 import { loadSettings, setting } from "@/lib/settings";
 import { evaluateBadges, statsFromProfiles } from "./engine.ts";
@@ -29,10 +28,19 @@ import type { AdminActionState } from "@/lib/admin/types";
 export async function awardRoundBadges(roundId: string): Promise<AdminActionState> {
   const ctx = await requireAdmin();
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
 
-  const season = await loadActiveSeason(admin);
-  if (!season) return { status: "error", message: "Aucune saison active." };
+  // La saison vient de la journée elle-même, jamais de « la » saison active :
+  // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
+  const { data: round } = await admin
+    .from("rounds")
+    .select("season_id")
+    .eq("id", roundId)
+    .single();
+  if (!round) return { status: "error", message: "Journée introuvable." };
+  const seasonId = round.season_id as string;
+
+  const season = await loadSeasonById(admin, seasonId);
+  if (!season) return { status: "error", message: "Saison introuvable." };
 
   const [data, settings, badges, alreadyEarned] = await Promise.all([
     loadStandingsData(admin, season),

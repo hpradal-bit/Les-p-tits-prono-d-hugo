@@ -29,11 +29,28 @@ export interface AdminRound {
   seasonId: Uuid;
 }
 
-export async function loadRounds(): Promise<AdminRound[]> {
+/**
+ * Les journées d'une compétition — le Top 14 par défaut.
+ *
+ * Sans ce filtre, les journées de deux compétitions se mélangeraient sous les
+ * mêmes numéros (« Journée 1 » du Top 14 et de la Pro D2) : impossible de
+ * savoir laquelle le sélecteur désigne.
+ */
+export async function loadRounds(competitionCode = "top14"): Promise<AdminRound[]> {
   const admin = createAdminClient();
+  const { data: seasonRow } = await admin
+    .from("seasons")
+    .select("id, competitions:competition_id!inner(code)")
+    .eq("competitions.code", competitionCode)
+    .order("starts_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!seasonRow) return [];
+
   const { data, error } = await admin
     .from("rounds")
     .select("id, number, name, status, season_id")
+    .eq("season_id", seasonRow.id)
     .order("number");
   if (error) throw error;
   return (data ?? []).map((r) => ({
