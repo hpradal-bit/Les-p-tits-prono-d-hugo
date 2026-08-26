@@ -164,23 +164,10 @@ export async function loadJournal(limit = 100): Promise<JournalEntry[]> {
   });
 }
 
-/** La saison en cours. L'admin ne travaille jamais sur une autre. */
-export async function currentSeasonId(admin: SupabaseClient): Promise<Uuid> {
-  const { data, error } = await admin
-    .from("seasons")
-    .select("id")
-    .eq("status", "active")
-    .order("starts_on", { ascending: false })
-    .limit(1)
-    .single();
-  if (error) throw error;
-  return data.id as Uuid;
-}
-
-/** Le barème en vigueur, tel que l'admin va l'éditer. */
-export async function loadCurrentRuleset(): Promise<Ruleset> {
+/** Le barème en vigueur pour une saison donnée, tel que l'admin va l'éditer. */
+export async function loadCurrentRuleset(seasonId: Uuid): Promise<Ruleset> {
   const admin = createAdminClient();
-  return loadRuleset(admin, await currentSeasonId(admin));
+  return loadRuleset(admin, seasonId);
 }
 
 export interface AdminPlayer {
@@ -214,9 +201,8 @@ export interface AdminAdjustment {
  * affichage plutôt que stocké : l'admin doit voir la même chose que le
  * classement, y compris juste après un recalcul.
  */
-export async function loadPlayers(): Promise<AdminPlayer[]> {
+export async function loadPlayers(seasonId: Uuid): Promise<AdminPlayer[]> {
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
 
   const [profilesRes, membersRes, roundsRes, adjustmentsRes] = await Promise.all([
     admin
@@ -289,9 +275,8 @@ export async function loadPlayers(): Promise<AdminPlayer[]> {
 }
 
 /** Les ajustements manuels de la saison, du plus récent au plus ancien. */
-export async function loadAdjustments(limit = 50): Promise<AdminAdjustment[]> {
+export async function loadAdjustments(seasonId: Uuid, limit = 50): Promise<AdminAdjustment[]> {
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
 
   const { data, error } = await admin
     .from("point_adjustments")
@@ -337,9 +322,8 @@ export interface RulesetVersion {
  * coup d'œil quel barème s'appliquait à quelle période, et donc pourquoi deux
  * journées ne rapportent pas la même chose.
  */
-export async function loadRulesetVersions(): Promise<RulesetVersion[]> {
+export async function loadRulesetVersions(seasonId: Uuid): Promise<RulesetVersion[]> {
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
   const now = new Date().toISOString();
 
   const { data, error } = await admin

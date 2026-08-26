@@ -16,11 +16,12 @@ const PERIODS = [
 ];
 
 /** Combien de scores exacts un joueur peut tenter, et sur quelle période. */
-export function ExactScoreForm({ ruleset }: { ruleset: Ruleset }) {
+export function ExactScoreForm({ ruleset, leagueId }: { ruleset: Ruleset; leagueId: string }) {
   const [state, action, pending] = useActionState(updateExactScoreQuota, ADMIN_IDLE);
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <input type="hidden" name="leagueId" value={leagueId} />
       <div className="flex flex-wrap items-center gap-3">
         <label htmlFor="quota" className="text-[14.5px] text-ink">
           Chaque joueur peut tenter

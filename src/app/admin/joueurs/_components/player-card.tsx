@@ -14,9 +14,11 @@ import { Feedback, numberInput, reasonInput, textInput } from "../../bareme/_com
 export function PlayerCard({
   player,
   rounds,
+  leagueId,
 }: {
   player: AdminPlayer;
   rounds: AdminRound[];
+  leagueId: string;
 }) {
   const [activeState, activeAction, activePending] = useActionState(setPlayerActive, ADMIN_IDLE);
   const [roleState, roleAction, rolePending] = useActionState(setPlayerRole, ADMIN_IDLE);
@@ -107,6 +109,7 @@ export function PlayerCard({
 
       {open && (
         <form action={adjustAction} className="flex flex-col gap-3 rounded-xl border border-line bg-surface-sunk p-3">
+          <input type="hidden" name="leagueId" value={leagueId} />
           <input type="hidden" name="userId" value={player.id} />
 
           <div className="flex flex-wrap items-center gap-2">

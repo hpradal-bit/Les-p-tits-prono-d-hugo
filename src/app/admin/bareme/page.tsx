@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { z } from "zod";
 import { Card, Label } from "@/components/ui";
+import { createClient } from "@/lib/supabase/server";
+import { requireViewer } from "@/lib/auth/session";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadActiveSeason } from "@/lib/standings/queries";
 import { loadCurrentRuleset, loadRulesetVersions } from "@/lib/admin/queries";
 import { PointsForm } from "./_components/points-form";
 import { LockForm } from "./_components/lock-form";
@@ -8,6 +15,8 @@ import { BucketForm } from "./_components/bucket-form";
 
 export const metadata: Metadata = { title: "Barème" };
 export const dynamic = "force-dynamic";
+
+const params = z.object({ league: z.string().uuid().optional() });
 
 function Section({
   title,
@@ -35,14 +44,52 @@ function formatDay(iso: string) {
   });
 }
 
-export default async function AdminBaremePage() {
+export default async function AdminBaremePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ league?: string }>;
+}) {
+  const viewer = await requireViewer();
+  const sb = await createClient();
+  const { league: requested } = params.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+  const { leagueId, leagues: myLeagues } = resolved;
+
+  const season = await loadActiveSeason(sb, leagueId);
+  if (!season) {
+    return (
+      <Card className="p-6 text-center">
+        <p className="text-ink-muted">Aucune saison pour cette ligue.</p>
+      </Card>
+    );
+  }
+
   const [ruleset, versions] = await Promise.all([
-    loadCurrentRuleset(),
-    loadRulesetVersions(),
+    loadCurrentRuleset(season.id),
+    loadRulesetVersions(season.id),
   ]);
 
   return (
     <div className="flex flex-col gap-4">
+      {myLeagues.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {myLeagues.map((l) => (
+            <Link
+              key={l.leagueId}
+              href={`/admin/bareme?league=${l.leagueId}`}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                l.leagueId === leagueId
+                  ? "bg-clay text-surface"
+                  : "border border-line bg-surface text-ink-muted"
+              }`}
+            >
+              {l.leagueName}
+            </Link>
+          ))}
+        </div>
+      )}
+
       <Card className="border-sage/40 bg-sage-soft p-4">
         <p className="text-[14px] leading-relaxed text-ink">
           Rien n&apos;est écrit en dur : tout ce qui suit vit en base et se change
@@ -50,7 +97,7 @@ export default async function AdminBaremePage() {
           reflète toujours le barème en vigueur — jamais un mélange des deux.
         </p>
         <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-sage">
-          Version {ruleset.version}
+          {season.competitionName} · Version {ruleset.version}
         </p>
       </Card>
 
@@ -58,7 +105,7 @@ export default async function AdminBaremePage() {
         title="La cascade"
         intro="Le calcul retient le meilleur niveau atteint, du plus précis au moins précis."
       >
-        <PointsForm ruleset={ruleset} />
+        <PointsForm ruleset={ruleset} leagueId={leagueId} />
       </Section>
 
       <Section
@@ -73,7 +120,7 @@ export default async function AdminBaremePage() {
             <Label className="w-20 text-center">À</Label>
           </div>
           {ruleset.buckets.map((bucket) => (
-            <BucketForm key={bucket.id} bucket={bucket} />
+            <BucketForm key={bucket.id} bucket={bucket} leagueId={leagueId} />
           ))}
           {ruleset.buckets.length === 0 && (
             <p className="text-[13.5px] text-ink-muted">
@@ -87,14 +134,14 @@ export default async function AdminBaremePage() {
         title="Le score exact"
         intro="Tenter un score exact ne fait jamais perdre de points : la tranche est déduite du pronostic."
       >
-        <ExactScoreForm ruleset={ruleset} />
+        <ExactScoreForm ruleset={ruleset} leagueId={leagueId} />
       </Section>
 
       <Section
         title="Le verrouillage"
         intro="Passé ce délai, plus personne ne touche à son pronostic — et les pronos des autres deviennent lisibles."
       >
-        <LockForm ruleset={ruleset} />
+        <LockForm ruleset={ruleset} leagueId={leagueId} />
       </Section>
 
       {versions.length > 1 && (

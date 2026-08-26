@@ -15,11 +15,12 @@ const PRESETS = [
 ];
 
 /** Combien de temps avant le coup d'envoi les pronostics se ferment. */
-export function LockForm({ ruleset }: { ruleset: Ruleset }) {
+export function LockForm({ ruleset, leagueId }: { ruleset: Ruleset; leagueId: string }) {
   const [state, action, pending] = useActionState(updateLockDelay, ADMIN_IDLE);
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <input type="hidden" name="leagueId" value={leagueId} />
       <div className="flex items-center gap-3">
         <label
           htmlFor="minutesBeforeKickoff"

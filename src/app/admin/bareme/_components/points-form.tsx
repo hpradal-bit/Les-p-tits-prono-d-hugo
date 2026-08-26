@@ -39,7 +39,7 @@ const LEVELS = [
  * Les quatre valeurs de la cascade. Toute modification rejoue la saison :
  * le classement affiché est toujours celui du barème en vigueur.
  */
-export function PointsForm({ ruleset }: { ruleset: Ruleset }) {
+export function PointsForm({ ruleset, leagueId }: { ruleset: Ruleset; leagueId: string }) {
   const [state, action, pending] = useActionState(updatePoints, ADMIN_IDLE);
   const current: Record<string, number> = {
     wrong: ruleset.points.wrong,
@@ -50,6 +50,7 @@ export function PointsForm({ ruleset }: { ruleset: Ruleset }) {
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <input type="hidden" name="leagueId" value={leagueId} />
       <ul className="flex flex-col gap-2">
         {LEVELS.map((level) => (
           <li

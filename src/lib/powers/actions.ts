@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
-import { currentSeasonId } from "@/lib/admin/queries";
+import { loadActiveSeason } from "@/lib/standings/queries";
 import { getPower, requirePower } from "./registry.ts";
 import {
   loadActivePowers,
@@ -39,7 +39,6 @@ export async function declarePower(
   if (!user) return { ok: false, message: "Session expirée." };
 
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
 
   const powers = await loadActivePowers(admin);
   const power = powers.find((p) => p.code === parsed.data.powerCode);
@@ -49,11 +48,14 @@ export async function declarePower(
 
   const { data: round } = await admin
     .from("rounds")
-    .select("id, status")
+    .select("id, status, season_id")
     .eq("id", parsed.data.roundId)
     .single();
   if (!round) return { ok: false, message: "Journée introuvable." };
   if (round.status === "settled") return { ok: false, message: "Cette journée est clôturée." };
+  // La saison vient de la journée elle-même, jamais « la » saison courante :
+  // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
+  const seasonId = round.season_id as string;
 
   const existing = await loadUserRoundUsage(admin, user.id, parsed.data.roundId);
   if (existing) return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
@@ -236,7 +238,14 @@ export async function resolveRoundPowers(
 ): Promise<AdminActionState> {
   const ctx = await requireAdmin();
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
+  // La saison de la journée réglée, jamais « la » saison courante.
+  const { data: round } = await admin
+    .from("rounds")
+    .select("season_id")
+    .eq("id", roundId)
+    .single();
+  const seasonId = round?.season_id as string | undefined;
+  if (!seasonId) return { status: "error", message: "Journée introuvable." };
 
   const usages = await loadRoundUsages(admin, roundId);
   const active = usages.filter((u) => u.state === "declared" || u.state === "accepted");
@@ -338,6 +347,7 @@ export async function grantTokens(
   input: unknown,
 ): Promise<AdminActionState> {
   const schema = z.object({
+    leagueId: z.string().uuid(),
     period: z.enum(["first_half", "second_half", "full_season"]),
     count: z.number().int().min(1).max(50),
   });
@@ -347,11 +357,17 @@ export async function grantTokens(
   if (!parsed.success) return { status: "error", message: "Données invalides." };
 
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
+  const season = await loadActiveSeason(admin, parsed.data.leagueId);
+  if (!season) return { status: "error", message: "Aucune saison pour cette ligue." };
+  const seasonId = season.id;
 
+  // Les membres de LA ligue concernée, pas tout le groupe : des crédits
+  // distribués sur la Pro D2 ne doivent pas atterrir chez un joueur qui n'y
+  // a jamais mis les pieds.
   const { data: members } = await admin
-    .from("group_members")
-    .select("user_id");
+    .from("league_members")
+    .select("user_id")
+    .eq("league_id", parsed.data.leagueId);
 
   const rows = [];
   for (const m of (members ?? []) as Array<{ user_id: string }>) {

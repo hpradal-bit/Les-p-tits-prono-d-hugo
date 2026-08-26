@@ -91,7 +91,7 @@ export function PowerPanel({ powers }: { powers: PowerRow[] }) {
   );
 }
 
-export function TokenGrantForm() {
+export function TokenGrantForm({ leagueId }: { leagueId: string }) {
   const [period, setPeriod] = useState<string>("full_season");
   const [count, setCount] = useState(2);
   const [pending, setPending] = useState(false);
@@ -101,7 +101,7 @@ export function TokenGrantForm() {
     e.preventDefault();
     setPending(true);
     setMsg("");
-    const result = await grantTokens({ period, count });
+    const result = await grantTokens({ leagueId, period, count });
     setPending(false);
     setMsg(result.message ?? "");
   }

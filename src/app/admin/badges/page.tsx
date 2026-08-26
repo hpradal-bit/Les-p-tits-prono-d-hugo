@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { z } from "zod";
 import { Card, Label } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { currentSeasonId } from "@/lib/admin/queries";
+import { createClient } from "@/lib/supabase/server";
+import { requireViewer } from "@/lib/auth/session";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadActiveSeason } from "@/lib/standings/queries";
 import { loadAllBadges, loadPlayerBadges } from "@/lib/badges/queries";
 import type { BadgeRule } from "@/lib/badges/types";
 
@@ -33,12 +39,32 @@ const TYPE_LABELS: Record<string, string> = {
   superlative: "Superlatif",
 };
 
-export default async function AdminBadgesPage() {
+const params = z.object({ league: z.string().uuid().optional() });
+
+export default async function AdminBadgesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ league?: string }>;
+}) {
+  const viewer = await requireViewer();
+  const sb = await createClient();
+  const { league: requested } = params.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+  const { leagueId, leagues: myLeagues } = resolved;
+
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
+  const season = await loadActiveSeason(admin, leagueId);
+  if (!season) {
+    return (
+      <Card className="p-6 text-center">
+        <p className="text-ink-muted">Aucune saison pour cette ligue.</p>
+      </Card>
+    );
+  }
   const [badges, playerBadges] = await Promise.all([
     loadAllBadges(admin),
-    loadPlayerBadges(admin, seasonId),
+    loadPlayerBadges(admin, season.id),
   ]);
 
   const { data: profiles } = await admin
@@ -61,8 +87,26 @@ export default async function AdminBadgesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {myLeagues.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {myLeagues.map((l) => (
+            <Link
+              key={l.leagueId}
+              href={`/admin/badges?league=${l.leagueId}`}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                l.leagueId === leagueId
+                  ? "bg-clay text-surface"
+                  : "border border-line bg-surface text-ink-muted"
+              }`}
+            >
+              {l.leagueName}
+            </Link>
+          ))}
+        </div>
+      )}
+
       <section className="flex flex-col gap-3">
-        <Label>Badges de la saison</Label>
+        <Label>Badges de la saison · {season.competitionName}</Label>
         <Card className="divide-y divide-line">
           {badges.map((b) => (
             <div key={b.id} className="flex items-start gap-3 px-4 py-3">

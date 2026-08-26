@@ -9,11 +9,12 @@ import { Feedback, numberInput, textInput, reasonInput } from "./shared";
 import { ScopePicker } from "./scope-picker";
 
 /** Une tranche d'écart : son intitulé et ses deux bornes. */
-export function BucketForm({ bucket }: { bucket: MarginBucket }) {
+export function BucketForm({ bucket, leagueId }: { bucket: MarginBucket; leagueId: string }) {
   const [state, action, pending] = useActionState(updateMarginBucket, ADMIN_IDLE);
 
   return (
     <form action={action} className="flex flex-col gap-3 rounded-xl border border-line bg-surface-sunk p-3">
+      <input type="hidden" name="leagueId" value={leagueId} />
       <input type="hidden" name="bucketId" value={bucket.id} />
 
       <div className="flex flex-wrap items-center gap-2">

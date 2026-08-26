@@ -20,7 +20,7 @@ import { describeQuiet, readRules, rulesToRows, validateRules } from "@/lib/push
 import { requireAdmin, AdminError } from "./auth";
 import { logAdminAction, MissingReasonError, normalizeReason } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
-import { currentSeasonId } from "./queries";
+import { loadActiveSeason } from "@/lib/standings/queries";
 import { createSyncContext, syncCalendar, syncLive, syncStandings } from "@/lib/providers";
 
 /**
@@ -395,8 +395,7 @@ interface CurrentRuleset {
   rules: Record<string, unknown>;
 }
 
-async function currentRuleset(admin: SupabaseClient): Promise<CurrentRuleset> {
-  const seasonId = await currentSeasonId(admin);
+async function currentRuleset(admin: SupabaseClient, seasonId: Uuid): Promise<CurrentRuleset> {
   const now = new Date().toISOString();
   const { data, error } = await admin
     .from("scoring_rulesets")
@@ -614,6 +613,7 @@ function outcomeSentence(
 }
 
 const pointsSchema = z.object({
+  leagueId: z.string().uuid(),
   wrong: z.coerce.number().int().min(0).max(999),
   winner: z.coerce.number().int().min(0).max(999),
   winnerAndMargin: z.coerce.number().int().min(0).max(999),
@@ -630,6 +630,7 @@ export async function updatePoints(
   try {
     const ctx = await requireAdmin();
     const parsed = pointsSchema.safeParse({
+      leagueId: formData.get("leagueId"),
       wrong: formData.get("wrong"),
       winner: formData.get("winner"),
       winnerAndMargin: formData.get("winnerAndMargin"),
@@ -640,7 +641,7 @@ export async function updatePoints(
     if (!parsed.success) {
       return adminFail("Valeurs invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { wrong, winner, winnerAndMargin, exactScore, scope, reason } = parsed.data;
+    const { leagueId, wrong, winner, winnerAndMargin, exactScore, scope, reason } = parsed.data;
 
     // La cascade doit rester croissante, sinon viser juste ferait perdre des points.
     if (!(wrong <= winner && winner <= winnerAndMargin && winnerAndMargin <= exactScore)) {
@@ -650,7 +651,9 @@ export async function updatePoints(
     }
 
     const admin = createAdminClient();
-    const rs = await currentRuleset(admin);
+    const season = await loadActiveSeason(admin, leagueId);
+    if (!season) return adminFail("Aucune saison pour cette ligue.");
+    const rs = await currentRuleset(admin, season.id);
     const points = {
       wrong,
       winner,
@@ -678,6 +681,7 @@ export async function updatePoints(
 }
 
 const lockSchema = z.object({
+  leagueId: z.string().uuid(),
   minutesBeforeKickoff: z.coerce.number().int().min(0).max(10_080),
   reason: z.string(),
 });
@@ -696,16 +700,19 @@ export async function updateLockDelay(
   try {
     const ctx = await requireAdmin();
     const parsed = lockSchema.safeParse({
+      leagueId: formData.get("leagueId"),
       minutesBeforeKickoff: formData.get("minutesBeforeKickoff"),
       reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Délai invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { minutesBeforeKickoff, reason } = parsed.data;
+    const { leagueId, minutesBeforeKickoff, reason } = parsed.data;
 
     const admin = createAdminClient();
-    const rs = await currentRuleset(admin);
+    const season = await loadActiveSeason(admin, leagueId);
+    if (!season) return adminFail("Aucune saison pour cette ligue.");
+    const rs = await currentRuleset(admin, season.id);
     const before = { lock: rs.rules.lock };
     const lock = { minutes_before_kickoff: minutesBeforeKickoff };
 
@@ -771,6 +778,7 @@ export async function updateLockDelay(
 }
 
 const exactScoreSchema = z.object({
+  leagueId: z.string().uuid(),
   quota: z.string(),
   period: z.enum(["match", "round", "month", "season"]),
   scope: scopeField,
@@ -785,6 +793,7 @@ export async function updateExactScoreQuota(
   try {
     const ctx = await requireAdmin();
     const parsed = exactScoreSchema.safeParse({
+      leagueId: formData.get("leagueId"),
       quota: formData.get("quota"),
       period: formData.get("period"),
       scope: formData.get("scope"),
@@ -793,7 +802,7 @@ export async function updateExactScoreQuota(
     if (!parsed.success) {
       return adminFail("Quota invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { quota: rawQuota, period, scope, reason } = parsed.data;
+    const { leagueId, quota: rawQuota, period, scope, reason } = parsed.data;
 
     // Champ vide = illimité. On le distingue de zéro, qui interdit tout.
     const quota = rawQuota.trim() === "" ? null : Number(rawQuota);
@@ -804,7 +813,9 @@ export async function updateExactScoreQuota(
     }
 
     const admin = createAdminClient();
-    const rs = await currentRuleset(admin);
+    const season = await loadActiveSeason(admin, leagueId);
+    if (!season) return adminFail("Aucune saison pour cette ligue.");
+    const rs = await currentRuleset(admin, season.id);
     const previous = (rs.rules.exact_score ?? {}) as Record<string, unknown>;
     const exact = { ...previous, quota, period };
 
@@ -830,6 +841,7 @@ export async function updateExactScoreQuota(
 }
 
 const bucketSchema = z.object({
+  leagueId: z.string().uuid(),
   bucketId: z.string().uuid(),
   label: z.string().trim().min(1).max(40),
   minPoints: z.coerce.number().int().min(0).max(200),
@@ -846,6 +858,7 @@ export async function updateMarginBucket(
   try {
     const ctx = await requireAdmin();
     const parsed = bucketSchema.safeParse({
+      leagueId: formData.get("leagueId"),
       bucketId: formData.get("bucketId"),
       label: formData.get("label"),
       minPoints: formData.get("minPoints"),
@@ -856,7 +869,7 @@ export async function updateMarginBucket(
     if (!parsed.success) {
       return adminFail("Tranche invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { bucketId, label, minPoints, maxPoints: rawMax, scope, reason } = parsed.data;
+    const { leagueId, bucketId, label, minPoints, maxPoints: rawMax, scope, reason } = parsed.data;
 
     // Champ vide = borne haute ouverte (la dernière tranche, « 41 et + »).
     const maxPoints = rawMax.trim() === "" ? null : Number(rawMax);
@@ -867,7 +880,9 @@ export async function updateMarginBucket(
     }
 
     const admin = createAdminClient();
-    const rs = await currentRuleset(admin);
+    const season = await loadActiveSeason(admin, leagueId);
+    if (!season) return adminFail("Aucune saison pour cette ligue.");
+    const rs = await currentRuleset(admin, season.id);
 
     const { data: before, error: bErr } = await admin
       .from("margin_buckets")
@@ -1049,6 +1064,7 @@ export async function setPlayerRole(
 }
 
 const adjustmentSchema = z.object({
+  leagueId: z.string().uuid(),
   userId: z.string().uuid(),
   delta: z.coerce.number().int().min(-999).max(999),
   roundId: z.string(),
@@ -1067,6 +1083,7 @@ export async function adjustPoints(
   try {
     const ctx = await requireAdmin();
     const parsed = adjustmentSchema.safeParse({
+      leagueId: formData.get("leagueId"),
       userId: formData.get("userId"),
       delta: formData.get("delta"),
       roundId: formData.get("roundId"),
@@ -1075,12 +1092,14 @@ export async function adjustPoints(
     if (!parsed.success) {
       return adminFail("Ajustement invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { userId, delta, roundId: rawRound, reason } = parsed.data;
+    const { leagueId, userId, delta, roundId: rawRound, reason } = parsed.data;
     if (delta === 0) return adminFail("Un ajustement de zéro point ne sert à rien.");
 
     const roundId = rawRound.trim() === "" ? null : rawRound;
     const admin = createAdminClient();
-    const seasonId = await currentSeasonId(admin);
+    const season = await loadActiveSeason(admin, leagueId);
+    if (!season) return adminFail("Aucune saison pour cette ligue.");
+    const seasonId = season.id;
 
     const { data: player, error: pErr } = await admin
       .from("profiles").select("display_name").eq("id", userId).single();
