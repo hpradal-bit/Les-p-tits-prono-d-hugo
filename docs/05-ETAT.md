@@ -16,6 +16,30 @@ Fichier de reprise. À lire en début de session, avec `CLAUDE.md` et
 Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 `.env.local` (ignoré par git). Ne jamais les écrire ici.
 
+## Logos, parité Pro D2, règles par sport, renommage (26 août)
+
+- Logos des 13 clubs Pro D2 fournis par Hugo posés dans `public/logos/` et
+  en base (`teams.logo_url`) ; trois clubs Pro D2 sans fichier fourni
+  (Narbonne, Nissa, US Montauban) gardent le repli initiales. Logos Top 14
+  et Pro D2 eux-mêmes (`competitions.logo_url`) affichés via le nouveau
+  composant `CompetitionLogo` sur le catalogue de ligues, `/accueil`,
+  `/ligue`, `/journee`, `/classement`.
+- Le classement d'une ligue reste désormais visible même sans le moindre
+  résultat (montre ses membres à 0 point) — corrigé sur `/classement`.
+- Crédits accordés à parité sur « Ligue test » (Pro D2) : les pouvoirs ne
+  sont pas du code par compétition (table `powers` partagée, sans
+  `season_id`), il ne manquait que les jetons pour cette saison.
+- `loadRulesetAt` (`src/lib/settings/index.ts`) hérite désormais du barème
+  d'une autre saison du même sport quand la saison demandée n'a pas encore
+  le sien — une nouvelle compétition Rugby n'aura plus besoin d'une
+  migration à la main comme `0032_prod2_ruleset.sql` pour en avoir un.
+- Application renommée **LE VESTIAIRE** partout (manifest, connexion,
+  installeur) ; l'écran de fil social, jusqu'ici aussi appelé « Vestiaire »,
+  devient **Zone de chambrage** pour ne plus confondre les deux.
+- Non fait, volontairement laissé de côté (risque de migration trop élevé
+  à J-10 de la J1) : un vrai `sport_id` sur `scoring_rulesets` remplaçant
+  `season_id` — le repli ci-dessus couvre le besoin sans toucher au schéma.
+
 ## Ligues privées (26 août, en cours — plan complet dans `/root/.claude/plans/purrfect-snuggling-backus.md`)
 
 Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
