@@ -102,6 +102,18 @@ export default async function ReglagesPage() {
         >
           Modifier mon profil
         </Link>
+        <Link
+          href="/ligue"
+          className="rounded-full border border-line-strong py-3.5 text-center text-[15px] font-bold text-ink"
+        >
+          Ma ligue
+        </Link>
+        <Link
+          href="/accueil"
+          className="rounded-full border border-line-strong py-3.5 text-center text-[15px] font-bold text-ink"
+        >
+          Changer de ligue
+        </Link>
       </div>
     </div>
   );

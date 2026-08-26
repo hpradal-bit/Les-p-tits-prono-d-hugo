@@ -44,6 +44,12 @@ export const ADMIN_ACTIONS = {
 
   "points.adjusted": "Ajustement de points",
   "points.adjustment_reverted": "Ajustement annulé",
+
+  "league.created": "Ligue créée",
+  "league.updated": "Ligue modifiée",
+  "league.join_key_regenerated": "Clé de ligue régénérée",
+  "league.member_role_changed": "Rôle de ligue modifié",
+  "league.member_removed": "Membre retiré de la ligue",
 } as const;
 
 export type AdminActionCode = keyof typeof ADMIN_ACTIONS;
@@ -61,7 +67,8 @@ export type AdminEntity =
   | "profile"
   | "margin_bucket"
   | "point_adjustment"
-  | "season";
+  | "season"
+  | "league";
 
 export const ENTITY_LABELS: Record<AdminEntity, string> = {
   round: "Journée",
@@ -73,6 +80,7 @@ export const ENTITY_LABELS: Record<AdminEntity, string> = {
   margin_bucket: "Tranche d'écart",
   point_adjustment: "Ajustement",
   season: "Saison",
+  league: "Ligue",
 };
 
 /** Libellés français des champs affichés dans l'avant/après du journal. */
@@ -137,6 +145,10 @@ export const FIELD_LABELS: Record<string, string> = {
   failed: "Échecs",
   revoked: "Abonnements retirés",
   key_suffix: "Fin de clé",
+  name: "Nom",
+  logo_url: "Logo",
+  slogan: "Slogan",
+  join_key: "Clé de ligue",
 };
 
 export function fieldLabel(key: string): string {
