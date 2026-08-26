@@ -111,11 +111,10 @@ export default async function SynchronisationPage() {
           </li>
           <li className="mt-1.5 font-semibold text-ink">Chaîne de fournisseurs</li>
           <li>
-            {hasTheSportsDb ? "✅" : "⬜️"}{" "}
-            <span className="font-mono text-[12px]">TheSportsDB</span> (principal) —{" "}
+            ✅ <span className="font-mono text-[12px]">TheSportsDB</span> (principal) —{" "}
             {hasTheSportsDb
-              ? "clé présente. 30 req/min, pas de quota journalier."
-              : "pas de clé THESPORTSDB_KEY."}
+              ? "clé dédiée présente. 30 req/min, pas de quota journalier."
+              : "clé partagée « 123 » (gratuite, sans inscription). 30 req/min, partagés avec d’autres utilisateurs — une clé dédiée (THESPORTSDB_KEY) évite d’en dépendre."}
           </li>
           <li>
             {hasHighlightly ? "✅" : "⬜️"}{" "}

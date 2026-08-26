@@ -16,7 +16,11 @@ import { THESPORTSDB, createTheSportsDbProvider } from "./thesportsdb.ts";
 import { ProviderError, type ProviderResponse, type SportsDataProvider } from "./types.ts";
 
 export interface ProviderChainEnv {
-  /** Clé TheSportsDB. Absente = on saute, Highlightly prend la main. */
+  /**
+   * Clé TheSportsDB. Absente = clé partagée « 123 » (offre gratuite sans
+   * inscription, documentée par TheSportsDB lui-même) : le fournisseur reste
+   * dans la chaîne, seule une clé dédiée change le débit autorisé.
+   */
   thesportsdbKey?: string;
   /** Clé RapidAPI pour Highlightly. Absente = on saute. */
   highlightlyKey?: string;
@@ -47,12 +51,10 @@ export function createProviderChain(env: ProviderChainEnv = {}): ProviderChain {
   const providers: SportsDataProvider[] = [];
   const skipped: { provider: string; reason: string }[] = [];
 
-  // 1. TheSportsDB — principal
-  if (env.thesportsdbKey) {
-    providers.push(createTheSportsDbProvider({ apiKey: env.thesportsdbKey }));
-  } else {
-    skipped.push({ provider: THESPORTSDB, reason: "clé THESPORTSDB_KEY absente" });
-  }
+  // 1. TheSportsDB — principal. Sans clé dédiée, `createTheSportsDbProvider`
+  // retombe lui-même sur la clé partagée « 123 » : gratuit, sans inscription,
+  // c'est ce qui permet à la chaîne de fonctionner dès le premier déploiement.
+  providers.push(createTheSportsDbProvider({ apiKey: env.thesportsdbKey }));
 
   // 2. Highlightly — second
   if (env.highlightlyKey) {

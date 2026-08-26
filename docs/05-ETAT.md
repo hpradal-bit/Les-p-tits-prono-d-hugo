@@ -109,6 +109,14 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
 
 ## Pour tester la Pro D2 avant jeudi
 
+0. ⚠️ Corrigé le 26 août : la synchro Pro D2 échouait entièrement (TheSportsDB
+   et Highlightly écartés faute de `THESPORTSDB_KEY`/`HIGHLIGHTLY_KEY` dans
+   Vercel, ESPN en 400 faute de référence Pro D2, API-Sports sans référence).
+   TheSportsDB retombe maintenant sur la clé partagée « 123 » (gratuite, sans
+   inscription) quand `THESPORTSDB_KEY` n'est pas réglée — c'était déjà prévu
+   dans son code, mais le registre des fournisseurs (`registry.ts`) l'écartait
+   de la chaîne avant de lui laisser sa chance. Une clé dédiée reste possible
+   plus tard (Patreon 3 $/mois) pour ne plus dépendre du quota partagé.
 1. **Admin → Synchronisation** : choisir « Pro D2 » dans le sélecteur de
    compétition, lancer « Synchroniser le calendrier » puis « Relever les
    scores » une première fois à la main pour vérifier que la chaîne répond.

@@ -25,11 +25,15 @@ function fake(name: string, behaviour: "ok" | "boom", fixtures: ProviderFixture[
 
 // --- Composition de la chaîne ------------------------------------------------
 
-test("chaîne : sans aucune clé, ESPN est seul fournisseur effectif", () => {
+test("chaîne : sans aucune clé, TheSportsDB (clé partagée) et ESPN restent effectifs", () => {
   const chain = createProviderChain({});
   const names = chain.providers.map((p) => p.name);
   assert.ok(names.includes("espn"), "ESPN doit toujours être dans la chaîne");
-  assert.ok(chain.skipped.some((s) => s.provider === "thesportsdb"));
+  assert.ok(
+    names.includes("thesportsdb"),
+    "TheSportsDB doit rester dans la chaîne : il retombe sur la clé partagée « 123 »",
+  );
+  assert.ok(!chain.skipped.some((s) => s.provider === "thesportsdb"));
   assert.ok(chain.skipped.some((s) => s.provider === "highlightly"));
   assert.ok(chain.skipped.some((s) => s.provider === "apisports"));
 });
