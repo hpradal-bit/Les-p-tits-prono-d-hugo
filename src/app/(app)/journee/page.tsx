@@ -5,7 +5,10 @@ import { z } from "zod";
 import { Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import type { LeagueMembership } from "@/lib/leagues/types.ts";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
@@ -23,39 +26,34 @@ import { Countdown } from "./_components/countdown";
 export const metadata: Metadata = { title: "Ma journée" };
 export const dynamic = "force-dynamic";
 
-const LIGUES = ["top14", "prod2"] as const;
-const LIGUE_LABELS: Record<(typeof LIGUES)[number], string> = {
-  top14: "Top 14",
-  prod2: "Pro D2",
-};
-
 const params = z.object({
   j: z.coerce.number().int().min(1).max(30).optional(),
-  ligue: z.enum(LIGUES).catch("top14"),
+  league: z.string().uuid().optional(),
 });
 
 export default async function JourneePage({
   searchParams,
 }: {
-  searchParams: Promise<{ j?: string; ligue?: string }>;
+  searchParams: Promise<{ j?: string; league?: string }>;
 }) {
-  const { j, ligue } = params.catch({ ligue: "top14" as const }).parse(await searchParams);
-  const [board, viewer] = await Promise.all([
-    loadJourneyBoard({ roundNumber: j, competitionCode: ligue }),
-    getViewer(),
-  ]);
+  const viewer = await getViewer();
   if (!viewer) redirect("/connexion");
 
+  const sb = await createClient();
+  const { j, league: requested } = params.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+  const { leagueId, leagues: myLeagues } = resolved;
+
+  const board = await loadJourneyBoard({ roundNumber: j, leagueId });
   const admin = createAdminClient();
 
   if (!board) {
     return (
       <div className="flex flex-col gap-3.5">
-        <LigueTabs current={ligue} />
+        <LigueTabs leagues={myLeagues} current={leagueId} />
         <Card className="p-8 text-center">
-          <p className="text-ink-muted">
-            Rien à afficher pour {LIGUE_LABELS[ligue]} pour l&apos;instant.
-          </p>
+          <p className="text-ink-muted">Rien à afficher pour cette ligue pour l&apos;instant.</p>
         </Card>
       </div>
     );
@@ -152,7 +150,7 @@ export default async function JourneePage({
 
   return (
     <div className="flex flex-col gap-3.5">
-      <LigueTabs current={ligue} />
+      <LigueTabs leagues={myLeagues} current={leagueId} />
 
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -162,7 +160,10 @@ export default async function JourneePage({
           <h1 className="font-display text-[32px] leading-none text-ink">
             Salut {viewer.firstName} 👋
           </h1>
-          <Link href="/regles" className="mt-0.5 w-fit text-[12.5px] font-semibold text-clay underline">
+          <Link
+            href={`/regles?league=${board.leagueId}`}
+            className="mt-0.5 w-fit text-[12.5px] font-semibold text-clay underline"
+          >
             Comment on joue ?
           </Link>
         </div>
@@ -180,11 +181,7 @@ export default async function JourneePage({
         </Link>
       </header>
 
-      <RoundNav
-        rounds={board.allRounds}
-        currentNumber={board.round.number}
-        competitionCode={board.competitionCode}
-      />
+      <RoundNav rounds={board.allRounds} currentNumber={board.round.number} leagueId={board.leagueId} />
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full bg-clay-soft px-3 py-1.5 text-[12px] font-semibold text-clay">
@@ -222,7 +219,7 @@ export default async function JourneePage({
           {toPlay.length > 0 && (
             <MatchSection title="À jouer" count={toPlay.length}>
               {toPlay.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
               ))}
             </MatchSection>
           )}
@@ -230,7 +227,7 @@ export default async function JourneePage({
           {locked.length > 0 && (
             <MatchSection title="Verrouillés" count={locked.length}>
               {locked.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
               ))}
             </MatchSection>
           )}
@@ -238,7 +235,7 @@ export default async function JourneePage({
           {live.length > 0 && (
             <MatchSection title="En cours" count={live.length}>
               {live.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
               ))}
             </MatchSection>
           )}
@@ -246,7 +243,7 @@ export default async function JourneePage({
           {done.length > 0 && (
             <MatchSection title="Terminés" count={done.length}>
               {done.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} competitionCode={board.competitionCode} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
               ))}
             </MatchSection>
           )}
@@ -255,7 +252,7 @@ export default async function JourneePage({
 
       {board.remainingToPlay > 0 && (
         <Link
-          href={`/journee/${board.fixtures.find((f) => !f.isLocked && !f.draft)?.fixture.id ?? board.fixtures[0].fixture.id}`}
+          href={`/journee/${board.fixtures.find((f) => !f.isLocked && !f.draft)?.fixture.id ?? board.fixtures[0].fixture.id}?league=${board.leagueId}`}
           className="sticky bottom-24 mt-1 rounded-full bg-clay px-5 py-4 text-center text-[16px] font-bold text-surface shadow-[var(--shadow-lift)]"
         >
           Faire mes pronos · {board.remainingToPlay} restant{board.remainingToPlay > 1 ? "s" : ""}
@@ -274,22 +271,23 @@ export default async function JourneePage({
   );
 }
 
-/** Bulles de compétition. Changer de ligue repart sur sa journée en cours. */
-function LigueTabs({ current }: { current: (typeof LIGUES)[number] }) {
+/** Bulles de ligue. Changer de ligue repart sur sa journée en cours. */
+function LigueTabs({ leagues, current }: { leagues: LeagueMembership[]; current: string }) {
+  if (leagues.length < 2) return null;
   return (
-    <div className="flex gap-1.5">
-      {LIGUES.map((code) => (
+    <div className="flex flex-wrap gap-1.5">
+      {leagues.map((l) => (
         <Link
-          key={code}
-          href={`/journee?ligue=${code}`}
+          key={l.leagueId}
+          href={`/journee?league=${l.leagueId}`}
           className={cn(
             "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition",
-            code === current
+            l.leagueId === current
               ? "bg-clay text-surface"
               : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk",
           )}
         >
-          {LIGUE_LABELS[code]}
+          {l.leagueName}
         </Link>
       ))}
     </div>

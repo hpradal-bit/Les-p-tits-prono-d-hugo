@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
 import { loadSeasonById, loadStandingsData } from "@/lib/standings/queries";
+import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { buildProfiles } from "@/lib/stats/profile";
 import { loadSettings, setting } from "@/lib/settings";
 import { evaluateBadges, statsFromProfiles } from "./engine.ts";
@@ -41,9 +42,11 @@ export async function awardRoundBadges(roundId: string): Promise<AdminActionStat
 
   const season = await loadSeasonById(admin, seasonId);
   if (!season) return { status: "error", message: "Saison introuvable." };
+  const leagueId = await resolveLeagueForSeason(admin, seasonId);
+  if (!leagueId) return { status: "error", message: "Aucune ligue pour cette compétition." };
 
   const [data, settings, badges, alreadyEarned] = await Promise.all([
-    loadStandingsData(admin, season),
+    loadStandingsData(admin, season, leagueId),
     loadSettings(admin),
     loadActiveBadges(admin),
     loadEarnedKeys(admin, seasonId),

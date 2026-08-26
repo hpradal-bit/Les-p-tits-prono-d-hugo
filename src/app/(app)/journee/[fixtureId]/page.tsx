@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Faire son prono" };
 export const dynamic = "force-dynamic";
 
 const idSchema = z.string().uuid();
-const ligueSchema = z.enum(["top14", "prod2"]).catch("top14");
+const leagueSchema = z.string().uuid();
 
 /** « Verrou dans 4 h 12 » — le compte à rebours, en clair. */
 function lockCountdown(locksAt: string, now: string): string {
@@ -29,13 +29,14 @@ export default async function PronoPage({
   searchParams,
 }: {
   params: Promise<{ fixtureId: string }>;
-  searchParams: Promise<{ ligue?: string }>;
+  searchParams: Promise<{ league?: string }>;
 }) {
   const parsed = idSchema.safeParse((await params).fixtureId);
   if (!parsed.success) notFound();
-  const ligue = ligueSchema.parse((await searchParams).ligue);
+  const leagueParsed = leagueSchema.safeParse((await searchParams).league);
+  if (!leagueParsed.success) redirect("/accueil");
 
-  const board = await loadJourneyBoard({ competitionCode: ligue });
+  const board = await loadJourneyBoard({ leagueId: leagueParsed.data });
   if (!board) redirect("/connexion");
 
   const item = board.fixtures.find((f) => f.fixture.id === parsed.data);
@@ -47,7 +48,7 @@ export default async function PronoPage({
     <div className="flex min-h-[70dvh] flex-col gap-4">
       <header className="flex items-center gap-3">
         <Link
-          href={`/journee?ligue=${ligue}`}
+          href={`/journee?league=${board.leagueId}`}
           aria-label="Retour à la journée"
           className="grid size-[38px] shrink-0 place-items-center rounded-full border border-line-strong text-ink-muted"
         >
@@ -66,12 +67,7 @@ export default async function PronoPage({
         </div>
       </header>
 
-      <PronoForm
-        item={item}
-        roundId={board.round.id}
-        ruleset={board.ruleset}
-        competitionCode={board.competitionCode}
-      />
+      <PronoForm item={item} roundId={board.round.id} ruleset={board.ruleset} leagueId={board.leagueId} />
     </div>
   );
 }

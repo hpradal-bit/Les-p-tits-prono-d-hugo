@@ -43,25 +43,40 @@ function competitionName(row: CompetitionRow): string {
 }
 
 /**
- * La saison d'une compétition donnée — le Top 14 par défaut.
+ * La saison de la compétition portée par une ligue donnée.
  *
- * Filtrer par code de compétition plutôt que par statut « active » permet à
- * plusieurs compétitions de vivre en même temps (règle n° 5) : la Pro D2 sert
- * de banc d'essai avant le Top 14 sans jamais devenir « la » saison active.
+ * Passer par la ligue plutôt que par un code de compétition en dur permet à
+ * plusieurs ligues indépendantes de vivre en même temps (règle n° 5) : la
+ * ligue est la seule porte d'entrée, jamais une compétition par défaut.
  */
-export async function loadActiveSeason(
-  sb: SupabaseClient,
-  competitionCode = "top14",
-): Promise<SeasonRef | null> {
+export async function loadActiveSeason(sb: SupabaseClient, leagueId: Uuid): Promise<SeasonRef | null> {
+  const { data: league, error: leagueError } = await sb
+    .from("leagues")
+    .select("competition_id, competitions:competition_id!inner(name)")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (leagueError) throw leagueError;
+  if (!league) return null;
+
   const { data, error } = await sb
     .from("seasons")
-    .select("id, label, starts_on, competitions:competition_id!inner(code, name)")
-    .eq("competitions.code", competitionCode)
+    .select("id, label")
+    .eq("competition_id", league.competition_id)
     .order("starts_on", { ascending: false })
     .limit(1);
   if (error) throw error;
-  const row = data?.[0] as { id: string; label: string; competitions: CompetitionRow } | undefined;
-  return row ? { id: row.id, label: row.label, competitionName: competitionName(row.competitions) } : null;
+  const row = data?.[0] as { id: string; label: string } | undefined;
+  return row
+    ? { id: row.id, label: row.label, competitionName: competitionName(league.competitions as CompetitionRow) }
+    : null;
+}
+
+/** La saison d'une journée connue — pour retrouver le contexte d'un match déjà identifié. */
+export async function loadSeasonForRound(sb: SupabaseClient, roundId: Uuid): Promise<SeasonRef | null> {
+  const { data, error } = await sb.from("rounds").select("season_id").eq("id", roundId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return loadSeasonById(sb, data.season_id as string);
 }
 
 /** La saison d'un identifiant connu — pour retrouver le contexte d'une journée déjà choisie. */
@@ -134,21 +149,29 @@ export interface StandingsData extends StandingsInput {
   roundsDetail: RoundInfo[];
 }
 
+interface RawMemberRow {
+  profiles: (RawProfileRow & { is_active: boolean }) | (RawProfileRow & { is_active: boolean })[];
+}
+
 /**
- * Tout ce dont le moteur a besoin. Le filtrage live/officiel n'a pas lieu ici :
- * on charge une fois, le moteur applique la portée demandée.
+ * Tout ce dont le moteur a besoin, pour UNE ligue. Le filtrage live/officiel
+ * n'a pas lieu ici : on charge une fois, le moteur applique la portée
+ * demandée. Les joueurs viennent de `league_members`, pas de tous les profils
+ * actifs de l'application — sans ce filtre, le classement d'une ligue
+ * afficherait aussi les membres d'une autre ligue sur la même compétition.
  */
 export async function loadStandingsData(
   sb: SupabaseClient,
   season: SeasonRef,
+  leagueId: Uuid,
 ): Promise<StandingsData> {
-  const [roundsRes, profilesRes, adjustmentsRes] = await Promise.all([
+  const [roundsRes, membersRes, adjustmentsRes] = await Promise.all([
     sb
       .from("rounds")
       .select("id, number, name, status")
       .eq("season_id", season.id)
       .order("number"),
-    sb.from("profiles").select(PROFILE_COLUMNS).eq("is_active", true).order("first_name"),
+    sb.from("league_members").select(`profiles!inner(${PROFILE_COLUMNS}, is_active)`).eq("league_id", leagueId),
     sb
       .from("point_adjustments")
       .select("user_id, round_id, delta")
@@ -156,7 +179,7 @@ export async function loadStandingsData(
   ]);
 
   if (roundsRes.error) throw roundsRes.error;
-  if (profilesRes.error) throw profilesRes.error;
+  if (membersRes.error) throw membersRes.error;
   if (adjustmentsRes.error) throw adjustmentsRes.error;
 
   const roundsDetail: RoundInfo[] = (
@@ -169,7 +192,11 @@ export async function loadStandingsData(
   ).map((r) => ({ id: r.id, number: r.number, name: r.name, status: r.status }));
 
   const roundIds = roundsDetail.map((r) => r.id);
-  const players: PlayerRef[] = ((profilesRes.data ?? []) as RawProfileRow[]).map(toPlayer);
+  const players: PlayerRef[] = ((membersRes.data ?? []) as unknown as RawMemberRow[])
+    .map((row) => (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles))
+    .filter((p): p is RawProfileRow & { is_active: boolean } => p != null && p.is_active)
+    .map(toPlayer)
+    .sort((a, b) => a.firstName.localeCompare(b.firstName, "fr"));
 
   const [fixturesRes, scoresRes, bonusRes] = await Promise.all([
     roundIds.length === 0
@@ -450,8 +477,13 @@ export interface MatchCenterData {
   /** Le pronostic du joueur connecté, visible même avant le verrouillage. */
   mine: MatchPrediction | null;
   isLocked: boolean;
-  /** La compétition du match — pour relier vers la bonne bulle de /journee. */
-  competitionCode: string;
+  /**
+   * La ligue du spectateur pour la compétition de ce match — pour relier vers
+   * la bonne bulle de /journee. `null` si le spectateur n'appartient à aucune
+   * ligue sur cette compétition (rare : il ne devrait alors même pas voir ce
+   * match, RLS y veille pour les pronostics).
+   */
+  leagueId: Uuid | null;
 }
 
 export async function loadMatchCenter(
@@ -509,19 +541,28 @@ export async function loadMatchCenter(
     | { id: string; number: number; name: string; season_id: string }
     | null;
 
-  // La compétition du match, pour relier « Faire mon prono » vers la bonne
-  // bulle : sans elle, ce lien retomberait toujours sur le Top 14.
-  let competitionCode = "top14";
-  if (round?.season_id) {
+  // La ligue du spectateur pour cette compétition, pour relier « Faire mon
+  // prono » vers la bonne bulle : sans elle, ce lien retomberait sur une
+  // ligue arbitraire. Une compétition pouvant héberger plusieurs ligues
+  // indépendantes, on ne peut pas la déduire du seul match — seulement de
+  // « quelle ligue, sur cette compétition, le spectateur partage-t-il ? ».
+  let leagueId: Uuid | null = null;
+  if (viewerId && round?.season_id) {
     const { data: seasonRow } = await sb
       .from("seasons")
-      .select("competitions:competition_id!inner(code)")
+      .select("competition_id")
       .eq("id", round.season_id)
       .maybeSingle();
-    const competition = Array.isArray(seasonRow?.competitions)
-      ? seasonRow.competitions[0]
-      : seasonRow?.competitions;
-    competitionCode = (competition as { code: string } | undefined)?.code ?? "top14";
+    if (seasonRow) {
+      const { data: membership } = await sb
+        .from("league_members")
+        .select("league_id, leagues!inner(competition_id)")
+        .eq("user_id", viewerId)
+        .eq("leagues.competition_id", seasonRow.competition_id)
+        .limit(1)
+        .maybeSingle();
+      leagueId = (membership?.league_id as string | undefined) ?? null;
+    }
   }
 
   const fixture: MatchFixture = {
@@ -642,7 +683,7 @@ export async function loadMatchCenter(
     predictions: isLocked ? predictions : [],
     mine: viewerId ? (predictions.find((p) => p.player.userId === viewerId) ?? null) : null,
     isLocked,
-    competitionCode,
+    leagueId,
   };
 }
 

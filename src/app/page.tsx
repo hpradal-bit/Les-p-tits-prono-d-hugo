@@ -19,11 +19,6 @@ export default async function RootPage() {
   const sb = await createClient();
   const leagues = await loadMyLeagues(sb, viewer.id);
 
-  // `/journee` ne connaît pas encore les ligues — seulement des codes de
-  // compétition (`?ligue=top14|prod2`). Le pont tient tant qu'une compétition
-  // n'a qu'une seule ligue, ce qui est le cas aujourd'hui ; il faudra que
-  // `/journee` bascule sur `?league=<id>` le jour où deux ligues partagent une
-  // même compétition (chantier déjà identifié, pas encore fait).
-  if (leagues.length === 1) redirect(`/journee?ligue=${leagues[0].competitionCode}`);
+  if (leagues.length === 1) redirect(`/journee?league=${leagues[0].leagueId}`);
   redirect("/accueil");
 }

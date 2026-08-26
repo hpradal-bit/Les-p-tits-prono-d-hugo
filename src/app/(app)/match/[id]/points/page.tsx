@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
-import { loadActiveSeason, loadMatchCenter } from "@/lib/standings/queries";
+import { loadMatchCenter, loadSeasonForRound } from "@/lib/standings/queries";
 import { loadRuleset } from "@/lib/settings";
 import { PlayerAvatar } from "../../../_components/player-avatar";
 import type { ScoreLevel } from "@/lib/types";
@@ -44,11 +44,11 @@ export default async function PointsPage({
   if (!viewer) redirect("/connexion");
 
   const sb = await createClient();
-  const [data, season] = await Promise.all([
-    loadMatchCenter(sb, parsed.data, viewer.id),
-    loadActiveSeason(sb),
-  ]);
+  const data = await loadMatchCenter(sb, parsed.data, viewer.id);
   if (!data) notFound();
+  // La saison vient du match lui-même, jamais d'une compétition par défaut :
+  // plusieurs ligues, sur des compétitions différentes, vivent en même temps.
+  const season = await loadSeasonForRound(sb, data.fixture.roundId);
   const mine = data.mine;
   // Sans note, il n'y a rien à expliquer : le Match Center suffit.
   if (!mine?.score) redirect(`/match/${parsed.data}`);
@@ -217,7 +217,7 @@ export default async function PointsPage({
             {data.predictions.map((p) => (
               <Link
                 key={p.player.userId}
-                href={`/profil/${p.player.userId}`}
+                href={data.leagueId ? `/profil/${p.player.userId}?league=${data.leagueId}` : `/profil/${p.player.userId}`}
                 className="flex flex-col items-center gap-1.5"
               >
                 <PlayerAvatar player={p.player} size={34} />

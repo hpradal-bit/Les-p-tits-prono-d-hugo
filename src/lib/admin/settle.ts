@@ -8,6 +8,7 @@ import type { AdminActionState } from "./types";
 import { recomputeRound } from "@/lib/scoring/persist";
 import { resolveRoundPowers } from "@/lib/powers/actions";
 import { loadStandingsData, loadSeasonById } from "@/lib/standings/queries";
+import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { computeStandings } from "@/lib/standings/engine";
 import { computeSummaryValues, type SummaryFixture } from "@/lib/feed/summary";
 import { fillSummary } from "@/lib/feed/render";
@@ -120,9 +121,10 @@ async function generateRoundSummary(
   roundName: string,
 ): Promise<string[]> {
   const season = await loadSeasonById(admin, seasonId);
-  if (!season) return [];
+  const leagueId = await resolveLeagueForSeason(admin, seasonId);
+  if (!season || !leagueId) return [];
 
-  const data = await loadStandingsData(admin, season);
+  const data = await loadStandingsData(admin, season, leagueId);
 
   const roundStandings = computeStandings(data, {
     kind: "round",
@@ -202,9 +204,10 @@ async function saveStandingsSnapshot(
   roundId: string,
 ): Promise<void> {
   const season = await loadSeasonById(admin, seasonId);
-  if (!season) return;
+  const leagueId = await resolveLeagueForSeason(admin, seasonId);
+  if (!season || !leagueId) return;
 
-  const data = await loadStandingsData(admin, season);
+  const data = await loadStandingsData(admin, season, leagueId);
 
   for (const kind of ["round", "overall"] as const) {
     const table = computeStandings(data, { kind, scope: "official", roundId });
@@ -234,9 +237,10 @@ async function persistRoundStreaks(
   seasonId: string,
 ): Promise<void> {
   const season = await loadSeasonById(admin, seasonId);
-  if (!season) return;
+  const leagueId = await resolveLeagueForSeason(admin, seasonId);
+  if (!season || !leagueId) return;
 
-  const data = await loadStandingsData(admin, season);
+  const data = await loadStandingsData(admin, season, leagueId);
   const streaks = streaksBySeason(data.entries, "official");
   await persistStreaks(admin, streaks, seasonId);
 }

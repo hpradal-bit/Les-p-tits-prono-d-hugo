@@ -1,21 +1,43 @@
 /**
- * Classement sportif réel du Top 14 — celui de la compétition, pas celui des
- * joueurs. Il est alimenté par la synchronisation (`competition_standings`) et
- * n'entre dans aucun calcul de points.
+ * Classement sportif réel de la compétition d'une ligue — celui de la
+ * compétition, pas celui des joueurs. Il est alimenté par la synchronisation
+ * (`competition_standings`) et n'entre dans aucun calcul de points.
+ *
+ * Générique par ligue plutôt que figé sur le Top 14 : une ligue Pro D2 doit
+ * voir le classement réel de la Pro D2, pas celui d'une autre compétition.
  */
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { z } from "zod";
 import { Card, Label, TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason, loadCompetitionStandings } from "@/lib/standings/queries";
 import { formatDateTime } from "@/lib/standings/format";
 
-export const metadata = { title: "Classement du Top 14" };
+export const metadata = { title: "Classement réel" };
 
-export default async function Top14Page() {
+const params = z.object({ league: z.string().uuid().optional() });
+
+export default async function ClassementReelPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ league?: string }>;
+}) {
   const sb = await createClient();
-  const season = await loadActiveSeason(sb);
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) redirect("/connexion");
+
+  const { league: requested } = params.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, user.id, requested);
+  if (!resolved) redirect("/accueil");
+  const { leagueId } = resolved;
+
+  const season = await loadActiveSeason(sb, leagueId);
   const rows = season ? await loadCompetitionStandings(sb, season.id) : [];
 
   const updatedAt = rows.reduce<string | null>(
@@ -26,13 +48,13 @@ export default async function Top14Page() {
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
-        <Label>{season ? `Top 14 · Saison ${season.label}` : "Top 14"}</Label>
+        <Label>{season ? `${season.competitionName} · Saison ${season.label}` : "Compétition"}</Label>
         <h1 className="font-display text-3xl tracking-tight text-ink">
-          Classement du Top 14
+          Classement de {season?.competitionName ?? "la compétition"}
         </h1>
         <p className="text-sm text-ink-muted">
-          Le vrai classement de la compétition. Il n&apos;a aucune influence sur les points du
-          groupe.
+          Le vrai classement de la compétition. Il n&apos;a aucune influence sur les points de la
+          ligue.
         </p>
       </header>
 
@@ -44,7 +66,7 @@ export default async function Top14Page() {
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-sm">
-            <caption className="sr-only">Classement du Top 14</caption>
+            <caption className="sr-only">Classement de {season?.competitionName}</caption>
             <thead>
               <tr className="border-b border-line text-left font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
                 <th scope="col" className="py-2.5 pl-3 pr-2 font-normal">
@@ -140,7 +162,7 @@ export default async function Top14Page() {
       )}
 
       <Link
-        href="/classement"
+        href={`/classement?league=${leagueId}`}
         className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 text-sm font-semibold text-clay shadow-[var(--shadow-card)] transition hover:bg-surface-sunk"
       >
         ← Revenir au classement des joueurs

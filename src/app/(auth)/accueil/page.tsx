@@ -33,9 +33,7 @@ export default async function AccueilPage() {
             {leagues.map((l) => (
               <Link
                 key={l.leagueId}
-                // Pont temporaire : /journee ne connaît que le code de
-                // compétition, pas encore l'identifiant de ligue (cf. src/app/page.tsx).
-                href={`/journee?ligue=${l.competitionCode}`}
+                href={`/journee?league=${l.leagueId}`}
                 className="block rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)] transition active:scale-[0.995]"
               >
                 <div className="flex items-center justify-between gap-3">

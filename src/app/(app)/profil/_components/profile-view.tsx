@@ -25,10 +25,13 @@ export function ProfileView({
   profile,
   others,
   isMe,
+  leagueId,
 }: {
   profile: PlayerProfile;
   others: PlayerProfile[];
   isMe: boolean;
+  /** Pour rester dans la même ligue en comparant deux fiches. */
+  leagueId: string;
 }) {
   const s = profile.streaks;
 
@@ -135,7 +138,7 @@ export function ProfileView({
             {others.map((o) => (
               <li key={o.player.userId}>
                 <Link
-                  href={`/profil/${o.player.userId}`}
+                  href={`/profil/${o.player.userId}?league=${leagueId}`}
                   className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-surface-sunk"
                 >
                   <PlayerAvatar player={o.player} size={32} />

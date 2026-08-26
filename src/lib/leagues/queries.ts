@@ -160,6 +160,69 @@ export async function loadCatalogue(sb: SupabaseClient): Promise<CatalogueSport[
   }));
 }
 
+/**
+ * La (les) ligue(s) qui jouent une compétition — pour la clôture de journée,
+ * qui doit tirer badges/séries/instantané de classement pour CHAQUE ligue de
+ * la compétition réglée, jamais pour « la » ligue au singulier.
+ */
+export async function loadLeaguesForCompetition(
+  sb: SupabaseClient,
+  competitionId: Uuid,
+): Promise<Array<{ leagueId: Uuid; leagueName: string }>> {
+  const { data, error } = await sb
+    .from("leagues")
+    .select("id, name")
+    .eq("competition_id", competitionId)
+    .order("created_at");
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: string; name: string }>).map((l) => ({
+    leagueId: l.id,
+    leagueName: l.name,
+  }));
+}
+
+/**
+ * La ligue dont on tire badges/séries/instantané à la clôture d'une saison.
+ *
+ * Une compétition peut un jour héberger plusieurs ligues indépendantes (cf.
+ * `leagues`, migration 0033) ; ce qui suit — le fil social, les badges, les
+ * séries et l'instantané de classement — reste pour l'instant calculé pour
+ * UNE seule ligue par compétition, exactement ce qui existe aujourd'hui. Le
+ * cloisonner pour de bon (une entrée par ligue) est le chantier suivant,
+ * documenté dans docs/05-ETAT.md : il demande une colonne `league_id` sur
+ * `standings_snapshots`, `user_badges`, `streaks` et `tokens`/`power_usages`.
+ */
+export async function resolveLeagueForSeason(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<Uuid | null> {
+  const { data: seasonRow } = await sb
+    .from("seasons")
+    .select("competition_id")
+    .eq("id", seasonId)
+    .maybeSingle();
+  if (!seasonRow) return null;
+  const leagues = await loadLeaguesForCompetition(sb, seasonRow.competition_id as string);
+  return leagues[0]?.leagueId ?? null;
+}
+
+/**
+ * Résout la ligue à afficher : celle demandée en paramètre si le joueur en est
+ * membre, sinon sa plus ancienne ligue. `null` s'il n'est dans aucune —
+ * à l'appelant de rediriger vers `/accueil`.
+ */
+export async function resolveLeagueId(
+  sb: SupabaseClient,
+  userId: Uuid,
+  requested?: string | null,
+): Promise<{ leagueId: Uuid; leagues: LeagueMembership[] } | null> {
+  const leagues = await loadMyLeagues(sb, userId);
+  if (leagues.length === 0) return null;
+  const leagueId =
+    requested && leagues.some((l) => l.leagueId === requested) ? requested : leagues[0].leagueId;
+  return { leagueId, leagues };
+}
+
 /** Les compétitions réellement jouables (celles qui ont au moins une ligue possible). */
 export async function loadJoinableCompetitions(
   sb: SupabaseClient,

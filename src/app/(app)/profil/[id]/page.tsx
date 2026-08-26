@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
 import { getViewer } from "@/lib/auth/session";
+import { createClient } from "@/lib/supabase/server";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadProfiles } from "@/lib/stats/queries";
 import { computeHeadToHead } from "@/lib/stats/head-to-head";
 import { PlayerAvatar } from "../../_components/player-avatar";
@@ -12,11 +14,14 @@ export const metadata: Metadata = { title: "Profil" };
 export const dynamic = "force-dynamic";
 
 const idSchema = z.string().uuid();
+const searchParamsSchema = z.object({ league: z.string().uuid().optional() });
 
 export default async function ProfilJoueurPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ league?: string }>;
 }) {
   const viewer = await getViewer();
   if (!viewer) redirect("/connexion");
@@ -25,7 +30,12 @@ export default async function ProfilJoueurPage({
   if (!parsed.success) notFound();
   if (parsed.data === viewer.id) redirect("/profil");
 
-  const data = await loadProfiles();
+  const sb = await createClient();
+  const { league: requested } = searchParamsSchema.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+
+  const data = await loadProfiles(resolved.leagueId);
   const them = data?.profiles.get(parsed.data);
   if (!them) notFound();
 
@@ -88,7 +98,7 @@ export default async function ProfilJoueurPage({
         </Card>
       )}
 
-      <ProfileView profile={them} others={[]} isMe={false} />
+      <ProfileView profile={them} others={[]} isMe={false} leagueId={resolved.leagueId} />
     </div>
   );
 }

@@ -20,8 +20,8 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 
 Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
 plusieurs par compétition, chacune avec ses membres, sa clé, son classement,
-son espace d'administration. Deux incréments livrés ; la suite est identifiée
-mais pas encore faite.
+son espace d'administration. Trois incréments livrés ; la suite est
+identifiée mais pas encore faite.
 
 **Livré :**
 - Tables `leagues`/`league_members` (migration `0033_leagues.sql`).
@@ -42,33 +42,50 @@ mais pas encore faite.
   directement, plusieurs → accueil pour choisir.
 - `src/lib/leagues/*` : lecture, écriture (rejoindre/créer/modifier/
   régénérer la clé/gérer les membres), génération de clé pure et testée.
+- **(3ᵉ incrément, 26 août)** `/journee`, `/classement`, `/regles`,
+  `/match/[id]`, `/match/[id]/points`, `/profil` et `/profil/[id]` sont
+  passés de `?ligue=top14|prod2` (code de compétition en dur) à
+  `?league=<id>` (identifiant de ligue) — le pont temporaire noté plus bas
+  a disparu. `loadJourneyBoard`, `loadActiveSeason`, `loadMatchCenter`
+  prennent désormais une ligue, jamais une compétition par défaut.
+  `loadStandingsData` — et donc le classement, l'historique et les fiches
+  joueurs — ne lit plus `profiles.is_active=true` globalement mais les
+  membres de la ligue affichée (`league_members`) : c'était un vrai bug,
+  pas seulement un manque de cloisonnement — avant ce correctif, le
+  classement d'une ligue montrait déjà tous les joueurs actifs de
+  l'application, toutes ligues confondues. `round_participation` (SQL,
+  migration `0034_league_scoped_journey.sql`) joint maintenant
+  `league_members` au lieu de `group_members`. Nouvel helper
+  `resolveLeagueId` (`src/lib/leagues/queries.ts`) centralise « quelle
+  ligue afficher, sinon rediriger vers `/accueil` » sur tous ces écrans.
+  Au passage, deux bugs préexistants corrigés : `regles/page.tsx` et
+  `match/[id]/points/page.tsx` retombaient sur le Top 14 par défaut
+  (`loadActiveSeason(sb)` sans argument) ; `classement/top14/page.tsx`
+  (renommé `classement/reel/page.tsx`) était pareillement figé sur le
+  Top 14 quelle que soit la ligue affichée.
 
 **Décision de séquencement (documentée dans le plan, à relire avant de
 continuer) :** l'inscription reste fermée au code général existant. Ouvrir
 l'inscription à une clé de ligue à de vrais inconnus est un chantier séparé,
 volontairement reporté après que le cloisonnement soit prouvé solide.
 
-**Pont temporaire, à ne pas oublier :** `/journee` et `/classement`
-utilisent toujours `?ligue=top14|prod2` (code de compétition), pas encore
-`?league=<id>`. Ça tient tant qu'une compétition n'a qu'une seule ligue —
-casse le jour où deux ligues partagent une compétition.
-
 **Pas encore fait (périmètre du plan, non commencé) :**
-- Faire basculer `/journee`, `/classement`, `loadJourneyBoard`,
-  `loadStandingsData`, `loadMatchCenter` sur l'identifiant de ligue plutôt
-  que le code de compétition — c'est ce qui rend le classement réellement
-  propre à chaque ligue.
-- `saveStandingsSnapshot` (`settle.ts`), stats perso (`stats/queries.ts` +
-  pages profil) : encore calculés globalement, pas par ligue.
-- Fil social (`feed_posts.group_id` → `league_id`), badges/séries,
-  crédits/pouvoirs (`tokens`/`power_usages`) : toujours scopés par groupe/
-  saison entière, pas encore par ligue.
-- Deux bugs préexistants repérés (saison Top 14 par défaut sans le vouloir) :
-  `src/app/(app)/regles/page.tsx` et `src/app/(app)/match/[id]/points/page.tsx`.
+- `saveStandingsSnapshot`/badges/séries à la clôture de journée
+  (`settle.ts`, `badges/actions.ts`) : calculent désormais leurs standings
+  pour LA ligue d'une compétition (`resolveLeagueForSeason`), mais restent
+  écrits à des clés partagées par compétition
+  (`standings_snapshots(season_id, round_id, kind)`, `user_badges`,
+  `streaks`) — correct tant qu'une compétition n'a qu'une seule ligue
+  (vrai aujourd'hui), à refaire avec une colonne `league_id` le jour où
+  deux ligues partagent une compétition.
+- Fil social (`feed_posts.group_id` → `league_id`), crédits/pouvoirs
+  (`tokens`/`power_usages`, `src/lib/powers/*`) : toujours scopés par
+  groupe/saison entière, pas encore par ligue.
 
 ## Base de données
 
-40 tables, RLS active partout. Migrations appliquées jusqu'à **0031**.
+42 tables (dont `leagues`/`league_members`), RLS active partout. Migrations
+appliquées jusqu'à **0034**.
 
 ⚠️ Le 26 août, les migrations 0023 à 0030 n'étaient en réalité **jamais
 appliquées** en base malgré ce que ce fichier annonçait — un bug de la 0026

@@ -57,8 +57,8 @@ export interface RoundSummary {
 export interface JourneyBoard {
   userId: Uuid;
   seasonId: Uuid;
-  /** Code de la compétition affichée (`top14`, `prod2`…). */
-  competitionCode: string;
+  /** La ligue affichée — chaque ligue a son propre classement et sa propre navigation. */
+  leagueId: Uuid;
   competitionName: string;
   round: Round;
   /** Les journées voisines, pour la navigation. */

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason } from "@/lib/standings/queries";
 import { loadRuleset, loadSettings, setting } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/session";
@@ -22,12 +24,21 @@ function periodLabel(period: string) {
   return period === "round" ? "journée" : period === "month" ? "mois" : period === "season" ? "saison" : "match";
 }
 
-export default async function ReglesPage() {
+const params = z.object({ league: z.string().uuid().optional() });
+
+export default async function ReglesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ league?: string }>;
+}) {
   const viewer = await getViewer();
   if (!viewer) redirect("/connexion");
 
   const sb = await createClient();
-  const season = await loadActiveSeason(sb);
+  const { league: requested } = params.catch({}).parse(await searchParams);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
+  if (!resolved) redirect("/accueil");
+  const season = await loadActiveSeason(sb, resolved.leagueId);
   if (!season) redirect("/journee");
 
   const [ruleset, settings] = await Promise.all([
@@ -49,7 +60,7 @@ export default async function ReglesPage() {
     <div className="flex flex-col gap-2.5">
       <header className="flex items-center gap-3">
         <Link
-          href="/journee"
+          href={`/journee?league=${resolved.leagueId}`}
           aria-label="Retour"
           className="grid size-[38px] shrink-0 place-items-center rounded-full border border-line-strong text-ink-muted"
         >

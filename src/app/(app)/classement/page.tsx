@@ -7,9 +7,11 @@
  */
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import {
   DEFAULT_FORM_WINDOW,
   computeStandings,
@@ -37,14 +39,10 @@ const QuerySchema = z.object({
   vue: z.enum(["general", "journee", "forme"]).catch("general"),
   portee: z.enum(["live", "officiel"]).catch("live"),
   journee: z.coerce.number().int().min(1).max(99).nullable().catch(null),
-  ligue: z.enum(["top14", "prod2"]).catch("top14"),
 });
 
 type View = z.infer<typeof QuerySchema>["vue"];
 type Reach = z.infer<typeof QuerySchema>["portee"];
-type Ligue = z.infer<typeof QuerySchema>["ligue"];
-
-const LIGUE_LABELS: Record<Ligue, string> = { top14: "Top 14", prod2: "Pro D2" };
 
 const KIND_OF: Record<View, StandingsKind> = {
   general: "overall",
@@ -65,7 +63,7 @@ function buildHref(params: {
   vue: View;
   portee: Reach;
   journee?: number | null;
-  ligue: Ligue;
+  league: string;
 }): string {
   const search = new URLSearchParams();
   if (params.vue !== "general") search.set("vue", params.vue);
@@ -73,9 +71,8 @@ function buildHref(params: {
   if (params.vue === "journee" && params.journee) {
     search.set("journee", String(params.journee));
   }
-  if (params.ligue !== "top14") search.set("ligue", params.ligue);
-  const query = search.toString();
-  return query ? `/classement?${query}` : "/classement";
+  search.set("league", params.league);
+  return `/classement?${search.toString()}`;
 }
 
 export default async function ClassementPage({
@@ -88,15 +85,19 @@ export default async function ClassementPage({
     vue: firstValue(raw.vue),
     portee: firstValue(raw.portee),
     journee: firstValue(raw.journee),
-    ligue: firstValue(raw.ligue),
   });
 
   const sb = await createClient();
   const {
     data: { user },
   } = await sb.auth.getUser();
+  if (!user) redirect("/connexion");
 
-  const season = await loadActiveSeason(sb, query.ligue);
+  const resolved = await resolveLeagueId(sb, user.id, firstValue(raw.league));
+  if (!resolved) redirect("/accueil");
+  const { leagueId, leagues: myLeagues } = resolved;
+
+  const season = await loadActiveSeason(sb, leagueId);
   if (!season) {
     return (
       <PageShell title="Classement" subtitle="Aucune saison active">
@@ -109,7 +110,7 @@ export default async function ClassementPage({
   }
 
   const [data, history] = await Promise.all([
-    loadStandingsData(sb, season),
+    loadStandingsData(sb, season, leagueId),
     loadStandingsHistory(sb, season.id),
   ]);
   const scope = SCOPE_OF[query.portee];
@@ -142,20 +143,20 @@ export default async function ClassementPage({
       vue: value,
       portee: query.portee,
       journee: value === "journee" ? (referenceRound ? roundNumber(data, referenceRound.id) : null) : null,
-      ligue: query.ligue,
+      league: leagueId,
     }),
   }));
 
   const reachOptions = (["live", "officiel"] as Reach[]).map((value) => ({
     value,
     label: value === "live" ? "Live" : "Officiel",
-    href: buildHref({ vue: query.vue, portee: value, journee: query.journee, ligue: query.ligue }),
+    href: buildHref({ vue: query.vue, portee: value, journee: query.journee, league: leagueId }),
   }));
 
-  const ligueOptions = (["top14", "prod2"] as Ligue[]).map((value) => ({
-    value,
-    label: LIGUE_LABELS[value],
-    href: buildHref({ vue: query.vue, portee: query.portee, journee: null, ligue: value }),
+  const ligueOptions = myLeagues.map((l) => ({
+    value: l.leagueId,
+    label: l.leagueName,
+    href: buildHref({ vue: query.vue, portee: query.portee, journee: null, league: l.leagueId }),
   }));
 
   // Les matchs de la journée affichée : la porte d'entrée du Match Center.
@@ -175,7 +176,9 @@ export default async function ClassementPage({
       banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
     >
       <div className="flex flex-col gap-3">
-        <Segmented options={ligueOptions} current={query.ligue} label="Compétition" />
+        {ligueOptions.length > 1 && (
+          <Segmented options={ligueOptions} current={leagueId} label="Ligue" />
+        )}
         <Segmented options={viewOptions} current={query.vue} label="Type de classement" />
         <Segmented options={reachOptions} current={query.portee} label="Portée du classement" />
         <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
@@ -194,7 +197,7 @@ export default async function ClassementPage({
                   vue: "journee",
                   portee: query.portee,
                   journee: roundNumber(data, played[referenceIndex - 1].id),
-                  ligue: query.ligue,
+                  league: leagueId,
                 })
               : null
           }
@@ -204,7 +207,7 @@ export default async function ClassementPage({
                   vue: "journee",
                   portee: query.portee,
                   journee: roundNumber(data, played[referenceIndex + 1].id),
-                  ligue: query.ligue,
+                  league: leagueId,
                 })
               : null
           }
@@ -252,10 +255,10 @@ export default async function ClassementPage({
       )}
 
       <Link
-        href="/classement/top14"
+        href={`/classement/reel?league=${leagueId}`}
         className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 text-sm font-semibold text-clay shadow-[var(--shadow-card)] transition hover:bg-surface-sunk"
       >
-        Voir le classement réel du Top 14 →
+        Voir le classement réel de {season.competitionName} →
       </Link>
     </PageShell>
   );

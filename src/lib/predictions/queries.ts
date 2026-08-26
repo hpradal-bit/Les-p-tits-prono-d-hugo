@@ -152,9 +152,13 @@ export function pickCurrentRound(rounds: RoundRow[], now: Date): RoundRow | null
 async function loadParticipation(
   sb: SupabaseClient,
   roundId: Uuid,
+  leagueId: Uuid,
 ): Promise<ParticipationRow[]> {
-  const { data, error } = await sb.rpc("round_participation", { p_round_id: roundId });
-  // Un joueur qui n'est pas encore rattaché au groupe se fait refuser : ce
+  const { data, error } = await sb.rpc("round_participation", {
+    p_round_id: roundId,
+    p_league_id: leagueId,
+  });
+  // Un joueur qui n'est pas encore rattaché à la ligue se fait refuser : ce
   // n'est pas une erreur d'écran, on affiche simplement la liste vide.
   if (error || !data) return [];
 
@@ -173,37 +177,45 @@ async function loadParticipation(
 export interface LoadJourneyOptions {
   /** Numéro de journée demandé ; à défaut, la journée en cours. */
   roundNumber?: number;
-  /** Code de la compétition demandée ; à défaut, le Top 14 (règle n° 5). */
-  competitionCode?: string;
+  /** La ligue dont on affiche la journée — pas de valeur par défaut : c'est
+   *  à l'appelant de la résoudre (cf. `resolveLeagueId`). */
+  leagueId: Uuid;
 }
 
 /**
  * Charge tout l'écran « Ma journée » pour le joueur connecté.
- * Renvoie null s'il n'y a pas de session : c'est à la page de rediriger.
+ * Renvoie null s'il n'y a pas de session, ou si le joueur n'est pas membre de
+ * la ligue demandée (la lecture de `leagues` est déjà soumise à RLS) : c'est
+ * à la page de rediriger.
  */
-export async function loadJourneyBoard(
-  opts: LoadJourneyOptions = {},
-): Promise<JourneyBoard | null> {
+export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<JourneyBoard | null> {
   const sb = await createClient();
   const now = new Date();
-  const competitionCode = opts.competitionCode ?? "top14";
 
-  // --- Étape 1 : auth + saison en parallèle --------------------------------
-  // Filtrer par code de compétition plutôt que par statut « active » permet à
-  // plusieurs compétitions de vivre en même temps (règle n° 5).
-  const [{ data: { user } }, { data: season }] = await Promise.all([
+  // --- Étape 1 : auth + ligue + saison en parallèle ------------------------
+  // La ligue porte la compétition ; RLS (`leagues_read`) refuse déjà toute
+  // ligue dont le joueur n'est pas membre — pas besoin de le revérifier ici.
+  const [{ data: { user } }, { data: league }] = await Promise.all([
     sb.auth.getUser(),
-    sb.from("seasons")
-      .select("id, competitions:competition_id!inner(code, name)")
-      .eq("competitions.code", competitionCode)
-      .order("starts_on", { ascending: false })
-      .limit(1)
+    sb.from("leagues")
+      .select("competition_id, competitions:competition_id!inner(name)")
+      .eq("id", opts.leagueId)
       .maybeSingle(),
   ]);
-  if (!user || !season) return null;
-  const seasonId = season.id as string;
-  const competitionRow = Array.isArray(season.competitions) ? season.competitions[0] : season.competitions;
+  if (!user || !league) return null;
+
+  const competitionRow = Array.isArray(league.competitions) ? league.competitions[0] : league.competitions;
   const competitionName = (competitionRow as { name: string } | null)?.name ?? "Compétition";
+
+  const { data: season } = await sb
+    .from("seasons")
+    .select("id")
+    .eq("competition_id", league.competition_id)
+    .order("starts_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!season) return null;
+  const seasonId = season.id as string;
 
   // --- Étape 2 : journées + pronos + barème + réglages en parallèle ---------
   const [{ data: roundRows }, { data: predictionRows }, ruleset, settings] =
@@ -246,7 +258,7 @@ export async function loadJourneyBoard(
       .order("kickoff_at"),
     sb.from("teams")
       .select("id, code, name, short_name, city, logo_url, primary_color, secondary_color"),
-    loadParticipation(sb, roundRow.id),
+    loadParticipation(sb, roundRow.id, opts.leagueId),
   ]);
 
   const seasonFixtures = (fixtureRows ?? []) as FixtureRow[];
@@ -313,7 +325,7 @@ export async function loadJourneyBoard(
   return {
     userId: user.id,
     seasonId,
-    competitionCode,
+    leagueId: opts.leagueId,
     competitionName,
     round: toRound(roundRow),
     previousRound: previous

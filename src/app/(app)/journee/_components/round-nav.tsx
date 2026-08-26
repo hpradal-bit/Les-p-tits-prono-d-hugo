@@ -8,12 +8,12 @@ import type { RoundSummary } from "@/lib/predictions/types";
 export function RoundNav({
   rounds,
   currentNumber,
-  competitionCode,
+  leagueId,
 }: {
   rounds: RoundSummary[];
   currentNumber: number;
-  /** Sans elle, changer de journée renverrait vers le Top 14. */
-  competitionCode: string;
+  /** Sans elle, changer de journée perdrait la ligue affichée. */
+  leagueId: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLAnchorElement>(null);
@@ -33,7 +33,7 @@ export function RoundNav({
           <Link
             key={r.id}
             ref={active ? activeRef : undefined}
-            href={`/journee?ligue=${competitionCode}&j=${r.number}`}
+            href={`/journee?league=${leagueId}&j=${r.number}`}
             className={cn(
               "shrink-0 rounded-full px-3 py-1.5 font-mono text-[12px] font-semibold transition",
               active
