@@ -108,12 +108,12 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
    ligne absente comme un « oui » implicite et ignorait `default_enabled`, si
    bien qu'un type ajouté « éteint par défaut » se serait affiché coupé tout en
    partant quand même. 13 tests.
-4. **Pouvoirs « Coming soon »** — §36 du cahier des charges : afficher grisés
-   les pouvoirs à venir, comme ailleurs dans l'application.
-5. ~~**Multi-ligue**~~ — pour partie fait le 26 août : Pro D2 en banc d'essai
-   avant le Top 14 (voir « Fait » ci-dessus). Reste : `groups.active_season_id`
-   toujours singulier, écran « Mes compétitions » du cahier des charges non
-   construit, pouvoirs/crédits pas encore scopés par compétition.
+Rien d'autre en attente pour l'instant. Deux chantiers envisagés ont été
+abandonnés le 26 août, à la demande d'Hugo : le grisage des pouvoirs
+« Coming soon » (§36), et la suite du multi-ligue (relation groupe ↔
+plusieurs saisons, écran « Mes compétitions », pouvoirs/crédits scopés par
+compétition). La Pro D2 en banc d'essai (voir « Fait » ci-dessus) reste en
+place telle quelle.
 
 ## Pour tester la Pro D2 avant jeudi
 
@@ -158,13 +158,14 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
 
 ## Points ouverts
 
-- **Clé secrète Supabase à faire tourner.** Elle a été exposée dans une
-  conversation le 25 août. Régénérer dans Supabase → Settings → API Keys, puis
-  reporter dans Vercel → Environment Variables → `SUPABASE_SERVICE_ROLE_KEY`,
-  puis redéployer. Tant que ce n'est pas fait, l'accès admin de la production
-  peut être cassé si l'ancienne clé a été révoquée sans mise à jour de Vercel.
-- **Distribuer des crédits** depuis Admin → Pouvoirs (10 par joueur, valeur par
-  défaut de la spec) pour que les pouvoirs deviennent activables.
+Aucun pour l'instant.
+
+- ~~**Clé secrète Supabase à faire tourner.**~~ ✅ fait le 26 août. Nouvelle
+  clé `sb_secret_...` créée dans Supabase, posée dans Vercel
+  (`SUPABASE_SERVICE_ROLE_KEY`), redéployée, anciennes clés supprimées.
+  Vérifié après coup : 403 requêtes servies en 200, zéro erreur — la
+  production tourne avec la nouvelle clé.
+- ~~**Distribuer des crédits**~~ ✅ fait le 26 août depuis Admin → Pouvoirs.
 
 ## Pièges déjà rencontrés
 
