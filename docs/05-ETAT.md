@@ -20,7 +20,7 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 
 Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
 plusieurs par compétition, chacune avec ses membres, sa clé, son classement,
-son espace d'administration. Trois incréments livrés ; la suite est
+son espace d'administration. Quatre incréments livrés ; la suite est
 identifiée mais pas encore faite.
 
 **Livré :**
@@ -63,6 +63,18 @@ identifiée mais pas encore faite.
   (`loadActiveSeason(sb)` sans argument) ; `classement/top14/page.tsx`
   (renommé `classement/reel/page.tsx`) était pareillement figé sur le
   Top 14 quelle que soit la ligue affichée.
+- **(4ᵉ incrément, 26 août)** RLS resserrée sur les cinq dernières tables
+  encore assises sur `is_member()` : `user_badges`, `streaks`, `tokens`,
+  `power_usages`, `bonus_scores` (migration
+  `0035_league_scoped_gamification.sql`). Sans nouvelle colonne : ces tables
+  se rattachent toutes à une saison (directement, ou via `round_id`/
+  `question_id`), et une saison ne porte aujourd'hui qu'une seule ligue — les
+  fonctions `league_of_season`/`league_of_round` la retrouvent par cette
+  route, à revoir avec `resolveLeagueForSeason` (TypeScript) le jour où une
+  compétition héberge plusieurs ligues. Sans risque pour l'usage actuel :
+  toutes les lectures applicatives de ces tables passent déjà par le client
+  de service (RLS contournée), sauf `bonus_scores` dans `loadStandingsData`,
+  où le joueur consulte toujours une ligue dont il est membre.
 
 **Décision de séquencement (documentée dans le plan, à relire avant de
 continuer) :** l'inscription reste fermée au code général existant. Ouvrir
@@ -78,14 +90,27 @@ volontairement reporté après que le cloisonnement soit prouvé solide.
   `streaks`) — correct tant qu'une compétition n'a qu'une seule ligue
   (vrai aujourd'hui), à refaire avec une colonne `league_id` le jour où
   deux ligues partagent une compétition.
-- Fil social (`feed_posts.group_id` → `league_id`), crédits/pouvoirs
-  (`tokens`/`power_usages`, `src/lib/powers/*`) : toujours scopés par
-  groupe/saison entière, pas encore par ligue.
+- **Fil social (`/vestiaire`), en attente d'une décision produit** : les
+  RLS `feed_posts_read`/`reactions_read`/`comments_read` lisent encore
+  `is_member()`, et l'écriture (`publishPost`, `toggleReaction`) est câblée
+  sur `viewer.groupId` — le groupe unique, pas une ligue. Contrairement aux
+  autres tables, `feed_posts` ne peut pas être rattaché à une ligue par une
+  simple fonction de dérivation : un mot publié dans le Vestiaire n'est lié
+  à aucune saison ni compétition, donc à aucune ligue. Le cloisonner pour de
+  bon demande d'abord de trancher : un fil par ligue avec un sélecteur sur
+  `/vestiaire` (et une question ouverte sur les vieux messages, impossibles
+  à rattacher rétroactivement à une ligue), ou un fil resté volontairement
+  commun à toutes les ligues d'un joueur. Pas commencé tant que ce n'est
+  pas tranché.
+- Crédits/pouvoirs (`tokens`/`power_usages`, `src/lib/powers/*`) : la
+  lecture est cloisonnée par ligue depuis la migration `0035` (RLS), mais la
+  distribution et la consommation des crédits restent pensées par saison
+  entière côté application, pas par ligue.
 
 ## Base de données
 
 42 tables (dont `leagues`/`league_members`), RLS active partout. Migrations
-appliquées jusqu'à **0034**.
+appliquées jusqu'à **0035**.
 
 ⚠️ Le 26 août, les migrations 0023 à 0030 n'étaient en réalité **jamais
 appliquées** en base malgré ce que ce fichier annonçait — un bug de la 0026
