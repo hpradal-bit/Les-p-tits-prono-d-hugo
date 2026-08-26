@@ -1,10 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import {
-  saveNotificationPreferences,
-  PREFERENCES_IDLE,
-} from "@/lib/push/preferences-actions";
+import { saveNotificationPreferences } from "@/lib/push/preferences-actions";
+import { PREFERENCES_IDLE } from "@/lib/push/preferences-state";
 import type { EffectivePreference } from "@/lib/push/preferences";
 
 /**

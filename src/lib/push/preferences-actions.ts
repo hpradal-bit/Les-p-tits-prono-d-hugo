@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings, setting } from "@/lib/settings";
 import { settableKinds, type CatalogEntry } from "./preferences.ts";
+import type { PreferencesState } from "./preferences-state";
 
 /**
  * Enregistrement des préférences de notification d'un joueur.
@@ -18,13 +19,6 @@ import { settableKinds, type CatalogEntry } from "./preferences.ts";
  * inventé dans le formulaire n'écrit rien (règle n° 7 — toute entrée est
  * validée côté serveur, même si l'écran la valide déjà).
  */
-
-export interface PreferencesState {
-  status: "idle" | "success" | "error";
-  message?: string;
-}
-
-export const PREFERENCES_IDLE: PreferencesState = { status: "idle" };
 
 /** Les cases cochées arrivent en `on` ; les décochées n'arrivent pas du tout. */
 const FormSchema = z.object({
