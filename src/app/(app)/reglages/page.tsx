@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Card, Label } from "@/components/ui";
+import { Button, Card, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings, setting } from "@/lib/settings";
 import { readRules, hasQuietHours } from "@/lib/push/rules";
 import { getViewer } from "@/lib/auth/session";
+import { signOut } from "@/lib/auth/actions";
 import { mergePreferences, type CatalogEntry } from "@/lib/push/preferences";
 import { NotificationSwitch } from "./notification-switch";
 import { NotificationTypesForm } from "./notification-types-form";
@@ -115,6 +116,12 @@ export default async function ReglagesPage() {
           Changer de ligue
         </Link>
       </div>
+
+      <form action={signOut}>
+        <Button type="submit" variant="ghost" className="w-full">
+          Se déconnecter
+        </Button>
+      </form>
     </div>
   );
 }
