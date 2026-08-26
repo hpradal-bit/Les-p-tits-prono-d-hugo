@@ -16,7 +16,15 @@ interface RoundOption {
   number: number;
 }
 
-export function CreateForm({ teams, rounds }: { teams: TeamOption[]; rounds: RoundOption[] }) {
+export function CreateForm({
+  leagueId,
+  teams,
+  rounds,
+}: {
+  leagueId: string;
+  teams: TeamOption[];
+  rounds: RoundOption[];
+}) {
   const kinds = allKinds();
   const [kind, setKind] = useState(kinds[0]?.kind ?? "");
   const [prompt, setPrompt] = useState("");
@@ -77,6 +85,7 @@ export function CreateForm({ teams, rounds }: { teams: TeamOption[]; rounds: Rou
     setMessage(null);
 
     const payload: Record<string, unknown> = {
+      leagueId,
       kind,
       prompt: prompt.trim(),
       ...(roundId ? { roundId } : {}),

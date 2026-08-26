@@ -214,7 +214,7 @@ function MiniAnswerForm({ item }: { item: BonusItem }) {
   );
 }
 
-export function BonusBanner({ items }: { items: BonusItem[] }) {
+export function BonusBanner({ items, leagueId }: { items: BonusItem[]; leagueId: string }) {
   if (items.length === 0) return null;
 
   return (
@@ -223,7 +223,7 @@ export function BonusBanner({ items }: { items: BonusItem[] }) {
         <span className="text-[18px]">🎯</span>
         <h2 className="text-[14px] font-bold text-ink">Questions bonus</h2>
         <Link
-          href="/questions"
+          href={`/questions?league=${leagueId}`}
           className="ml-auto text-[12px] font-semibold text-clay hover:underline"
         >
           Tout voir

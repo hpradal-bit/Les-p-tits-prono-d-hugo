@@ -199,7 +199,7 @@ export default async function JourneePage({
 
       {vapidKey && <NotificationPrompt vapidPublicKey={vapidKey} />}
 
-      <BonusBanner items={bonusItems} />
+      <BonusBanner items={bonusItems} leagueId={board.leagueId} />
 
       <PowerBanner
         powers={powerOptions}

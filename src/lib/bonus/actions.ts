@@ -5,7 +5,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
-import { currentSeasonId } from "@/lib/admin/queries";
+import { loadActiveSeason } from "@/lib/standings/queries";
+import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { requireKind } from "./registry.ts";
 import { enqueue } from "@/lib/push/notify.ts";
 import { dedupeKey } from "@/lib/push/schedule.ts";
@@ -13,6 +14,7 @@ import { flushDue } from "@/lib/push/notify.ts";
 import type { AdminActionState } from "@/lib/admin/types";
 
 const createSchema = z.object({
+  leagueId: z.string().uuid(),
   kind: z.string().min(1),
   prompt: z.string().min(3).max(500),
   roundId: z.string().uuid().nullable().optional(),
@@ -50,7 +52,12 @@ export async function createBonusQuestion(
   }
 
   const admin = createAdminClient();
-  const seasonId = await currentSeasonId(admin);
+  // La ligue choisie porte la compétition, donc la saison : jamais « la »
+  // saison courante — deux ligues sur des compétitions différentes peuvent
+  // vivre en même temps (règle n° 5).
+  const season = await loadActiveSeason(admin, parsed.data.leagueId);
+  if (!season) return { status: "error", message: "Aucune saison pour cette ligue." };
+  const seasonId = season.id;
 
   const deadlineMinutes = parsed.data.deadlineMinutes ?? null;
   const storedConfig = deadlineMinutes
@@ -90,7 +97,7 @@ export async function openBonusQuestion(
 
   const { data: q } = await admin
     .from("bonus_questions")
-    .select("id, status, prompt, config")
+    .select("id, status, prompt, config, season_id")
     .eq("id", questionId)
     .single();
 
@@ -124,14 +131,18 @@ export async function openBonusQuestion(
 
   await admin.from("events").insert({
     kind: "bonus_question",
-    season_id: await currentSeasonId(admin),
+    season_id: q.season_id,
     actor_id: ctx.userId,
     payload: { prompt: q.prompt },
   });
 
-  const { data: members } = await admin
-    .from("group_members")
-    .select("user_id");
+  // Seuls les membres de la ligue dont relève cette question sont notifiés —
+  // pas tout le groupe, sinon une question Pro D2 réveillerait aussi les
+  // joueurs qui n'en sont pas membres.
+  const leagueId = await resolveLeagueForSeason(admin, q.season_id as string);
+  const { data: members } = leagueId
+    ? await admin.from("league_members").select("user_id").eq("league_id", leagueId)
+    : { data: [] };
 
   for (const m of members ?? []) {
     await enqueue(admin, {
