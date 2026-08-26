@@ -6,18 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import { loadSettings, setting } from "@/lib/settings";
 import { readRules, hasQuietHours } from "@/lib/push/rules";
 import { getViewer } from "@/lib/auth/session";
+import { mergePreferences, type CatalogEntry } from "@/lib/push/preferences";
 import { NotificationSwitch } from "./notification-switch";
+import { NotificationTypesForm } from "./notification-types-form";
 
 export const metadata: Metadata = { title: "Réglages" };
 export const dynamic = "force-dynamic";
-
-interface CatalogEntry {
-  kind: string;
-  emoji: string;
-  label: string;
-  description: string;
-  wired?: boolean;
-}
 
 export default async function ReglagesPage() {
   const viewer = await getViewer();
@@ -27,6 +21,18 @@ export default async function ReglagesPage() {
   const settings = await loadSettings(sb);
   const catalog = setting<CatalogEntry[]>(settings, "notifications.types", []);
   const rules = readRules(settings);
+
+  // Les choix du joueur — RLS oblige, on ne peut lire que les siens.
+  const { data: prefRows } = await sb
+    .from("notification_preferences")
+    .select("kind, is_enabled")
+    .eq("user_id", viewer.id)
+    .eq("channel", "push");
+
+  const preferences = mergePreferences(
+    catalog,
+    (prefRows ?? []) as Array<{ kind: string; is_enabled: boolean }>,
+  );
   const { quietFrom, quietTo, maxPerDay } = rules;
   const vapid = setting<string>(settings, "push_notifications.vapid_public_key", "");
 
@@ -56,27 +62,10 @@ export default async function ReglagesPage() {
         )}
       </Card>
 
-      {catalog.length > 0 && (
+      {preferences.length > 0 && (
         <Card className="flex flex-col gap-3 p-4">
-          <Label>Ce que tu recevras</Label>
-          <ul className="flex flex-col gap-2.5">
-            {catalog.map((c) => (
-              <li key={c.kind} className={`flex items-start gap-3 ${c.wired ? "" : "opacity-45"}`}>
-                <span className="text-[16px]" aria-hidden>{c.emoji}</span>
-                <div className="flex flex-1 flex-col gap-0.5">
-                  <span className="text-[14px] font-semibold text-ink">
-                    {c.label}
-                    {!c.wired && (
-                      <span className="ml-2 rounded-full bg-surface-sunk px-2 py-0.5 font-mono text-[10px] font-normal text-ink-faint">
-                        bientôt
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-[12px] leading-snug text-ink-faint">{c.description}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <Label>Ce que tu reçois</Label>
+          <NotificationTypesForm items={preferences} />
         </Card>
       )}
 

@@ -3,6 +3,7 @@ import { loadSettings, setting } from "@/lib/settings";
 import { sendToUser, type PushPayload } from "./send";
 import { scheduleForAll, dayKey, type QuietHours } from "./schedule";
 import { readRules } from "./rules";
+import { isKindEnabledFor, type CatalogEntry, type PreferenceRow } from "./preferences";
 
 /**
  * Mise en file et envoi des notifications.
@@ -45,7 +46,8 @@ interface Prefs {
   quiet: QuietHours[];
   timeZone: string;
   maxPerDay: number;
-  wiredKinds: Set<string>;
+  /** Le catalogue déclaré : lui seul dit ce qui existe et son défaut. */
+  catalog: CatalogEntry[];
 }
 
 async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> {
@@ -58,7 +60,6 @@ async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> 
     .eq("user_id", userId)
     .maybeSingle();
 
-  type CatalogEntry = { kind: string; wired?: boolean };
   const catalog = setting<CatalogEntry[]>(settings, "notifications.types", []);
 
   // Les heures du groupe sont un plancher, pas un défaut : les siennes
@@ -77,7 +78,7 @@ async function loadPrefs(admin: SupabaseClient, userId: string): Promise<Prefs> 
     quiet,
     timeZone: rules.timeZone,
     maxPerDay: rules.maxPerDay,
-    wiredKinds: new Set(catalog.filter((c) => c.wired).map((c) => c.kind)),
+    catalog,
   };
 }
 
@@ -97,16 +98,24 @@ export async function enqueue(
   if (!prefs.groupEnabled) return "off";
   // Le vrai bouton « tout couper » court-circuite tout le reste.
   if (!prefs.pushEnabled) return "muted";
-  if (!prefs.wiredKinds.has(request.kind)) return "muted";
-
   const { data: pref } = await admin
     .from("notification_preferences")
-    .select("is_enabled")
+    .select("kind, is_enabled")
     .eq("user_id", request.userId)
     .eq("kind", request.kind)
     .eq("channel", "push")
     .maybeSingle();
-  if (pref && pref.is_enabled === false) return "muted";
+
+  // Exactement l'arbitrage de l'écran des réglages, par la même fonction :
+  // type déclaré et branché, puis choix explicite du joueur, sinon le
+  // `default_enabled` du catalogue. Sans ce partage, un type ajouté en
+  // « éteint par défaut » serait montré coupé et partirait quand même.
+  const enabled = isKindEnabledFor(
+    prefs.catalog,
+    pref ? [pref as PreferenceRow] : [],
+    request.kind,
+  );
+  if (!enabled) return "muted";
 
   const now = new Date();
   const today = dayKey(now, prefs.timeZone);

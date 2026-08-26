@@ -40,7 +40,7 @@ active). Identifiant de saison : `648c2e2f-88a7-46f0-b687-7010b0fb944a`.
 | `tokens` | personne n'a de crédit, aucun pouvoir activable |
 | ~~`user_badges`~~ | ✅ attribués à la clôture de journée via `awardRoundBadges` |
 | ~~`streaks`~~ | ✅ mis à jour à la clôture de journée via `persistRoundStreaks` |
-| `notification_preferences` | pas d'écran de réglage par joueur |
+| ~~`notification_preferences`~~ | ✅ écran joueur dans **Réglages**, un interrupteur par type |
 | `standings_snapshots` | se remplira à la première clôture de journée |
 
 ## Fait
@@ -91,7 +91,15 @@ déclaration : rééquilibrer un pouvoir ne réécrit pas les parties jouées.
    registre extensible dans `rules.ts`, câblé dans `settleRound`. 16 tests.
 2. ~~**Séries**~~ — ✅ fait. Persistance dans `src/lib/stats/persist.ts`,
    appelée à la clôture dans `settleRound`. 4 tests ajoutés.
-3. **Notifications** — écran de préférences par joueur.
+3. ~~**Notifications**~~ — ✅ fait. Écran joueur dans **Réglages** : un
+   interrupteur par type de notification, écrit dans `notification_preferences`
+   sous RLS (`notif_prefs_own`), jamais avec la clé de service. La fusion
+   catalogue × choix vit dans une fonction pure partagée,
+   `src/lib/push/preferences.ts`, utilisée **à la fois** par l'écran et par
+   `enqueue` — corrige au passage une divergence : `notify.ts` traitait une
+   ligne absente comme un « oui » implicite et ignorait `default_enabled`, si
+   bien qu'un type ajouté « éteint par défaut » se serait affiché coupé tout en
+   partant quand même. 13 tests.
 4. **Pouvoirs « Coming soon »** — §36 du cahier des charges : afficher grisés
    les pouvoirs à venir, comme ailleurs dans l'application.
 5. ~~**Multi-ligue**~~ — pour partie fait le 26 août : Pro D2 en banc d'essai
