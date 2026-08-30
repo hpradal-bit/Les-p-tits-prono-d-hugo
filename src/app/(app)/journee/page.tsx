@@ -3,12 +3,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, CompetitionLogo } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { LeagueSwitcher } from "@/components/league-switcher";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
-import type { LeagueMembership } from "@/lib/leagues/types.ts";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
@@ -49,10 +48,16 @@ export default async function JourneePage({
   const board = await loadJourneyBoard({ userId: viewer.id, roundNumber: j, leagueId });
   const admin = createAdminClient();
 
+  const ligueOptions = myLeagues.map((l) => ({
+    value: l.leagueId,
+    label: l.leagueName,
+    href: `/journee?league=${l.leagueId}`,
+  }));
+
   if (!board) {
     return (
       <div className="flex flex-col gap-3.5">
-        <LigueTabs leagues={myLeagues} current={leagueId} />
+        <LeagueSwitcher options={ligueOptions} current={leagueId} />
         <Card className="p-8 text-center">
           <p className="text-ink-muted">Rien à afficher pour cette ligue pour l&apos;instant.</p>
         </Card>
@@ -151,7 +156,7 @@ export default async function JourneePage({
 
   return (
     <div className="flex flex-col gap-3.5">
-      <LigueTabs leagues={myLeagues} current={leagueId} />
+      <LeagueSwitcher options={ligueOptions} current={leagueId} />
 
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -274,29 +279,6 @@ export default async function JourneePage({
             .join(" · ") || "Tout le monde a joué."}
         </p>
       )}
-    </div>
-  );
-}
-
-/** Bulles de ligue. Changer de ligue repart sur sa journée en cours. */
-function LigueTabs({ leagues, current }: { leagues: LeagueMembership[]; current: string }) {
-  if (leagues.length < 2) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {leagues.map((l) => (
-        <Link
-          key={l.leagueId}
-          href={`/journee?league=${l.leagueId}`}
-          className={cn(
-            "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition",
-            l.leagueId === current
-              ? "bg-clay text-surface"
-              : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk",
-          )}
-        >
-          {l.leagueName}
-        </Link>
-      ))}
     </div>
   );
 }

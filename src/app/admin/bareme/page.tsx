@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
+import { LeagueSwitcher } from "@/components/league-switcher";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
@@ -72,23 +72,14 @@ export default async function AdminBaremePage({
 
   return (
     <div className="flex flex-col gap-4">
-      {myLeagues.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {myLeagues.map((l) => (
-            <Link
-              key={l.leagueId}
-              href={`/admin/bareme?league=${l.leagueId}`}
-              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
-                l.leagueId === leagueId
-                  ? "bg-clay text-surface"
-                  : "border border-line bg-surface text-ink-muted"
-              }`}
-            >
-              {l.leagueName}
-            </Link>
-          ))}
-        </div>
-      )}
+      <LeagueSwitcher
+        options={myLeagues.map((l) => ({
+          value: l.leagueId,
+          label: l.leagueName,
+          href: `/admin/bareme?league=${l.leagueId}`,
+        }))}
+        current={leagueId}
+      />
 
       <Card className="border-sage/40 bg-sage-soft p-4">
         <p className="text-[14px] leading-relaxed text-ink">

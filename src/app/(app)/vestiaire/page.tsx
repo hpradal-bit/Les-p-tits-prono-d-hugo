@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
+import { LeagueSwitcher } from "@/components/league-switcher";
 import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
@@ -78,23 +79,14 @@ export default async function VestiairePage({
         </p>
       </div>
 
-      {myLeagues.length > 1 && (
-        <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
-          {myLeagues.map((l) => (
-            <Link
-              key={l.leagueId}
-              href={`/vestiaire?league=${l.leagueId}`}
-              className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
-                l.leagueId === leagueId
-                  ? "bg-clay text-surface"
-                  : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
-              }`}
-            >
-              {l.leagueName}
-            </Link>
-          ))}
-        </div>
-      )}
+      <LeagueSwitcher
+        options={myLeagues.map((l) => ({
+          value: l.leagueId,
+          label: l.leagueName,
+          href: `/vestiaire?league=${l.leagueId}`,
+        }))}
+        current={leagueId}
+      />
 
       <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
         {FILTER_LABELS.map((f) => (
