@@ -169,8 +169,12 @@ export function EditableMatchCard({
               {outcomeSideLabel(draft.outcome!, fixture.homeTeam.shortName, fixture.awayTeam.shortName)}
             </span>
             <span className="text-ink-muted">
-              {" · Écart : "}
-              {bucket ? marginBucketSentence(bucket) : "non précisé"}
+              {draft.outcome !== "draw" && (
+                <>
+                  {" · Écart : "}
+                  {bucket ? marginBucketSentence(bucket) : "non précisé"}
+                </>
+              )}
               {" · Score exact : "}
               {exactOn ? `${draft.exactHomeScore}-${draft.exactAwayScore}` : "non parié"}
             </span>
@@ -186,34 +190,36 @@ export function EditableMatchCard({
 
       {expanded && hasProno && (
         <div className="flex flex-col gap-3 border-t border-line pt-3">
-          <div className="flex flex-col gap-2">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
-              Écart
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {ruleset.buckets.map((b) => {
-                const selected = draft.marginBucketId === b.id;
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    disabled={exactOn}
-                    onClick={() => onPickBucket(b.id)}
-                    aria-pressed={selected}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-[12px] transition",
-                      selected
-                        ? "bg-sage font-bold text-surface"
-                        : "border border-line-strong font-semibold text-ink-muted",
-                      exactOn && !selected && "opacity-40",
-                    )}
-                  >
-                    {b.label}
-                  </button>
-                );
-              })}
+          {draft.outcome !== "draw" && (
+            <div className="flex flex-col gap-2">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+                Écart
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {ruleset.buckets.map((b) => {
+                  const selected = draft.marginBucketId === b.id;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      disabled={exactOn}
+                      onClick={() => onPickBucket(b.id)}
+                      aria-pressed={selected}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-[12px] transition",
+                        selected
+                          ? "bg-sage font-bold text-surface"
+                          : "border border-line-strong font-semibold text-ink-muted",
+                        exactOn && !selected && "opacity-40",
+                      )}
+                    >
+                      {b.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {verdict.eligible && (
             <div className="flex flex-col gap-2.5 rounded-2xl bg-surface-sunk p-3">

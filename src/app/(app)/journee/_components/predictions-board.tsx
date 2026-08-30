@@ -157,7 +157,18 @@ export function PredictionsBoard({
   function handlePickOutcome(fixtureId: Uuid, outcome: MatchOutcome) {
     // Choisir un vainqueur à la main referme le score exact : les deux modes
     // de saisie de l'écart ne se mélangent pas, comme sur l'ancien formulaire.
-    updateDraft(fixtureId, { outcome, exactHomeScore: null, exactAwayScore: null }, true);
+    // Un match nul n'a pas d'écart à parier : l'écart d'un nul est toujours
+    // nul par définition, la tranche choisie n'a donc plus de sens.
+    updateDraft(
+      fixtureId,
+      {
+        outcome,
+        exactHomeScore: null,
+        exactAwayScore: null,
+        ...(outcome === "draw" ? { marginBucketId: null } : {}),
+      },
+      true,
+    );
   }
 
   function handlePickBucket(fixtureId: Uuid, bucketId: Uuid) {

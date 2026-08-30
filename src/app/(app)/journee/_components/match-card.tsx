@@ -59,9 +59,11 @@ export function PredictionSummaryBox({
         {outcomeCorrect === true && <span className="text-[11px] font-semibold">Pronostic gagnant</span>}
         {outcomeCorrect === false && <span className="text-[11px] font-semibold">Pronostic perdant</span>}
       </div>
-      <p className={cn("text-[12px]", outcomeCorrect === null ? "text-ink-muted" : "opacity-90")}>
-        Écart : {bucket ? marginBucketSentence(bucket) : "non précisé"}
-      </p>
+      {d.outcome !== "draw" && (
+        <p className={cn("text-[12px]", outcomeCorrect === null ? "text-ink-muted" : "opacity-90")}>
+          Écart : {bucket ? marginBucketSentence(bucket) : "non précisé"}
+        </p>
+      )}
       <p className={cn("text-[12px]", outcomeCorrect === null ? "text-ink-muted" : "opacity-90")}>
         Score exact : {hasExact ? `${d.exactHomeScore}-${d.exactAwayScore}` : "non parié"}
       </p>
