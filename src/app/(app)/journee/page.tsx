@@ -18,6 +18,7 @@ import { PlayerAvatar } from "../_components/player-avatar";
 import { NotificationPrompt } from "../_components/notification-prompt";
 import { getViewer } from "@/lib/auth/session";
 import { MatchCard } from "./_components/match-card";
+import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { RoundNav } from "./_components/round-nav";
@@ -219,16 +220,21 @@ export default async function JourneePage({
         <div className="flex flex-col gap-4">
           {toPlay.length > 0 && (
             <MatchSection title="À jouer" count={toPlay.length}>
-              {toPlay.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
-              ))}
+              <PredictionsBoard
+                fixtures={toPlay}
+                ruleset={board.ruleset}
+                timeZone={board.timeZone}
+                roundId={currentRoundId}
+                seasonId={seasonId}
+                otherAttempts={board.otherAttempts}
+              />
             </MatchSection>
           )}
 
           {locked.length > 0 && (
             <MatchSection title="Verrouillés" count={locked.length}>
               {locked.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
               ))}
             </MatchSection>
           )}
@@ -236,7 +242,7 @@ export default async function JourneePage({
           {live.length > 0 && (
             <MatchSection title="En cours" count={live.length}>
               {live.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
               ))}
             </MatchSection>
           )}
@@ -244,7 +250,7 @@ export default async function JourneePage({
           {done.length > 0 && (
             <MatchSection title="Terminés" count={done.length}>
               {done.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} leagueId={board.leagueId} />
+                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
               ))}
             </MatchSection>
           )}
@@ -252,12 +258,12 @@ export default async function JourneePage({
       )}
 
       {board.remainingToPlay > 0 && (
-        <Link
-          href={`/journee/${board.fixtures.find((f) => !f.isLocked && !f.draft)?.fixture.id ?? board.fixtures[0].fixture.id}?league=${board.leagueId}`}
+        <a
+          href={`#fixture-${board.fixtures.find((f) => !f.isLocked && !f.draft)?.fixture.id ?? board.fixtures[0].fixture.id}`}
           className="sticky bottom-24 mt-1 rounded-full bg-clay px-5 py-4 text-center text-[16px] font-bold text-surface shadow-[var(--shadow-lift)]"
         >
           Faire mes pronos · {board.remainingToPlay} restant{board.remainingToPlay > 1 ? "s" : ""}
-        </Link>
+        </a>
       )}
 
       {board.participation.length > 1 && (

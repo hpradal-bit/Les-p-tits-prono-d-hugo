@@ -35,7 +35,7 @@ export function Countdown({ targetIso }: { targetIso: string }) {
 
   return (
     <span className="rounded-full bg-sage-soft px-3 py-1.5 font-mono text-[12px] font-semibold tabular text-sage">
-      Verrou dans {remaining}
+      Prochain match dans {remaining}
     </span>
   );
 }
