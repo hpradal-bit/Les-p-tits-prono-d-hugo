@@ -89,14 +89,25 @@ export function EditableMatchCard({
   const outcomeButton = (side: "home" | "away") => {
     const team = side === "home" ? fixture.homeTeam : fixture.awayTeam;
     const selected = draft.outcome === side;
+    // Même logique de couleur que l'encart « Ton prono » : la teinte du club
+    // choisi, jamais une couleur générique — cohérent du bouton jusqu'au résumé.
+    const selectedTint = selected ? predictionBoxTint(side, fixture.homeTeam, fixture.awayTeam, null) : null;
     return (
       <button
         type="button"
         onClick={() => onPickOutcome(side)}
         aria-pressed={selected}
+        style={
+          selectedTint
+            ? {
+                background: selectedTint.background,
+                boxShadow: selectedTint.dotColor ? `inset 0 0 0 2px ${selectedTint.dotColor}` : undefined,
+              }
+            : undefined
+        }
         className={cn(
           "flex min-w-0 flex-1 flex-col items-center gap-1.5 rounded-2xl px-2 py-2.5 transition active:scale-[0.98]",
-          selected ? "bg-clay text-surface" : "bg-surface-sunk text-ink",
+          selected ? "text-ink" : "bg-surface-sunk text-ink",
         )}
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface">

@@ -3,12 +3,21 @@
  * ---------------------------------------------------------------------------
  * Deux stratégies, pas une de plus :
  *
- *   · cache-first          logos, icônes, polices, bundles /_next/static —
- *                          des fichiers au nom versionné, donc immuables.
- *   · stale-while-revalidate  les pages. On rend immédiatement la dernière
- *                          version connue, et on rafraîchit en arrière-plan.
- *                          C'est ce qui rend le classement consultable dans
- *                          le métro : la dernière version vue reste lisible.
+ *   · cache-first           logos, icônes, polices, bundles /_next/static —
+ *                           des fichiers au nom versionné, donc immuables.
+ *   · réseau d'abord, avec repli sur le cache  pour les pages. On tente le
+ *     réseau (avec un délai maximum), et on ne retombe sur la dernière
+ *     version connue qu'en cas d'échec ou de silence — c'est ce qui rend le
+ *     classement consultable dans le métro.
+ *
+ *     ⚠️ Ancienne stratégie : « cache d'abord, réseau en arrière-plan »
+ *     (stale-while-revalidate). Corrigée le 30 août — elle réaffichait
+ *     silencieusement une page obsolète tant qu'une entrée existait déjà en
+ *     cache, même avec une connexion parfaite : fermer une question bonus
+ *     dans l'admin, puis revenir sur /questions, montrait encore l'ancien
+ *     état tant que la page n'était pas rechargée une seconde fois. Le
+ *     réseau d'abord élimine ce piège ; le repli sur le cache ne joue plus
+ *     que quand le réseau répond effectivement mal.
  *
  * Et un filet : une page hors-ligne soignée quand rien n'est en cache.
  *
@@ -18,7 +27,7 @@
  * d'import. Du JavaScript de navigateur, lisible à l'œil nu.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `pronos-shell-${VERSION}`; // cache-first
 const PAGES_CACHE = `pronos-pages-${VERSION}`; // stale-while-revalidate
 const CURRENT_CACHES = [SHELL_CACHE, PAGES_CACHE];
@@ -96,7 +105,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(staleWhileRevalidate(event, request));
+    event.respondWith(networkFirst(request));
   }
 });
 
@@ -116,35 +125,37 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
+/** Le réseau n'a ni répondu ni échoué franchement au bout de ce délai : on
+ *  bascule sur la dernière version connue plutôt que de laisser le joueur
+ *  fixer un écran blanc. */
+const NAVIGATE_TIMEOUT_MS = 4000;
+
 /**
- * Pages : on rend le cache tout de suite, on rafraîchit derrière.
+ * Pages : le réseau d'abord, la dernière version connue seulement en repli.
  *
  * Note assumée : on met en cache même quand le serveur répond `no-store`.
  * Next.js marque ainsi toutes les pages dynamiques ; le respecter reviendrait
  * à n'avoir aucun mode hors-ligne. Le cache est local à l'appareil, et il est
  * vidé à la déconnexion via le message `CLEAR_PAGES`.
  */
-async function staleWhileRevalidate(event, request) {
+async function networkFirst(request) {
   const cache = await caches.open(PAGES_CACHE);
-  const cached = await cache.match(request, { ignoreSearch: false });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NAVIGATE_TIMEOUT_MS);
 
-  const fromNetwork = fetch(request)
-    .then(async (response) => {
-      if (response && response.ok && response.type === "basic") {
-        await cache.put(request, response.clone());
-        await trimCache(cache, MAX_PAGES);
-      }
-      return response;
-    })
-    .catch(() => null);
-
-  if (cached) {
-    event.waitUntil(fromNetwork);
-    return cached;
+  try {
+    const response = await fetch(request, { signal: controller.signal });
+    if (response && response.ok && response.type === "basic") {
+      await cache.put(request, response.clone());
+      await trimCache(cache, MAX_PAGES);
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request, { ignoreSearch: false });
+    return cached || offlinePage(request);
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const fresh = await fromNetwork;
-  return fresh || offlinePage(request);
 }
 
 async function trimCache(cache, max) {
