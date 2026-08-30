@@ -10,7 +10,13 @@ const input =
   "w-16 rounded-lg border border-line bg-surface px-2 py-2 text-center font-mono text-lg " +
   "tabular text-ink focus-visible:border-clay";
 
-/** Saisie d'un résultat. Le filet de sécurité quand l'API ne répond plus. */
+/**
+ * Saisie d'un résultat. Le filet de sécurité quand l'API ne répond plus.
+ *
+ * Les deux champs de score acceptent d'être laissés vides : c'est ce qui
+ * permet d'effacer un résultat saisi par erreur sans devoir taper 0-0, qui
+ * est un vrai résultat de match nul, pas une absence de résultat.
+ */
 export function ResultForm({ fixture }: { fixture: AdminFixture }) {
   const [state, action, pending] = useActionState(recordResult, ADMIN_IDLE);
   const [clearState, clearAction, clearing] = useActionState(clearResult, ADMIN_IDLE);
@@ -27,12 +33,12 @@ export function ResultForm({ fixture }: { fixture: AdminFixture }) {
             {fixture.homeName}
           </span>
           <input
-            className={input} name="homeScore" type="number" min={0} max={200} required
+            className={input} name="homeScore" type="number" min={0} max={200}
             defaultValue={fixture.homeScore ?? ""} aria-label={`Score ${fixture.homeName}`}
           />
           <span className="font-mono text-ink-faint">–</span>
           <input
-            className={input} name="awayScore" type="number" min={0} max={200} required
+            className={input} name="awayScore" type="number" min={0} max={200}
             defaultValue={fixture.awayScore ?? ""} aria-label={`Score ${fixture.awayName}`}
           />
           <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">
@@ -50,12 +56,6 @@ export function ResultForm({ fixture }: { fixture: AdminFixture }) {
             Officiel
           </label>
         </div>
-
-        <input
-          name="reason" required minLength={3}
-          placeholder="Raison (ex. : score relevé sur le site de la LNR)"
-          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-ink placeholder:text-ink-faint"
-        />
 
         <div className="flex flex-wrap gap-2">
           <Button type="submit" size="sm" disabled={pending}>

@@ -18,11 +18,6 @@ export function DefaultsForm({ roundId }: { roundId: string }) {
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="roundId" value={roundId} />
-      <input
-        type="hidden"
-        name="reason"
-        value="Pronostics par défaut posés à la main depuis l'espace admin"
-      />
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
         {pending ? "Pose en cours…" : "Poser les pronostics par défaut"}
       </Button>

@@ -29,7 +29,6 @@ function SyncButton({
   action,
   label,
   pendingLabel,
-  reason,
   hint,
   seasonId,
   variant = "ghost",
@@ -37,7 +36,6 @@ function SyncButton({
   action: SyncAction;
   label: string;
   pendingLabel: string;
-  reason: string;
   hint: string;
   seasonId: string;
   variant?: "primary" | "ghost";
@@ -46,7 +44,6 @@ function SyncButton({
 
   return (
     <form action={formAction} className="flex flex-col gap-2">
-      <input type="hidden" name="reason" value={reason} />
       <input type="hidden" name="seasonId" value={seasonId} />
       <div className="flex flex-wrap items-center gap-2.5">
         <Button type="submit" size="sm" variant={variant} disabled={pending}>
@@ -111,7 +108,6 @@ export function SyncButtons({ seasons }: { seasons: SeasonChoice[] }) {
         variant="primary"
         label="Synchroniser le calendrier"
         pendingLabel="Interrogation du fournisseur…"
-        reason="Synchronisation du calendrier déclenchée depuis l'espace admin"
         hint="Matchs, horaires et journées. À lancer en premier."
       />
       <SyncButton
@@ -119,7 +115,6 @@ export function SyncButtons({ seasons }: { seasons: SeasonChoice[] }) {
         seasonId={seasonId}
         label="Relever les scores"
         pendingLabel="Relevé en cours…"
-        reason="Relevé des scores déclenché depuis l'espace admin"
         hint="Forcé, même hors fenêtre de match."
       />
       <SyncButton
@@ -127,7 +122,6 @@ export function SyncButtons({ seasons }: { seasons: SeasonChoice[] }) {
         seasonId={seasonId}
         label="Rafraîchir le classement sportif"
         pendingLabel="Rafraîchissement…"
-        reason="Classement sportif rafraîchi depuis l'espace admin"
         hint="Le vrai classement du Top 14, pas celui des pronostiqueurs."
       />
     </div>

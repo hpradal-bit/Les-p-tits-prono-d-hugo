@@ -83,11 +83,6 @@ export function PlayerCard({
         <form action={activeAction} className="contents">
           <input type="hidden" name="userId" value={player.id} />
           <input type="hidden" name="isActive" value={player.isActive ? "false" : "true"} />
-          <input
-            type="hidden"
-            name="reason"
-            value={player.isActive ? "Joueur désactivé depuis l'espace admin" : "Joueur réactivé depuis l'espace admin"}
-          />
           <Button type="submit" size="sm" variant="ghost" disabled={activePending}>
             {player.isActive ? "Désactiver" : "Réactiver"}
           </Button>
@@ -96,11 +91,6 @@ export function PlayerCard({
         <form action={roleAction} className="contents">
           <input type="hidden" name="userId" value={player.id} />
           <input type="hidden" name="role" value={isAdmin ? "player" : "admin"} />
-          <input
-            type="hidden"
-            name="reason"
-            value={isAdmin ? "Retrait des droits d'administration" : "Attribution des droits d'administration"}
-          />
           <Button type="submit" size="sm" variant="ghost" disabled={rolePending}>
             {isAdmin ? "Retirer l'admin" : "Passer admin"}
           </Button>
@@ -136,9 +126,7 @@ export function PlayerCard({
 
           <input
             name="reason"
-            required
-            minLength={3}
-            placeholder="Raison — les joueurs la liront (ex. : pari perdu sur le derby)"
+            placeholder="Raison, facultative — les joueurs la liront (ex. : pari perdu sur le derby)"
             className={reasonInput}
           />
 

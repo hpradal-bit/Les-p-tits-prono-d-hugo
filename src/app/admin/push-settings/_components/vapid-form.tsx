@@ -38,15 +38,6 @@ export function VapidForm({ currentKey }: { currentKey: string }) {
         </p>
       </div>
 
-      <input
-        name="reason"
-        required
-        minLength={3}
-        defaultValue="Configuration des notifications"
-        placeholder="Raison (ex. : première configuration des notifications)"
-        className={field}
-      />
-
       <div>
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? "Enregistrement…" : currentKey ? "Remplacer la clé" : "Enregistrer la clé"}

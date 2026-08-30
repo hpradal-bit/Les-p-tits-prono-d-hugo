@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { updatePoints } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
 import type { Ruleset } from "@/lib/types";
-import { Feedback, numberInput, reasonInput } from "./shared";
+import { Feedback, numberInput } from "./shared";
 import { ScopePicker } from "./scope-picker";
 
 const LEVELS = [
@@ -83,14 +83,6 @@ export function PointsForm({ ruleset, leagueId }: { ruleset: Ruleset; leagueId: 
       </p>
 
       <ScopePicker />
-
-      <input
-        name="reason"
-        required
-        minLength={3}
-        placeholder="Raison (ex. : le score exact rapportait trop)"
-        className={reasonInput}
-      />
 
       <div>
         <Button type="submit" size="sm" disabled={pending}>

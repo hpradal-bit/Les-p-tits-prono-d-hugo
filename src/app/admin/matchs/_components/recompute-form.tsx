@@ -12,7 +12,6 @@ export function RecomputeForm({ roundId }: { roundId: string }) {
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="roundId" value={roundId} />
-      <input type="hidden" name="reason" value="Recalcul manuel depuis l'espace admin" />
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
         {pending ? "Recalcul…" : "Recalculer toute la journée"}
       </Button>

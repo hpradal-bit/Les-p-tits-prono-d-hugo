@@ -18,7 +18,7 @@ import { enqueue, type EnqueueOutcome } from "@/lib/push/notify";
 import { scheduleFor } from "@/lib/push/schedule";
 import { describeQuiet, readRules, rulesToRows, validateRules } from "@/lib/push/rules";
 import { requireAdmin, AdminError } from "./auth";
-import { logAdminAction, MissingReasonError, normalizeReason } from "./log";
+import { logAdminAction, MissingReasonError } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
 import { loadActiveSeason } from "@/lib/standings/queries";
 import { createSyncContext, syncCalendar, syncLive, syncStandings } from "@/lib/providers";
@@ -29,15 +29,24 @@ import { createSyncContext, syncCalendar, syncLive, syncStandings } from "@/lib/
  * Deux règles tenues ici, sans exception :
  *   · aucune action n'écrit directement des points — elle corrige une donnée
  *     puis déclenche un recalcul ;
- *   · toute action écrit dans `admin_actions` avec une raison obligatoire.
+ *   · toute action écrit dans `admin_actions` avec une raison.
+ *
+ * Depuis le 30 août, sur demande explicite d'Hugo, cette raison n'est plus
+ * saisie par l'administrateur : chaque action compose elle-même une phrase
+ * qui décrit ce qu'elle vient de faire. Le journal reste donc complet et
+ * lisible, mais l'admin n'a plus à se justifier avant de pouvoir agir.
+ * Exception : `adjustPoints`, où la raison reste un champ libre optionnel —
+ * c'est la seule action dont le texte est montré directement aux joueurs.
  */
 
 const resultSchema = z.object({
   fixtureId: z.string().uuid(),
-  homeScore: z.coerce.number().int().min(0).max(200),
-  awayScore: z.coerce.number().int().min(0).max(200),
+  // Chaîne plutôt que nombre : un champ vide doit rester distinguable de zéro,
+  // pour pouvoir effacer un score saisi par erreur sans taper 0-0 (qui est un
+  // vrai résultat de match nul, pas une absence de résultat).
+  homeScore: z.string().trim(),
+  awayScore: z.string().trim(),
   status: z.enum(["finished", "official"]),
-  reason: z.string(),
 });
 
 /** Zod rend des tableaux éventuellement absents : on les rend exploitables. */
@@ -75,13 +84,34 @@ export async function recordResult(
       homeScore: formData.get("homeScore"),
       awayScore: formData.get("awayScore"),
       status: formData.get("status"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Score invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { fixtureId, homeScore, awayScore, status, reason } = parsed.data;
+    const { fixtureId, homeScore: rawHome, awayScore: rawAway, status } = parsed.data;
+    const homeEmpty = rawHome === "";
+    const awayEmpty = rawAway === "";
+    if (homeEmpty !== awayEmpty) {
+      return adminFail("Renseigne les deux scores, ou laisse les deux vides pour effacer le résultat.");
+    }
+
     const admin = createAdminClient();
+
+    if (homeEmpty && awayEmpty) {
+      return clearFixtureResult(admin, ctx, fixtureId);
+    }
+
+    const homeScore = Number(rawHome);
+    const awayScore = Number(rawAway);
+    const scoreValid = (n: number) => Number.isInteger(n) && n >= 0 && n <= 200;
+    if (!scoreValid(homeScore) || !scoreValid(awayScore)) {
+      return adminFail("Score invalide.", {
+        fieldErrors: {
+          homeScore: scoreValid(homeScore) ? [] : ["Entier entre 0 et 200."],
+          awayScore: scoreValid(awayScore) ? [] : ["Entier entre 0 et 200."],
+        },
+      });
+    }
 
     const { data: before, error: bErr } = await admin
       .from("fixtures")
@@ -112,7 +142,7 @@ export async function recordResult(
       entityId: fixtureId,
       before: { home_score: before.home_score, away_score: before.away_score, status: before.status },
       after: { home_score: homeScore, away_score: awayScore, status },
-      reason,
+      reason: `Résultat saisi : ${homeScore}-${awayScore} (${status === "official" ? "officiel" : "terminé"}).`,
       event: { roundId: before.round_id, fixtureId },
     });
 
@@ -132,8 +162,47 @@ export async function recordResult(
 
 const clearSchema = z.object({
   fixtureId: z.string().uuid(),
-  reason: z.string(),
 });
+
+/**
+ * Efface un résultat saisi par erreur — score et statut repartent à zéro,
+ * les points suivent. Partagé par le formulaire de résultat (scores laissés
+ * vides) et par le bouton « Annuler le résultat ».
+ */
+async function clearFixtureResult(
+  admin: SupabaseClient,
+  ctx: { userId: Uuid },
+  fixtureId: Uuid,
+): Promise<AdminActionState> {
+  const { data: before, error: bErr } = await admin
+    .from("fixtures")
+    .select("id, round_id, home_score, away_score, status")
+    .eq("id", fixtureId).single();
+  if (bErr) throw bErr;
+
+  const { error: uErr } = await admin
+    .from("fixtures")
+    .update({ home_score: null, away_score: null, status: "scheduled" })
+    .eq("id", fixtureId);
+  if (uErr) throw uErr;
+
+  const summary = await recomputeFixtures(admin, [fixtureId]);
+
+  await logAdminAction(admin, {
+    adminId: ctx.userId,
+    action: "fixture.status_forced",
+    entityType: "fixture",
+    entityId: fixtureId,
+    before: { home_score: before.home_score, away_score: before.away_score, status: before.status },
+    after: { home_score: null, away_score: null, status: "scheduled" },
+    reason: "Résultat effacé depuis l'espace admin.",
+    event: { roundId: before.round_id, fixtureId },
+  });
+
+  revalidatePath("/admin/matchs");
+  revalidatePath("/classement");
+  return adminOk(`Résultat effacé. ${summary.cleared} ligne${summary.cleared > 1 ? "s" : ""} de points effacée${summary.cleared > 1 ? "s" : ""}.`);
+}
 
 /** Annule un résultat saisi par erreur : les points reviennent en arrière. */
 export async function clearResult(
@@ -144,40 +213,10 @@ export async function clearResult(
     const ctx = await requireAdmin();
     const parsed = clearSchema.safeParse({
       fixtureId: formData.get("fixtureId"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Match introuvable.");
-    const { fixtureId, reason } = parsed.data;
     const admin = createAdminClient();
-
-    const { data: before, error: bErr } = await admin
-      .from("fixtures")
-      .select("id, round_id, home_score, away_score, status")
-      .eq("id", fixtureId).single();
-    if (bErr) throw bErr;
-
-    const { error: uErr } = await admin
-      .from("fixtures")
-      .update({ home_score: null, away_score: null, status: "scheduled" })
-      .eq("id", fixtureId);
-    if (uErr) throw uErr;
-
-    const summary = await recomputeFixtures(admin, [fixtureId]);
-
-    await logAdminAction(admin, {
-      adminId: ctx.userId,
-      action: "fixture.status_forced",
-      entityType: "fixture",
-      entityId: fixtureId,
-      before: { home_score: before.home_score, away_score: before.away_score, status: before.status },
-      after: { home_score: null, away_score: null, status: "scheduled" },
-      reason,
-      event: { roundId: before.round_id, fixtureId },
-    });
-
-    revalidatePath("/admin/matchs");
-    revalidatePath("/classement");
-    return adminOk(`Résultat annulé. ${summary.cleared} ligne${summary.cleared > 1 ? "s" : ""} de points effacée${summary.cleared > 1 ? "s" : ""}.`);
+    return await clearFixtureResult(admin, ctx, parsed.data.fixtureId);
   } catch (error) {
     return handle(error);
   }
@@ -186,7 +225,6 @@ export async function clearResult(
 const kickoffSchema = z.object({
   fixtureId: z.string().uuid(),
   kickoffAt: z.string().min(1),
-  reason: z.string(),
 });
 
 /**
@@ -202,10 +240,9 @@ export async function changeKickoff(
     const parsed = kickoffSchema.safeParse({
       fixtureId: formData.get("fixtureId"),
       kickoffAt: formData.get("kickoffAt"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Horaire invalide.");
-    const { fixtureId, kickoffAt, reason } = parsed.data;
+    const { fixtureId, kickoffAt } = parsed.data;
 
     const kickoff = new Date(kickoffAt);
     if (Number.isNaN(kickoff.getTime())) {
@@ -239,7 +276,7 @@ export async function changeKickoff(
       entityId: fixtureId,
       before: { kickoff_at: before.kickoff_at, locks_at: before.locks_at },
       after: { kickoff_at: kickoff.toISOString(), locks_at: locksAt.toISOString() },
-      reason,
+      reason: "Horaire modifié depuis l'espace admin.",
       event: { roundId: before.round_id, fixtureId },
     });
 
@@ -253,7 +290,6 @@ export async function changeKickoff(
 
 const roundSchema = z.object({
   roundId: z.string().uuid(),
-  reason: z.string(),
 });
 
 /**
@@ -271,10 +307,9 @@ export async function applyRoundDefaultsAction(
     const ctx = await requireAdmin();
     const parsed = roundSchema.safeParse({
       roundId: formData.get("roundId"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Journée introuvable.");
-    const { roundId, reason } = parsed.data;
+    const { roundId } = parsed.data;
 
     const admin = createAdminClient();
     const report = await applyDefaultPredictionsForRound(admin, roundId);
@@ -285,7 +320,7 @@ export async function applyRoundDefaultsAction(
       entityType: "round",
       entityId: roundId,
       after: { ...report },
-      reason,
+      reason: "Pronostics par défaut appliqués manuellement depuis l'espace admin.",
       event: { roundId },
     });
 
@@ -337,10 +372,9 @@ export async function recomputeRoundAction(
     const ctx = await requireAdmin();
     const parsed = roundSchema.safeParse({
       roundId: formData.get("roundId"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Journée introuvable.");
-    const { roundId, reason } = parsed.data;
+    const { roundId } = parsed.data;
 
     const admin = createAdminClient();
     const summary = await recomputeRound(admin, roundId);
@@ -351,7 +385,7 @@ export async function recomputeRoundAction(
       entityType: "round",
       entityId: roundId,
       after: summary,
-      reason,
+      reason: "Recalcul manuel de la journée depuis l'espace admin.",
       event: { roundId },
     });
 
@@ -619,7 +653,6 @@ const pointsSchema = z.object({
   winnerAndMargin: z.coerce.number().int().min(0).max(999),
   exactScore: z.coerce.number().int().min(0).max(999),
   scope: scopeField,
-  reason: z.string(),
 });
 
 /** Les quatre valeurs de la cascade. */
@@ -636,12 +669,11 @@ export async function updatePoints(
       winnerAndMargin: formData.get("winnerAndMargin"),
       exactScore: formData.get("exactScore"),
       scope: formData.get("scope"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Valeurs invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { leagueId, wrong, winner, winnerAndMargin, exactScore, scope, reason } = parsed.data;
+    const { leagueId, wrong, winner, winnerAndMargin, exactScore, scope } = parsed.data;
 
     // La cascade doit rester croissante, sinon viser juste ferait perdre des points.
     if (!(wrong <= winner && winner <= winnerAndMargin && winnerAndMargin <= exactScore)) {
@@ -661,6 +693,7 @@ export async function updatePoints(
       exact_score: exactScore,
     };
 
+    const reason = "Barème des points modifié depuis l'espace admin.";
     const applied = await applyRulesetChange(admin, ctx, scope, rs, { points }, reason);
 
     await logAdminAction(admin, {
@@ -683,7 +716,6 @@ export async function updatePoints(
 const lockSchema = z.object({
   leagueId: z.string().uuid(),
   minutesBeforeKickoff: z.coerce.number().int().min(0).max(10_080),
-  reason: z.string(),
 });
 
 /**
@@ -702,12 +734,11 @@ export async function updateLockDelay(
     const parsed = lockSchema.safeParse({
       leagueId: formData.get("leagueId"),
       minutesBeforeKickoff: formData.get("minutesBeforeKickoff"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Délai invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { leagueId, minutesBeforeKickoff, reason } = parsed.data;
+    const { leagueId, minutesBeforeKickoff } = parsed.data;
 
     const admin = createAdminClient();
     const season = await loadActiveSeason(admin, leagueId);
@@ -765,7 +796,7 @@ export async function updateLockDelay(
       entityId: rs.id,
       before,
       after: { lock, fixtures_retimed: retimed },
-      reason,
+      reason: "Délai de verrouillage modifié depuis l'espace admin.",
     });
 
     revalidatePathsAfterRuleset();
@@ -782,7 +813,6 @@ const exactScoreSchema = z.object({
   quota: z.string(),
   period: z.enum(["match", "round", "month", "season"]),
   scope: scopeField,
-  reason: z.string(),
 });
 
 /** Quota de scores exacts : combien de tentatives, sur quelle période. */
@@ -797,12 +827,11 @@ export async function updateExactScoreQuota(
       quota: formData.get("quota"),
       period: formData.get("period"),
       scope: formData.get("scope"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Quota invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { leagueId, quota: rawQuota, period, scope, reason } = parsed.data;
+    const { leagueId, quota: rawQuota, period, scope } = parsed.data;
 
     // Champ vide = illimité. On le distingue de zéro, qui interdit tout.
     const quota = rawQuota.trim() === "" ? null : Number(rawQuota);
@@ -818,6 +847,7 @@ export async function updateExactScoreQuota(
     const rs = await currentRuleset(admin, season.id);
     const previous = (rs.rules.exact_score ?? {}) as Record<string, unknown>;
     const exact = { ...previous, quota, period };
+    const reason = "Quota de scores exacts modifié depuis l'espace admin.";
 
     const applied = await applyRulesetChange(
       admin, ctx, scope, rs, { exact_score: exact }, reason,
@@ -847,7 +877,6 @@ const bucketSchema = z.object({
   minPoints: z.coerce.number().int().min(0).max(200),
   maxPoints: z.string(),
   scope: scopeField,
-  reason: z.string(),
 });
 
 /** Renomme et reborne une tranche d'écart. */
@@ -864,12 +893,11 @@ export async function updateMarginBucket(
       minPoints: formData.get("minPoints"),
       maxPoints: formData.get("maxPoints"),
       scope: formData.get("scope"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Tranche invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { leagueId, bucketId, label, minPoints, maxPoints: rawMax, scope, reason } = parsed.data;
+    const { leagueId, bucketId, label, minPoints, maxPoints: rawMax, scope } = parsed.data;
 
     // Champ vide = borne haute ouverte (la dernière tranche, « 41 et + »).
     const maxPoints = rawMax.trim() === "" ? null : Number(rawMax);
@@ -883,6 +911,7 @@ export async function updateMarginBucket(
     const season = await loadActiveSeason(admin, leagueId);
     if (!season) return adminFail("Aucune saison pour cette ligue.");
     const rs = await currentRuleset(admin, season.id);
+    const reason = `Tranche d'écart modifiée : ${label}.`;
 
     const { data: before, error: bErr } = await admin
       .from("margin_buckets")
@@ -946,7 +975,6 @@ export async function updateMarginBucket(
 const playerStateSchema = z.object({
   userId: z.string().uuid(),
   isActive: z.enum(["true", "false"]).transform((v) => v === "true"),
-  reason: z.string(),
 });
 
 /**
@@ -964,10 +992,9 @@ export async function setPlayerActive(
     const parsed = playerStateSchema.safeParse({
       userId: formData.get("userId"),
       isActive: formData.get("isActive"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Joueur introuvable.");
-    const { userId, isActive, reason } = parsed.data;
+    const { userId, isActive } = parsed.data;
 
     const admin = createAdminClient();
     const { data: before, error: bErr } = await admin
@@ -985,7 +1012,7 @@ export async function setPlayerActive(
       entityId: userId,
       before: { is_active: before.is_active },
       after: { is_active: isActive },
-      reason,
+      reason: isActive ? "Joueur réactivé depuis l'espace admin." : "Joueur désactivé depuis l'espace admin.",
     });
 
     revalidatePathsAfterPlayer();
@@ -1000,7 +1027,6 @@ export async function setPlayerActive(
 const playerRoleSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(["admin", "player"]),
-  reason: z.string(),
 });
 
 /** Promeut ou rétrograde un joueur. Le dernier admin ne peut pas se démettre. */
@@ -1013,10 +1039,9 @@ export async function setPlayerRole(
     const parsed = playerRoleSchema.safeParse({
       userId: formData.get("userId"),
       role: formData.get("role"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Rôle invalide.");
-    const { userId, role, reason } = parsed.data;
+    const { userId, role } = parsed.data;
 
     const admin = createAdminClient();
     const { data: before, error: bErr } = await admin
@@ -1053,7 +1078,7 @@ export async function setPlayerRole(
       entityId: userId,
       before: { role: before.role },
       after: { role },
-      reason,
+      reason: `Rôle changé : ${role}.`,
     });
 
     revalidatePathsAfterPlayer();
@@ -1068,13 +1093,17 @@ const adjustmentSchema = z.object({
   userId: z.string().uuid(),
   delta: z.coerce.number().int().min(-999).max(999),
   roundId: z.string(),
-  reason: z.string().trim().min(3),
+  // Optionnelle : l'admin n'a plus à se justifier pour agir, mais peut
+  // toujours expliquer un ajustement de points aux autres joueurs s'il le
+  // souhaite — c'est la seule action de l'espace admin où la raison est
+  // directement montrée à quelqu'un d'autre que lui.
+  reason: z.string().trim().max(500).optional(),
 });
 
 /**
  * Ajoute ou retire des points à la main — un pari perdu, un gage, une
- * correction. La raison est obligatoire : elle s'affiche telle quelle aux
- * joueurs, qui doivent pouvoir comprendre d'où viennent ces points.
+ * correction. La raison, si elle est donnée, s'affiche telle quelle aux
+ * joueurs ; à défaut, un libellé neutre la remplace.
  */
 export async function adjustPoints(
   _prev: AdminActionState,
@@ -1087,12 +1116,15 @@ export async function adjustPoints(
       userId: formData.get("userId"),
       delta: formData.get("delta"),
       roundId: formData.get("roundId"),
-      reason: formData.get("reason"),
+      reason: formData.get("reason") || undefined,
     });
     if (!parsed.success) {
       return adminFail("Ajustement invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { leagueId, userId, delta, roundId: rawRound, reason } = parsed.data;
+    const { leagueId, userId, delta, roundId: rawRound } = parsed.data;
+    const reason = parsed.data.reason && parsed.data.reason.length > 0
+      ? parsed.data.reason
+      : "Ajustement manuel depuis l'espace admin.";
     if (delta === 0) return adminFail("Un ajustement de zéro point ne sert à rien.");
 
     const roundId = rawRound.trim() === "" ? null : rawRound;
@@ -1141,7 +1173,6 @@ export async function adjustPoints(
 
 const revertSchema = z.object({
   adjustmentId: z.string().uuid(),
-  reason: z.string(),
 });
 
 /**
@@ -1158,10 +1189,9 @@ export async function revertAdjustment(
     const ctx = await requireAdmin();
     const parsed = revertSchema.safeParse({
       adjustmentId: formData.get("adjustmentId"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) return adminFail("Ajustement introuvable.");
-    const { adjustmentId, reason } = parsed.data;
+    const { adjustmentId } = parsed.data;
 
     const admin = createAdminClient();
     const { data: original, error: oErr } = await admin
@@ -1194,7 +1224,7 @@ export async function revertAdjustment(
       entityId: adjustmentId,
       before: { delta: original.delta, reason: original.reason },
       after: { delta: -(original.delta as number), reverts: adjustmentId },
-      reason,
+      reason: "Ajustement annulé depuis l'espace admin.",
     });
 
     revalidatePathsAfterPlayer();
@@ -1216,7 +1246,6 @@ const vapidSchema = z.object({
     .string()
     .trim()
     .regex(/^B[A-Za-z0-9_-]{86}$/, "Clé publique VAPID invalide."),
-  reason: z.string(),
 });
 
 export async function updateVapidKey(
@@ -1227,7 +1256,6 @@ export async function updateVapidKey(
     const ctx = await requireAdmin();
     const parsed = vapidSchema.safeParse({
       vapidKey: formData.get("vapidKey"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail(
@@ -1235,7 +1263,7 @@ export async function updateVapidKey(
         { fieldErrors: fieldErrorsOf(parsed.error) },
       );
     }
-    const { vapidKey, reason } = parsed.data;
+    const { vapidKey } = parsed.data;
 
     const admin = createAdminClient();
     const before = await loadPublicKey(admin);
@@ -1258,7 +1286,7 @@ export async function updateVapidKey(
       // garde de quoi reconnaître laquelle a remplacé laquelle.
       before: { key_suffix: before ? before.slice(-8) : null },
       after: { key_suffix: vapidKey.slice(-8) },
-      reason,
+      reason: "Clé VAPID modifiée depuis l'espace admin.",
     });
 
     revalidatePath("/reglages");
@@ -1291,7 +1319,6 @@ const announcementSchema = z.object({
   title: z.string().trim().min(3, "Trois caractères minimum.").max(80, "80 caractères maximum."),
   body: z.string().trim().min(3, "Trois caractères minimum.").max(300, "300 caractères maximum."),
   url: z.string().trim().max(200).optional(),
-  reason: z.string(),
 });
 
 const rulesSchema = z.object({
@@ -1300,7 +1327,6 @@ const rulesSchema = z.object({
   quietFrom: z.string().trim(),
   quietTo: z.string().trim(),
   timeZone: z.string().trim(),
-  reason: z.string(),
 });
 
 /** Les joueurs actifs du groupe — les destinataires d'une annonce. */
@@ -1330,11 +1356,10 @@ async function activeMemberIds(admin: SupabaseClient, groupId: Uuid): Promise<Uu
  */
 export async function sendTestNotification(
   _prev: AdminActionState,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<AdminActionState> {
   try {
     const ctx = await requireAdmin();
-    const reason = normalizeReason(formData.get("reason"));
     const admin = createAdminClient();
 
     if (!(await loadPublicKey(admin))) {
@@ -1371,7 +1396,7 @@ export async function sendTestNotification(
       entityId: null,
       before: null,
       after: { sent: result.sent, failed: result.failed, revoked: result.revoked },
-      reason,
+      reason: "Test de notification envoyé depuis l'espace admin.",
     });
 
     if (result.sent > 0) {
@@ -1411,12 +1436,11 @@ export async function sendAnnouncement(
       title: formData.get("title"),
       body: formData.get("body"),
       url: formData.get("url") ?? undefined,
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Message incomplet.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { title, body, url, reason } = parsed.data;
+    const { title, body, url } = parsed.data;
 
     const admin = createAdminClient();
     const settings = await loadSettings(admin);
@@ -1460,7 +1484,7 @@ export async function sendAnnouncement(
       entityId: null,
       before: null,
       after: { title, body, recipients: tally.queued, muted: tally.muted },
-      reason,
+      reason: `Annonce envoyée : ${title}.`,
       event: { payload: { title } },
     });
 
@@ -1515,12 +1539,11 @@ export async function updateNotificationRules(
       quietFrom: formData.get("quietFrom"),
       quietTo: formData.get("quietTo"),
       timeZone: formData.get("timeZone"),
-      reason: formData.get("reason"),
     });
     if (!parsed.success) {
       return adminFail("Réglages invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
-    const { reason, ...input } = parsed.data;
+    const input = parsed.data;
 
     // La validation métier vit dans une fonction pure, donc testable — et la
     // même que celle qui décrit les règles à l'écran.
@@ -1547,7 +1570,7 @@ export async function updateNotificationRules(
       entityId: null,
       before,
       after: input,
-      reason,
+      reason: "Réglages de notification modifiés depuis l'espace admin.",
     });
 
     revalidatePath("/admin/push-settings");
@@ -1577,7 +1600,6 @@ export async function updateNotificationRules(
    --------------------------------------------------------------------------- */
 
 const syncSchema = z.object({
-  reason: z.string().optional(),
   // Choisir la saison permet d'éprouver la chaîne sur une compétition qui
   // joue *maintenant*, sans attendre que le Top 14 commence. Absent, on
   // retombe sur la saison active.
@@ -1604,10 +1626,8 @@ async function runSync<T extends { status: string; provider: string; requestsUse
   try {
     const ctx = await requireAdmin();
     const parsed = syncSchema.safeParse({
-      reason: formData.get("reason"),
       seasonId: formData.get("seasonId") ?? undefined,
     });
-    const reason = normalizeReason(parsed.success ? parsed.data.reason : undefined);
 
     const admin = createAdminClient();
     const syncCtx = await createSyncContext(admin, {
@@ -1622,7 +1642,7 @@ async function runSync<T extends { status: string; provider: string; requestsUse
       entityId: syncCtx.season.id,
       before: null,
       after: report,
-      reason,
+      reason: "Synchronisation lancée manuellement depuis l'espace admin.",
     });
 
     revalidatePath("/admin/synchronisation");

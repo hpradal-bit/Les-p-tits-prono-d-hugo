@@ -17,8 +17,6 @@ export function TestForm({ ready }: { ready: boolean }) {
 
   return (
     <form action={action} className="flex flex-col gap-2">
-      <input type="hidden" name="reason" value="Test des notifications depuis l'espace admin" />
-
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" variant="ghost" disabled={pending || !ready}>
           {pending ? "Envoi…" : "M'envoyer une notification de test"}

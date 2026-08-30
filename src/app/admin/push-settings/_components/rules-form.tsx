@@ -106,15 +106,6 @@ export function RulesForm({ rules }: { rules: NotificationRules }) {
         </div>
       </div>
 
-      <input
-        name="reason"
-        required
-        minLength={3}
-        defaultValue="Ajustement des règles de notification"
-        placeholder="Raison (elle apparaît au journal)"
-        className={field}
-      />
-
       <div>
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? "Enregistrement…" : "Enregistrer les règles"}

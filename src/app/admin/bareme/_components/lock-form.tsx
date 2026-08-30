@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { updateLockDelay } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
 import type { Ruleset } from "@/lib/types";
-import { Feedback, numberInput, reasonInput } from "./shared";
+import { Feedback, numberInput } from "./shared";
 
 const PRESETS = [
   { minutes: 0, label: "Au coup d'envoi" },
@@ -47,14 +47,6 @@ export function LockForm({ ruleset, leagueId }: { ruleset: Ruleset; leagueId: st
         matchs à venir sont reprogrammés aussitôt ; un match déjà verrouillé ne
         se rouvre jamais.
       </p>
-
-      <input
-        name="reason"
-        required
-        minLength={3}
-        placeholder="Raison (ex. : trop juste pour ceux qui bossent le samedi)"
-        className={reasonInput}
-      />
 
       <div>
         <Button type="submit" size="sm" disabled={pending}>

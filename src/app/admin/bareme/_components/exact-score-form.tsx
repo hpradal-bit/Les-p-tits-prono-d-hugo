@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { updateExactScoreQuota } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
 import type { Ruleset } from "@/lib/types";
-import { Feedback, numberInput, textInput, reasonInput } from "./shared";
+import { Feedback, numberInput, textInput } from "./shared";
 import { ScopePicker } from "./scope-picker";
 
 const PERIODS = [
@@ -55,14 +55,6 @@ export function ExactScoreForm({ ruleset, leagueId }: { ruleset: Ruleset; league
       </p>
 
       <ScopePicker />
-
-      <input
-        name="reason"
-        required
-        minLength={3}
-        placeholder="Raison (ex. : une tentative par journée, c'était trop maigre)"
-        className={reasonInput}
-      />
 
       <div>
         <Button type="submit" size="sm" disabled={pending}>

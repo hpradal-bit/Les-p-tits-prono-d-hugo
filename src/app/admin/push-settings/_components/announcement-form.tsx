@@ -75,15 +75,6 @@ export function AnnouncementForm({ recipients }: { recipients: number }) {
         <input id="url" name="url" placeholder="/journee" className={`${field} font-mono text-[13px]`} />
       </div>
 
-      <input
-        name="reason"
-        required
-        minLength={3}
-        defaultValue="Message de l'organisation"
-        placeholder="Raison (elle apparaît au journal)"
-        className={field}
-      />
-
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? "Envoi…" : `Envoyer aux ${recipients} joueurs`}

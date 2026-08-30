@@ -13,7 +13,6 @@ export function RevertForm({ adjustmentId }: { adjustmentId: string }) {
   return (
     <form action={action} className="flex flex-col gap-1.5">
       <input type="hidden" name="adjustmentId" value={adjustmentId} />
-      <input type="hidden" name="reason" value="Ajustement annulé depuis l'espace admin" />
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
         {pending ? "Annulation…" : "Annuler"}
       </Button>
