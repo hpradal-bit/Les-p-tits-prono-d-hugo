@@ -56,10 +56,22 @@ export async function middleware(request: NextRequest) {
   });
 
   // Ne pas retirer, ne pas déplacer : c'est cet appel qui renouvelle le jeton
-  // et déclenche l'écriture des cookies ci-dessus.
+  // et déclenche l'écriture des cookies ci-dessus. C'est aussi le SEUL endroit
+  // de toute la requête où le jeton est revalidé auprès du serveur Supabase :
+  // l'identité qui en ressort est transmise aux composants et actions serveur
+  // par l'en-tête ci-dessous (`getViewer()`), pour ne plus jamais payer une
+  // deuxième fois cet aller-retour réseau sur le même chargement de page.
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Écrasés à chaque requête, jamais lus depuis le client : des en-têtes que
+  // le navigateur aurait glissés de son côté ne survivent pas à ces lignes.
+  request.headers.set("x-viewer-id", user?.id ?? "");
+  request.headers.set("x-viewer-email", user?.email ? encodeURIComponent(user.email) : "");
+  const cookiesToForward = response.cookies.getAll();
+  response = NextResponse.next({ request });
+  for (const cookie of cookiesToForward) response.cookies.set(cookie);
 
   // Les routes d'API portent leur propre authentification (secret partagé pour
   // la synchronisation, session pour le push). On leur rend la session

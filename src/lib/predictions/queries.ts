@@ -175,6 +175,11 @@ async function loadParticipation(
 }
 
 export interface LoadJourneyOptions {
+  /** Le joueur pour qui charger la journée — déjà authentifié par l'appelant
+   *  (`getViewer()`/`requireViewer()`) : cette fonction ne revérifie pas la
+   *  session, elle fait confiance à RLS pour n'exposer que ce que ce joueur a
+   *  le droit de voir. */
+  userId: Uuid;
   /** Numéro de journée demandé ; à défaut, la journée en cours. */
   roundNumber?: number;
   /** La ligue dont on affiche la journée — pas de valeur par défaut : c'est
@@ -184,25 +189,21 @@ export interface LoadJourneyOptions {
 
 /**
  * Charge tout l'écran « Ma journée » pour le joueur connecté.
- * Renvoie null s'il n'y a pas de session, ou si le joueur n'est pas membre de
- * la ligue demandée (la lecture de `leagues` est déjà soumise à RLS) : c'est
- * à la page de rediriger.
+ * Renvoie null si le joueur n'est pas membre de la ligue demandée (la lecture
+ * de `leagues` est déjà soumise à RLS) : c'est à la page de rediriger.
  */
 export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<JourneyBoard | null> {
   const sb = await createClient();
   const now = new Date();
+  const userId = opts.userId;
 
-  // --- Étape 1 : auth + ligue + saison en parallèle ------------------------
   // La ligue porte la compétition ; RLS (`leagues_read`) refuse déjà toute
   // ligue dont le joueur n'est pas membre — pas besoin de le revérifier ici.
-  const [{ data: { user } }, { data: league }] = await Promise.all([
-    sb.auth.getUser(),
-    sb.from("leagues")
-      .select("competition_id, competitions:competition_id!inner(name, logo_url)")
-      .eq("id", opts.leagueId)
-      .maybeSingle(),
-  ]);
-  if (!user || !league) return null;
+  const { data: league } = await sb.from("leagues")
+    .select("competition_id, competitions:competition_id!inner(name, logo_url)")
+    .eq("id", opts.leagueId)
+    .maybeSingle();
+  if (!league) return null;
 
   const competitionRow = Array.isArray(league.competitions) ? league.competitions[0] : league.competitions;
   const competitionName = (competitionRow as { name: string } | null)?.name ?? "Compétition";
@@ -227,7 +228,7 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
         .order("number"),
       sb.from("predictions")
         .select(PREDICTION_COLUMNS)
-        .eq("user_id", user.id),
+        .eq("user_id", userId),
       loadRuleset(sb, seasonId),
       loadSettings(sb),
     ]);
@@ -324,7 +325,7 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
   }));
 
   return {
-    userId: user.id,
+    userId,
     seasonId,
     leagueId: opts.leagueId,
     competitionName,

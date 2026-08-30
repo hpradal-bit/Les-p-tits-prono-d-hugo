@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
+import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import {
   DEFAULT_FORM_WINDOW,
@@ -87,13 +88,10 @@ export default async function ClassementPage({
     journee: firstValue(raw.journee),
   });
 
+  const viewer = await requireViewer();
   const sb = await createClient();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) redirect("/connexion");
 
-  const resolved = await resolveLeagueId(sb, user.id, firstValue(raw.league));
+  const resolved = await resolveLeagueId(sb, viewer.id, firstValue(raw.league));
   if (!resolved) redirect("/accueil");
   const { leagueId, leagues: myLeagues } = resolved;
 
@@ -218,7 +216,7 @@ export default async function ClassementPage({
       {/* Le classement reste visible même sans le moindre résultat : une ligue
           qui vient de se créer doit voir ses membres, à 0 point, plutôt qu'un
           écran vide qui laisserait croire à une panne. */}
-      <StandingsList rows={table.rows} viewerId={user?.id ?? null} />
+      <StandingsList rows={table.rows} viewerId={viewer.id} />
       {table.referenceRoundId === null ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">
           {query.portee === "officiel"
@@ -245,7 +243,7 @@ export default async function ClassementPage({
             positions: p.positions,
           }))}
           roundLabels={history.roundLabels}
-          viewerId={user?.id ?? null}
+          viewerId={viewer.id}
         />
       )}
 

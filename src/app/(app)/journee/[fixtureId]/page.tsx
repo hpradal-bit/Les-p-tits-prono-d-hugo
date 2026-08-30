@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { requireViewer } from "@/lib/auth/session";
 import { PronoForm } from "./prono-form";
 
 export const metadata: Metadata = { title: "Faire son prono" };
@@ -31,13 +32,15 @@ export default async function PronoPage({
   params: Promise<{ fixtureId: string }>;
   searchParams: Promise<{ league?: string }>;
 }) {
+  const viewer = await requireViewer();
+
   const parsed = idSchema.safeParse((await params).fixtureId);
   if (!parsed.success) notFound();
   const leagueParsed = leagueSchema.safeParse((await searchParams).league);
   if (!leagueParsed.success) redirect("/accueil");
 
-  const board = await loadJourneyBoard({ leagueId: leagueParsed.data });
-  if (!board) redirect("/connexion");
+  const board = await loadJourneyBoard({ userId: viewer.id, leagueId: leagueParsed.data });
+  if (!board) redirect("/accueil");
 
   const item = board.fixtures.find((f) => f.fixture.id === parsed.data);
   if (!item) notFound();

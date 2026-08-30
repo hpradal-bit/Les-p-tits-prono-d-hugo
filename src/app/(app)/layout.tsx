@@ -8,36 +8,23 @@
  */
 
 import type { ReactNode } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { getViewer } from "@/lib/auth/session";
 import { ServiceWorkerRegistrar } from "./_components/service-worker";
 import { BottomNav } from "./_components/bottom-nav";
 
 // L'application lit toujours des données propres au joueur connecté.
 export const dynamic = "force-dynamic";
 
-async function isCurrentUserAdmin(): Promise<boolean> {
-  try {
-    const sb = await createClient();
-    const {
-      data: { user },
-    } = await sb.auth.getUser();
-    if (!user) return false;
-
-    const { data } = await sb
-      .from("group_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .limit(1);
-    return (data?.length ?? 0) > 0;
-  } catch {
-    // Session illisible ou base injoignable : on affiche la navigation du joueur.
-    return false;
-  }
-}
-
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const isAdmin = await isCurrentUserAdmin();
+  // `getViewer()` est mémorisée pour la requête (`react.cache`) : la page
+  // rendue à l'intérieur de ce layout l'appelle de toute façon, donc cet appel
+  // ne coûte ni revalidation Supabase ni requête supplémentaire — juste une
+  // lecture d'un résultat déjà en main. Avant, cette fonction refaisait sa
+  // propre vérification de session ET sa propre requête `group_members` sur
+  // CHAQUE écran de l'application, en plus de tout ce que la page en dessous
+  // demandait déjà.
+  const viewer = await getViewer();
+  const isAdmin = viewer?.role === "admin";
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { Card, Label, TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { createClient } from "@/lib/supabase/server";
+import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason, loadCompetitionStandings } from "@/lib/standings/queries";
 import { formatDateTime } from "@/lib/standings/format";
@@ -26,14 +27,11 @@ export default async function ClassementReelPage({
 }: {
   searchParams: Promise<{ league?: string }>;
 }) {
+  const viewer = await requireViewer();
   const sb = await createClient();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) redirect("/connexion");
 
   const { league: requested } = params.catch({}).parse(await searchParams);
-  const resolved = await resolveLeagueId(sb, user.id, requested);
+  const resolved = await resolveLeagueId(sb, viewer.id, requested);
   if (!resolved) redirect("/accueil");
   const { leagueId } = resolved;
 

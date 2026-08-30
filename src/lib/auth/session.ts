@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Uuid } from "@/lib/types";
@@ -11,7 +12,13 @@ import type { Uuid } from "@/lib/types";
  * jamais du jeton client — un copain malin ne peut pas se déclarer admin.
  *
  * Les autres chantiers sont invités à s'en servir plutôt que de refaire
- * l'appel : elle est mémorisée pour la durée du rendu (`react.cache`).
+ * l'appel : elle est mémorisée pour la durée du rendu (`react.cache`), et elle
+ * ne revalide plus le jeton elle-même — le middleware l'a déjà fait pour
+ * cette requête, une seule fois, et transmet l'identité vérifiée par un
+ * en-tête. Sans ce partage, chaque écran payait son propre aller-retour
+ * réseau vers Supabase Auth par-dessus celui du middleware — plusieurs
+ * centaines de millisecondes perdues à chaque navigation, surtout sensible
+ * sur mobile.
  */
 
 export type MemberRole = "player" | "admin";
@@ -32,23 +39,40 @@ export interface Viewer {
 export const getViewer = cache(async (): Promise<Viewer | null> => {
   const sb = await createClient();
 
-  // `getUser()` et non `getSession()` : le jeton est revalidé auprès de
-  // Supabase, on ne fait pas confiance au cookie sur parole.
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) return null;
+  // Le middleware a déjà revalidé le jeton auprès de Supabase pour cette
+  // requête précise et transmet l'identité qui en ressort par un en-tête —
+  // voir `src/middleware.ts`. On ne refait l'aller-retour nous-mêmes que si
+  // cet en-tête est absent (chemin non couvert par le middleware), jamais
+  // par défaut.
+  const h = await headers();
+  const headerUserId = h.get("x-viewer-id");
+
+  let userId: string;
+  let userEmail: string | null;
+
+  if (headerUserId) {
+    userId = headerUserId;
+    const rawEmail = h.get("x-viewer-email");
+    userEmail = rawEmail ? decodeURIComponent(rawEmail) : null;
+  } else {
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    if (!user) return null;
+    userId = user.id;
+    userEmail = user.email ?? null;
+  }
 
   const [{ data: profile }, { data: membership }] = await Promise.all([
     sb
       .from("profiles")
       .select("id, first_name, display_name, avatar_kind, avatar_value, favourite_team_id, is_active")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle(),
     sb
       .from("group_members")
       .select("group_id, role")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("joined_at")
       .limit(1)
       .maybeSingle(),
@@ -60,7 +84,7 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
 
   return {
     id: profile.id,
-    email: user.email ?? null,
+    email: userEmail,
     firstName: profile.first_name,
     displayName: profile.display_name,
     avatarKind: profile.avatar_kind,

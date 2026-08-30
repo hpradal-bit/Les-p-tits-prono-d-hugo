@@ -40,6 +40,49 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
   à J-10 de la J1) : un vrai `sport_id` sur `scoring_rulesets` remplaçant
   `season_id` — le repli ci-dessus couvre le besoin sans toucher au schéma.
 
+## Performance : l'application était lente sur mobile (27 août)
+
+Cause racine trouvée et corrigée : chaque navigation revalidait la session
+Supabase **jusqu'à quatre fois en série**, chacune un aller-retour réseau
+vers le serveur d'authentification — négligeable sur un poste de travail,
+très sensible sur un réseau mobile (la latence, pas le débit, est le facteur
+dominant).
+
+- `src/middleware.ts` — le SEUL endroit qui revalide encore le jeton
+  (`auth.getUser()`), une fois par requête. L'identité qui en ressort est
+  transmise aux composants et actions serveur par un en-tête
+  (`x-viewer-id`/`x-viewer-email`), écrasé à chaque requête donc infalsifiable
+  par le client.
+- `getViewer()` (`src/lib/auth/session.ts`) lit cet en-tête au lieu de
+  revalider elle-même ; elle ne retombe sur un appel réseau que si l'en-tête
+  est absent (garde-fou, chemin non couvert par le middleware).
+- `(app)/layout.tsx` — sa propre vérification d'admin (un deuxième
+  `auth.getUser()` + une deuxième requête `group_members`, sur **chaque**
+  écran de l'application) a disparu au profit de `getViewer()`, déjà
+  mémorisée pour la requête (`react.cache`) puisque la page l'appelle de
+  toute façon.
+- `loadJourneyBoard` (écran « Ma journée », le plus consulté) faisait sa
+  propre revalidation en plus de celle de la page appelante : elle reçoit
+  maintenant l'identifiant du joueur en paramètre.
+- `/classement` et `/classement/reel` avaient le même défaut, corrigé pareil.
+
+Résultat : une seule revalidation de session par navigation au lieu de deux à
+quatre, sur les écrans les plus visités.
+
+Au passage : les logos de clubs livrés par Hugo étaient bien plus grands que
+nécessaire (jusqu'à 2048×2048, 955 Ko pour un logo affiché au maximum à
+44 px) — `next/image` les redimensionnait déjà à la volée pour chaque
+visiteur, mais chaque nouveau déploiement payait ce redimensionnement à
+froid sur les 31 fichiers. Recompressés à 240 px de côté maximum (large
+marge au-delà de tout affichage réel, y compris les écrans à forte densité) :
+`public/logos/` passe de 4 Mo à 445 Ko, aucune perte visible.
+
+Pas touché dans cette passe (periodicité moindre, ou déjà correct) :
+`requireAdmin()`/`getViewerContext()` de l'espace admin
+(`src/lib/admin/auth.ts`) revalide encore la session à chaque écran/action —
+moins visité que le jeu, laissé de côté pour ne pas élargir le risque
+juste avant J-9.
+
 ## Réglages admin par ligue, questions bonus dupliquées, déconnexion (27 août)
 
 - **Bug majeur corrigé** : tous les écrans `/admin/*` (bareme, joueurs,

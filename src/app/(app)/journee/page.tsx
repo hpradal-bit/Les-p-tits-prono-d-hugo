@@ -45,7 +45,7 @@ export default async function JourneePage({
   if (!resolved) redirect("/accueil");
   const { leagueId, leagues: myLeagues } = resolved;
 
-  const board = await loadJourneyBoard({ roundNumber: j, leagueId });
+  const board = await loadJourneyBoard({ userId: viewer.id, roundNumber: j, leagueId });
   const admin = createAdminClient();
 
   if (!board) {
