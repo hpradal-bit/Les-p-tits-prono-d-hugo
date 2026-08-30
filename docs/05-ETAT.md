@@ -40,6 +40,36 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
   à J-10 de la J1) : un vrai `sport_id` sur `scoring_rulesets` remplaçant
   `season_id` — le repli ci-dessus couvre le besoin sans toucher au schéma.
 
+## Réglages admin par ligue, questions bonus dupliquées, déconnexion (27 août)
+
+- **Bug majeur corrigé** : tous les écrans `/admin/*` (bareme, joueurs,
+  pouvoirs, badges) restaient câblés sur `currentSeasonId()` — une fonction
+  qui ne renvoyait que l'unique saison flaguée `status='active'` (le Top 14).
+  Changer un paramètre (ex. quota de score exact) pour la Pro D2 n'avait donc
+  aucun effet, silencieusement réécrit sur le Top 14. `currentSeasonId()`
+  est **supprimée** ; chaque écran résout désormais explicitement sa ligue
+  (`?league=<id>`, sélecteur si plusieurs) puis sa saison via
+  `loadActiveSeason`, comme `/journee`/`/classement` déjà. A aussi révélé
+  deux bugs d'intégrité de points, corrigés au passage : `declarePower`
+  vérifiait le solde de jetons de la mauvaise saison, et
+  `resolveRoundPowers` écrivait les ajustements de points d'un pouvoir sur
+  la mauvaise saison à la clôture — les deux dérivent maintenant la saison
+  du `rounds.season_id` de la journée réellement concernée, jamais d'une
+  « saison courante ».
+- Questions bonus (`bonus_questions`) même chantier : `createBonusQuestion`
+  prend désormais une ligue explicite ; `admin/bonus` et `/questions` ont un
+  sélecteur de ligue. Les deux questions Top 14 ouvertes ont été dupliquées
+  pour « Ligue test » (Pro D2) avec les vraies équipes Pro D2.
+- Logos complémentaires reçus d'Hugo : Montauban, Narbonne, Nice posés.
+- **Bouton de déconnexion** ajouté directement sur `/reglages` (existait déjà
+  au fond de `/mon-compte`, pas assez visible). A révélé un bug préexistant
+  (introduit avant cette session, jamais déclenché) : `src/lib/push/
+  preferences-actions.ts`, marqué `"use server"`, exportait une constante
+  d'objet en plus de sa fonction — interdit par Next.js pour un module
+  `"use server"`, ce qui faisait planter **toute** action postée depuis
+  `/reglages`. Constante et type déplacés dans `preferences-state.ts`,
+  fichier normal. Corrigé et vérifié (tsc/build/526 tests OK).
+
 ## Ligues privées (26 août, en cours — plan complet dans `/root/.claude/plans/purrfect-snuggling-backus.md`)
 
 Chantier lancé à la demande d'Hugo : de vraies ligues privées indépendantes,
