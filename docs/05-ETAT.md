@@ -40,6 +40,55 @@ Les secrets ne vivent que dans les variables d'environnement Vercel et dans
   à J-10 de la J1) : un vrai `sport_id` sur `scoring_rulesets` remplaçant
   `season_id` — le repli ci-dessus couvre le besoin sans toucher au schéma.
 
+## Ma journée en direct, service worker, synchronisation du classement (30 août)
+
+- **Pronostics directement sur « Ma journée »** : cliquer sur un match n'ouvre
+  plus l'ancienne page dédiée — tout se fait en place (`PredictionsBoard`,
+  `EditableMatchCard`, `src/lib/predictions/display.ts`). L'encart « Ton
+  prono » sépare vainqueur / écart / score exact, prend la couleur du club
+  pronostiqué tant que le match n'est pas joué (Top 14 seulement : les 17
+  clubs Pro D2 n'ont pas de `primary_color` en base — une extraction
+  automatique depuis leurs logos a été tentée puis écartée, trop bruitée),
+  et passe au vert/rouge une fois le résultat connu, uniquement selon le
+  vainqueur — jamais selon le score exact.
+- **Bug corrigé : le service worker réaffichait une page obsolète.**
+  `public/sw.js` servait toujours le cache en premier (« stale-while-
+  revalidate ») avant de rafraîchir en arrière-plan, sans jamais renvoyer
+  cette version fraîche à l'écran déjà ouvert — fermer une question bonus
+  dans l'admin puis revenir sur `/questions` montrait encore l'ancien état
+  tant que la page n'était pas rechargée une seconde fois. Passé en réseau
+  d'abord (4 s de délai maximum), repli sur le cache seulement si le réseau
+  échoue vraiment — le cas du métro reste couvert, plus celui du contenu
+  obsolète avec une connexion qui marche.
+- **Diagnostic (pas encore corrigé) : la synchronisation du classement
+  sportif réel (`competition_standings`) n'a jamais fonctionné, pour aucune
+  des deux compétitions.** Bloque le bouton « Régler depuis le classement »
+  des questions bonus de type podium (la saisie manuelle, elle, fonctionne
+  déjà et ne dépend pas de cette synchronisation). Cause, par fournisseur :
+  - **ESPN** : référence de compétition Pro D2 jamais renseignée
+    (`external_id = "À RENSEIGNER"`, un texte de substitution jamais rempli) ;
+    celle du Top 14 (`270559`) répond mais renvoie le tableau d'une saison
+    différente (26 journées jouées alors que 0 sont terminées) — un garde-fou
+    déjà en place (`checkStandingsFreshness`) rejette correctement cette
+    réponse plutôt que d'écrire un classement faux.
+  - **API-Sports** : aucune référence pour la Pro D2 ; celle du Top 14
+    (`16:2026`) est une supposition jamais confirmée.
+  - **Highlightly** : aucune référence de saison pour aucune des deux
+    compétitions.
+  - **TheSportsDB** : les deux références sont correctes et déjà utilisées
+    avec succès pour le calendrier et les scores en direct — mais l'endpoint
+    de classement (`lookuptable.php`) répond par une page illisible (pas du
+    JSON) avec la clé gratuite partagée `123` ; c'est un point d'accès
+    réservé aux clés payantes (Patreon, 3 $/mois) sur cette offre, pas un bug
+    de notre code.
+  Aucune correction risquée tentée sans confirmation : deviner un identifiant
+  de ligue ESPN/API-Sports/Highlightly referait exactement l'erreur que le
+  garde-fou vient de rattraper. Décision à prendre avec Hugo : payer la clé
+  TheSportsDB dédiée (3 $/mois, viole sinon la règle « 0 €/mois » du projet),
+  chercher plus longtemps des identifiants fiables côté ESPN/API-Sports/
+  Highlightly, ou se contenter durablement du réglage manuel déjà
+  fonctionnel.
+
 ## Performance : l'application était lente sur mobile (27 août)
 
 Cause racine trouvée et corrigée : chaque navigation revalidait la session
