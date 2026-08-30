@@ -3,7 +3,7 @@
 import { TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { exactScoreSentence } from "@/lib/predictions/exact-score";
-import { marginBucketSentence, outcomeSideLabel } from "@/lib/predictions/display";
+import { marginBucketSentence, outcomeSideLabel, predictionBoxTint } from "@/lib/predictions/display";
 import type { JourneyFixture, PredictionDraft } from "@/lib/predictions/types";
 import type { ExactScoreVerdict } from "@/lib/predictions/exact-score";
 import type { MatchOutcome, Ruleset } from "@/lib/types";
@@ -82,6 +82,9 @@ export function EditableMatchCard({
   const exactOn = draft.exactHomeScore !== null && draft.exactAwayScore !== null;
   const hasProno = draft.outcome !== null;
   const bucket = ruleset.buckets.find((b) => b.id === draft.marginBucketId);
+  // Le match n'a pas encore de résultat ici : toujours la couleur du club
+  // pronostiqué (ou neutre), jamais le vert/rouge du dénouement.
+  const tint = hasProno ? predictionBoxTint(draft.outcome!, fixture.homeTeam, fixture.awayTeam, null) : null;
 
   const outcomeButton = (side: "home" | "away") => {
     const team = side === "home" ? fixture.homeTeam : fixture.awayTeam;
@@ -144,9 +147,13 @@ export function EditableMatchCard({
           type="button"
           onClick={onToggleExpand}
           aria-expanded={expanded}
-          className="flex items-center justify-between gap-2 rounded-2xl bg-surface-sunk px-3 py-2.5 text-left text-[13px] transition active:scale-[0.99]"
+          style={{ background: tint?.background }}
+          className="flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-[13px] transition active:scale-[0.99]"
         >
-          <span className="flex-1">
+          <span className="flex flex-1 items-center gap-1.5">
+            {tint?.dotColor && (
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: tint.dotColor }} aria-hidden />
+            )}
             <span className="font-bold text-ink">
               {outcomeSideLabel(draft.outcome!, fixture.homeTeam.shortName, fixture.awayTeam.shortName)}
             </span>

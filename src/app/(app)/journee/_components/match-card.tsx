@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { marginBucketSentence, outcomeSideLabel, outcomeWasCorrect } from "@/lib/predictions/display";
+import {
+  marginBucketSentence,
+  outcomeSideLabel,
+  outcomeWasCorrect,
+  predictionBoxTint,
+} from "@/lib/predictions/display";
 import type { JourneyFixture, PredictionScore } from "@/lib/predictions/types";
 import type { Ruleset } from "@/lib/types";
 
@@ -27,20 +32,27 @@ export function PredictionSummaryBox({
   const outcomeCorrect =
     done && hasResult ? outcomeWasCorrect(d.outcome, item.fixture.homeScore!, item.fixture.awayScore!) : null;
 
+  // Avant résultat : la couleur du club pronostiqué, en teinte douce — le
+  // rouge/vert du dénouement n'apparaît qu'une fois le match terminé.
+  const tint = predictionBoxTint(d.outcome, item.fixture.homeTeam, item.fixture.awayTeam, outcomeCorrect);
+
   return (
     <div
       className={cn(
         "flex flex-col gap-1 rounded-2xl px-3 py-2.5 text-[13px]",
-        outcomeCorrect === null && "bg-surface-sunk text-ink",
-        outcomeCorrect === true && "bg-winner-soft text-winner",
-        outcomeCorrect === false && "bg-wrong-soft text-wrong",
+        outcomeCorrect === null && "text-ink",
+        outcomeCorrect === true && "text-winner",
+        outcomeCorrect === false && "text-wrong",
       )}
+      style={{ background: tint.background }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="font-bold">
-          {outcomeCorrect === true && "🟩 "}
-          {outcomeCorrect === false && "🟥 "}
-          {outcomeCorrect === null && "🩶 "}
+        <span className="flex items-center gap-1.5 font-bold">
+          {outcomeCorrect === true && "🟩"}
+          {outcomeCorrect === false && "🟥"}
+          {tint.dotColor && (
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: tint.dotColor }} aria-hidden />
+          )}
           {side}
           {item.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
         </span>

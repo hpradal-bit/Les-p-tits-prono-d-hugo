@@ -1,7 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { marginBucketSentence, outcomeSideLabel, outcomeWasCorrect } from "./display.ts";
-import type { MarginBucket } from "../types.ts";
+import {
+  hexToRgba,
+  marginBucketSentence,
+  outcomeSideLabel,
+  outcomeWasCorrect,
+  predictionBoxTint,
+} from "./display.ts";
+import type { MarginBucket, Team } from "../types.ts";
+
+function makeTeam(overrides: Partial<Team> = {}): Team {
+  return {
+    id: "t1",
+    code: "XX",
+    name: "Équipe",
+    shortName: "Équipe",
+    city: null,
+    logoUrl: null,
+    primaryColor: null,
+    secondaryColor: null,
+    ...overrides,
+  };
+}
 
 test("outcomeSideLabel : équipe à domicile", () => {
   assert.equal(outcomeSideLabel("home", "Castres", "Vannes"), "Castres");
@@ -42,4 +62,55 @@ test("outcomeWasCorrect : indépendant du score exact — seul le vainqueur comp
   // Pronostic : Vannes gagnant. Résultat réel : Vannes gagne largement,
   // même si le score exact tenté était différent — le vainqueur reste juste.
   assert.equal(outcomeWasCorrect("away", 10, 15), true);
+});
+
+test("hexToRgba : conversion correcte", () => {
+  assert.equal(hexToRgba("#E30613", 0.16), "rgba(227, 6, 19, 0.16)");
+});
+
+test("hexToRgba : accepte sans le dièse", () => {
+  assert.equal(hexToRgba("E30613", 0.5), "rgba(227, 6, 19, 0.5)");
+});
+
+test("hexToRgba : rejette une valeur illisible", () => {
+  assert.equal(hexToRgba("pas une couleur", 0.16), null);
+});
+
+test("predictionBoxTint : match terminé, pronostic gagnant → vert, jamais la couleur du club", () => {
+  const home = makeTeam({ primaryColor: "#E30613" });
+  const away = makeTeam({ primaryColor: "#009640" });
+  const tint = predictionBoxTint("home", home, away, true);
+  assert.equal(tint.background, "var(--winner-soft)");
+  assert.equal(tint.dotColor, null);
+});
+
+test("predictionBoxTint : match terminé, pronostic perdant → rouge", () => {
+  const home = makeTeam({ primaryColor: "#E30613" });
+  const away = makeTeam({ primaryColor: "#009640" });
+  const tint = predictionBoxTint("away", home, away, false);
+  assert.equal(tint.background, "var(--wrong-soft)");
+});
+
+test("predictionBoxTint : match pas encore joué, club avec couleur → teinte du club", () => {
+  const home = makeTeam({ primaryColor: "#E30613" });
+  const away = makeTeam({ primaryColor: "#009640" });
+  const tint = predictionBoxTint("home", home, away, null);
+  assert.equal(tint.background, "rgba(227, 6, 19, 0.16)");
+  assert.equal(tint.dotColor, "#E30613");
+});
+
+test("predictionBoxTint : match nul pronostiqué → neutre, pas de couleur de club", () => {
+  const home = makeTeam({ primaryColor: "#E30613" });
+  const away = makeTeam({ primaryColor: "#009640" });
+  const tint = predictionBoxTint("draw", home, away, null);
+  assert.equal(tint.background, "var(--surface-sunk)");
+  assert.equal(tint.dotColor, null);
+});
+
+test("predictionBoxTint : club sans couleur enregistrée → neutre", () => {
+  const home = makeTeam({ primaryColor: null });
+  const away = makeTeam({ primaryColor: "#009640" });
+  const tint = predictionBoxTint("home", home, away, null);
+  assert.equal(tint.background, "var(--surface-sunk)");
+  assert.equal(tint.dotColor, null);
 });
