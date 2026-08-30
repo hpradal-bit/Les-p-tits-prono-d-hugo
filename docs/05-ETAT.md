@@ -83,6 +83,18 @@ Pas touché dans cette passe (periodicité moindre, ou déjà correct) :
 moins visité que le jeu, laissé de côté pour ne pas élargir le risque
 juste avant J-9.
 
+**Deuxième correctif, plus important encore** — Hugo a signalé que l'appli
+restait très lente sur mobile après le premier passage. Cause trouvée :
+les fonctions serveur Vercel tournaient par défaut à **iad1 (Virginie,
+USA)**, alors que la base Supabase est en **eu-west-1 (Irlande)** — aucun
+`vercel.json` ne fixait de région. Chaque requête à la base (et il y en a
+plusieurs par écran) traversait donc deux fois l'Atlantique. `vercel.json`
+fixe maintenant la région d'exécution à **dub1 (Dublin)**, à quelques
+millisecondes de la base et bien plus proche des joueurs (tous en France)
+que ne l'était la Virginie. Sur une appli qui interroge Supabase à chaque
+écran, ce décalage de région pesait probablement plus lourd que les
+revalidations de session en double corrigées juste avant.
+
 ## Réglages admin par ligue, questions bonus dupliquées, déconnexion (27 août)
 
 - **Bug majeur corrigé** : tous les écrans `/admin/*` (bareme, joueurs,
