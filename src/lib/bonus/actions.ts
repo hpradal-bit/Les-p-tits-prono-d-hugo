@@ -23,6 +23,20 @@ const createSchema = z.object({
   deadlineMinutes: z.number().int().min(0).optional(),
 });
 
+const updateSchema = z.object({
+  questionId: z.string().uuid(),
+  prompt: z.string().min(3).max(500),
+  roundId: z.string().uuid().nullable().optional(),
+  config: z.unknown().optional(),
+  scoring: z.unknown().optional(),
+  // Date de fin absolue (ISO), ou null pour retirer toute date de fin.
+  closesAt: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Date invalide.").nullable().optional(),
+});
+
+const deleteSchema = z.object({
+  questionId: z.string().uuid(),
+});
+
 const settleSchema = z.object({
   questionId: z.string().uuid(),
   correctAnswer: z.unknown(),
@@ -87,6 +101,131 @@ export async function createBonusQuestion(
 
   revalidatePath("/admin/bonus");
   return { status: "success", message: "Question créée." };
+}
+
+/**
+ * Modifie une question déjà créée — intitulé, journée, options, barème,
+ * date de fin. Une question réglée a déjà des scores calculés à partir de
+ * son barème : on n'y touche plus (`scoring`), pour ne jamais afficher des
+ * points qui ne correspondent plus à la règle affichée. La configuration
+ * (les réponses proposées) devient intouchable dès qu'une réponse existe,
+ * pour ne jamais invalider une réponse déjà stockée.
+ */
+export async function updateBonusQuestion(
+  input: unknown,
+): Promise<AdminActionState> {
+  const ctx = await requireAdmin();
+  const parsed = updateSchema.safeParse(input);
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Données invalides." };
+  const { questionId, prompt, roundId, config, scoring, closesAt } = parsed.data;
+
+  const admin = createAdminClient();
+  const { data: q } = await admin
+    .from("bonus_questions")
+    .select("id, kind, status, config")
+    .eq("id", questionId)
+    .single();
+  if (!q) return { status: "error", message: "Question introuvable." };
+
+  const kd = requireKind(q.kind as string);
+  const update: Record<string, unknown> = { prompt };
+  if (roundId !== undefined) update.round_id = roundId;
+  if (closesAt !== undefined) update.closes_at = closesAt;
+
+  const changed: string[] = [];
+
+  if (config !== undefined) {
+    const { count } = await admin
+      .from("bonus_answers")
+      .select("user_id", { count: "exact", head: true })
+      .eq("question_id", questionId);
+    if (count && count > 0) {
+      return {
+        status: "error",
+        message: "Impossible de modifier les réponses proposées : des joueurs ont déjà répondu.",
+      };
+    }
+    try {
+      update.config = kd.parseConfig(config);
+    } catch {
+      return { status: "error", message: "Configuration invalide." };
+    }
+    changed.push("les options");
+  }
+
+  if (scoring !== undefined) {
+    if (q.status === "settled") {
+      return {
+        status: "error",
+        message: "Impossible de modifier le barème : la question est déjà réglée et les points distribués.",
+      };
+    }
+    try {
+      update.scoring = kd.parseScoring(scoring);
+    } catch {
+      return { status: "error", message: "Barème invalide." };
+    }
+    changed.push("le barème");
+  }
+
+  const { error } = await admin.from("bonus_questions").update(update).eq("id", questionId);
+  if (error) return { status: "error", message: error.message };
+
+  if (closesAt !== undefined) changed.push("la date de fin");
+  if (roundId !== undefined) changed.push("la journée");
+  changed.push("l'intitulé");
+
+  await admin.from("admin_actions").insert({
+    admin_id: ctx.userId,
+    action: "bonus.question_updated",
+    entity_type: "bonus_question",
+    entity_id: questionId,
+    reason: `Question modifiée (${changed.join(", ")}) : ${prompt.slice(0, 80)}`,
+  });
+
+  revalidatePath("/admin/bonus");
+  revalidatePath("/questions");
+  revalidatePath("/journee");
+  return { status: "success", message: "Question modifiée." };
+}
+
+/**
+ * Supprime une question bonus, quel que soit son statut — y compris déjà
+ * réglée. La cascade SQL (`on delete cascade`) retire ses réponses et scores
+ * avec elle : c'est délibéré (une question créée par erreur ne doit laisser
+ * aucune trace dans le classement), tracé dans admin_actions avant coup.
+ */
+export async function deleteBonusQuestion(
+  input: unknown,
+): Promise<AdminActionState> {
+  const ctx = await requireAdmin();
+  const parsed = deleteSchema.safeParse(input);
+  if (!parsed.success) return { status: "error", message: "Données invalides." };
+
+  const admin = createAdminClient();
+  const { data: q } = await admin
+    .from("bonus_questions")
+    .select("id, prompt, status")
+    .eq("id", parsed.data.questionId)
+    .single();
+  if (!q) return { status: "error", message: "Question introuvable." };
+
+  await admin.from("admin_actions").insert({
+    admin_id: ctx.userId,
+    action: "bonus.question_deleted",
+    entity_type: "bonus_question",
+    entity_id: q.id,
+    reason: `Question supprimée (statut : ${q.status}) : ${(q.prompt as string).slice(0, 80)}`,
+  });
+
+  const { error } = await admin.from("bonus_questions").delete().eq("id", q.id);
+  if (error) return { status: "error", message: error.message };
+
+  revalidatePath("/admin/bonus");
+  revalidatePath("/questions");
+  revalidatePath("/journee");
+  revalidatePath("/classement");
+  return { status: "success", message: "Question supprimée." };
 }
 
 export async function openBonusQuestion(

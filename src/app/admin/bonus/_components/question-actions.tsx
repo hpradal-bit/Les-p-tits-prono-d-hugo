@@ -7,9 +7,11 @@ import {
   closeBonusQuestion,
   settleBonusQuestion,
   settleBonusFromStandings,
+  deleteBonusQuestion,
 } from "@/lib/bonus/actions";
 import { getKind } from "@/lib/bonus/registry";
 import type { BonusQuestion } from "@/lib/bonus/types";
+import { EditQuestionForm } from "./edit-form";
 
 function PodiumSettleForm({ question }: { question: BonusQuestion }) {
   const config = question.config as { options: { value: string; label: string }[]; count: number; labels?: string[] };
@@ -183,9 +185,34 @@ const STATUS_COLORS: Record<string, string> = {
   settled: "bg-perfect-soft text-perfect",
 };
 
-export function QuestionCard({ question }: { question: BonusQuestion }) {
+interface TeamOption {
+  value: string;
+  label: string;
+}
+
+interface RoundOption {
+  id: string;
+  name: string;
+  number: number;
+}
+
+export function QuestionCard({
+  question,
+  teams = [],
+  rounds = [],
+  answerCount = 0,
+  editable = false,
+}: {
+  question: BonusQuestion;
+  teams?: TeamOption[];
+  rounds?: RoundOption[];
+  answerCount?: number;
+  editable?: boolean;
+}) {
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const kd = getKind(question.kind);
   const isPodium = question.kind === "podium";
 
@@ -198,6 +225,30 @@ export function QuestionCard({ question }: { question: BonusQuestion }) {
         : await closeBonusQuestion(question.id);
     setPending(false);
     setMsg(result.message ?? "");
+  }
+
+  async function handleDelete() {
+    setPending(true);
+    setMsg("");
+    const result = await deleteBonusQuestion({ questionId: question.id });
+    setPending(false);
+    setConfirmingDelete(false);
+    setMsg(result.message ?? "");
+  }
+
+  if (editing) {
+    return (
+      <div className="rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
+        <p className="text-[13px] font-semibold text-ink-muted">Modifier la question</p>
+        <EditQuestionForm
+          question={question}
+          teams={teams}
+          rounds={rounds}
+          answerCount={answerCount}
+          onDone={() => setEditing(false)}
+        />
+      </div>
+    );
   }
 
   return (
@@ -259,6 +310,41 @@ export function QuestionCard({ question }: { question: BonusQuestion }) {
               {pending ? "…" : "Fermer"}
             </Button>
           </>
+        )}
+        {editable && (
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={pending}>
+            Modifier
+          </Button>
+        )}
+        {editable && !confirmingDelete && (
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            disabled={pending}
+            className="text-[12.5px] font-semibold text-wrong hover:underline"
+          >
+            Supprimer
+          </button>
+        )}
+        {editable && confirmingDelete && (
+          <span className="flex items-center gap-2 text-[12.5px] text-ink-muted">
+            Supprimer définitivement ?
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={pending}
+              className="font-semibold text-wrong hover:underline"
+            >
+              {pending ? "…" : "Confirmer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              className="hover:underline"
+            >
+              Annuler
+            </button>
+          </span>
         )}
       </div>
 

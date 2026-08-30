@@ -41,6 +41,21 @@ export default async function AdminBonusPage({
   const seasonId = season.id;
   const questions = await listQuestions(admin, seasonId);
 
+  // L'édition/suppression n'est ouverte que sur le Top 14 pour le moment.
+  const isTop14 = myLeagues.find((l) => l.leagueId === leagueId)?.competitionCode === "top14";
+
+  const answerCountByQuestion = new Map<string, number>();
+  if (questions.length > 0) {
+    const { data: answerRows } = await admin
+      .from("bonus_answers")
+      .select("question_id")
+      .in("question_id", questions.map((q) => q.id));
+    for (const row of answerRows ?? []) {
+      const key = row.question_id as string;
+      answerCountByQuestion.set(key, (answerCountByQuestion.get(key) ?? 0) + 1);
+    }
+  }
+
   const [{ data: seasonTeams }, { data: rounds }] = await Promise.all([
     admin
       .from("season_teams")
@@ -108,7 +123,17 @@ export default async function AdminBonusPage({
           <ul className="flex flex-col gap-2.5">
             {questions.map((q) => (
               <li key={q.id}>
-                <QuestionCard question={q} />
+                <QuestionCard
+                  question={q}
+                  teams={teams}
+                  rounds={(rounds ?? []).map((r) => ({
+                    id: r.id as string,
+                    name: r.name as string,
+                    number: r.number as number,
+                  }))}
+                  answerCount={answerCountByQuestion.get(q.id) ?? 0}
+                  editable={isTop14}
+                />
               </li>
             ))}
           </ul>

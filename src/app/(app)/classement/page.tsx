@@ -32,6 +32,7 @@ import { StandingsList } from "./_components/standings-list";
 import { StandingsGraph } from "./_components/standings-graph";
 import { RoundFixtures } from "./_components/round-fixtures";
 import { Segmented, RoundPicker } from "./_components/controls";
+import { LeagueSelect } from "./_components/league-select";
 
 export const metadata = { title: "Classement" };
 
@@ -107,17 +108,24 @@ export default async function ClassementPage({
     );
   }
 
+  // Refonte (liste déroulante des ligues, forme fusionnée dans « Général »,
+  // suppression de Live/Officiel) : Top 14 uniquement pour le moment. La
+  // Pro D2 garde exactement l'écran précédent, onglet Forme et portée compris.
+  const isTop14 = myLeagues.find((l) => l.leagueId === leagueId)?.competitionCode === "top14";
+  const effectiveVue: View = isTop14 && query.vue === "forme" ? "general" : query.vue;
+  const effectivePortee: Reach = isTop14 ? "live" : query.portee;
+
   const [data, history] = await Promise.all([
     loadStandingsData(sb, season, leagueId),
     loadStandingsHistory(sb, season.id),
   ]);
-  const scope = SCOPE_OF[query.portee];
-  const kind = KIND_OF[query.vue];
+  const scope = SCOPE_OF[effectivePortee];
+  const kind = KIND_OF[effectiveVue];
   const played = playedRounds(data.rounds, data.entries, scope);
 
   // Journée demandée : celle de l'URL si elle a été jouée, sinon la dernière.
   const askedRound =
-    query.vue === "journee" && query.journee
+    effectiveVue === "journee" && query.journee
       ? (played.find((r) => {
           const detail = data.roundsDetail.find((d) => d.id === r.id);
           return detail?.number === query.journee;
@@ -134,12 +142,13 @@ export default async function ClassementPage({
   const referenceRound = referenceIndex >= 0 ? played[referenceIndex] : null;
   const countedRounds = data.rounds.filter((r) => table.roundIds.includes(r.id));
 
-  const viewOptions = (["journee", "general", "forme"] as View[]).map((value) => ({
+  const availableViews: View[] = isTop14 ? ["journee", "general"] : ["journee", "general", "forme"];
+  const viewOptions = availableViews.map((value) => ({
     value,
     label: value === "journee" ? "Journée" : value === "general" ? "Général" : "Forme",
     href: buildHref({
       vue: value,
-      portee: query.portee,
+      portee: effectivePortee,
       journee: value === "journee" ? (referenceRound ? roundNumber(data, referenceRound.id) : null) : null,
       league: leagueId,
     }),
@@ -148,18 +157,18 @@ export default async function ClassementPage({
   const reachOptions = (["live", "officiel"] as Reach[]).map((value) => ({
     value,
     label: value === "live" ? "Live" : "Officiel",
-    href: buildHref({ vue: query.vue, portee: value, journee: query.journee, league: leagueId }),
+    href: buildHref({ vue: effectiveVue, portee: value, journee: query.journee, league: leagueId }),
   }));
 
   const ligueOptions = myLeagues.map((l) => ({
     value: l.leagueId,
     label: l.leagueName,
-    href: buildHref({ vue: query.vue, portee: query.portee, journee: null, league: l.leagueId }),
+    href: buildHref({ vue: effectiveVue, portee: effectivePortee, journee: null, league: l.leagueId }),
   }));
 
   // Les matchs de la journée affichée : la porte d'entrée du Match Center.
   let fixtures: RoundFixture[] = [];
-  if (query.vue === "journee" && referenceRound) {
+  if (effectiveVue === "journee" && referenceRound) {
     fixtures = await loadRoundFixtures(sb, referenceRound.id);
   }
 
@@ -175,26 +184,33 @@ export default async function ClassementPage({
       banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
     >
       <div className="flex flex-col gap-3">
-        {ligueOptions.length > 1 && (
+        {ligueOptions.length > 1 && isTop14 && (
+          <LeagueSelect options={ligueOptions} current={leagueId} />
+        )}
+        {ligueOptions.length > 1 && !isTop14 && (
           <Segmented options={ligueOptions} current={leagueId} label="Ligue" />
         )}
-        <Segmented options={viewOptions} current={query.vue} label="Type de classement" />
-        <Segmented options={reachOptions} current={query.portee} label="Portée du classement" />
-        <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
-          {query.portee === "live"
-            ? "Live : tous les matchs joués comptent, y compris ceux en cours."
-            : "Officiel : seuls les résultats définitifs comptent."}
-        </p>
+        <Segmented options={viewOptions} current={effectiveVue} label="Type de classement" />
+        {!isTop14 && (
+          <>
+            <Segmented options={reachOptions} current={effectivePortee} label="Portée du classement" />
+            <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
+              {effectivePortee === "live"
+                ? "Live : tous les matchs joués comptent, y compris ceux en cours."
+                : "Officiel : seuls les résultats définitifs comptent."}
+            </p>
+          </>
+        )}
       </div>
 
-      {query.vue === "journee" && referenceRound && (
+      {effectiveVue === "journee" && referenceRound && (
         <RoundPicker
           name={referenceRound.name}
           previousHref={
             referenceIndex > 0
               ? buildHref({
                   vue: "journee",
-                  portee: query.portee,
+                  portee: effectivePortee,
                   journee: roundNumber(data, played[referenceIndex - 1].id),
                   league: leagueId,
                 })
@@ -204,7 +220,7 @@ export default async function ClassementPage({
             referenceIndex >= 0 && referenceIndex < played.length - 1
               ? buildHref({
                   vue: "journee",
-                  portee: query.portee,
+                  portee: effectivePortee,
                   journee: roundNumber(data, played[referenceIndex + 1].id),
                   league: leagueId,
                 })
@@ -219,22 +235,22 @@ export default async function ClassementPage({
       <StandingsList rows={table.rows} viewerId={viewer.id} />
       {table.referenceRoundId === null ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">
-          {query.portee === "officiel"
+          {effectivePortee === "officiel"
             ? "Aucun résultat n'est encore officiel. Le classement officiel s'affinera dès la validation des premiers matchs."
             : "Le classement s'affinera dès les premiers résultats de la saison."}
         </Card>
       ) : (
         <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
-          {query.vue === "general" && countedRounds.length > 0 &&
+          {effectiveVue === "general" && countedRounds.length > 0 &&
             `Cumul de ${countedRounds[0].name} à ${countedRounds[countedRounds.length - 1].name}.`}
-          {query.vue === "forme" && countedRounds.length > 0 &&
+          {effectiveVue === "forme" && countedRounds.length > 0 &&
             `Les ${DEFAULT_FORM_WINDOW} dernières journées : ${countedRounds[0].name} → ${countedRounds[countedRounds.length - 1].name}.`}
-          {query.vue === "journee" && referenceRound && `Points marqués sur la ${referenceRound.name}.`}
+          {effectiveVue === "journee" && referenceRound && `Points marqués sur la ${referenceRound.name}.`}
           {" L'évolution se lit par rapport à la journée précédente."}
         </p>
       )}
 
-      {query.vue === "general" && history.roundLabels.length >= 2 && (
+      {effectiveVue === "general" && history.roundLabels.length >= 2 && (
         <StandingsGraph
           players={history.players.map((p) => ({
             userId: p.userId,
