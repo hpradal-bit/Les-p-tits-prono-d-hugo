@@ -6,7 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
-import { loadActiveSeason } from "@/lib/standings/queries";
+import { loadActiveSeason, loadStandingsData } from "@/lib/standings/queries";
+import { computeStandings } from "@/lib/standings/engine";
+import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { getPower, requirePower } from "./registry.ts";
 import {
   loadActivePowers,
@@ -93,33 +95,28 @@ export async function declarePower(
   }
 
   if (pk.needsTarget || pk.needsFixture) {
-    const { data: profiles } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("is_active", true);
-
-    const profileIds = ((profiles ?? []) as Array<{ id: string }>).map((p) => p.id);
-
     let standings: { userId: string; position: number }[] = [];
     if (pk.needsTarget) {
-      const { data: scores } = await admin
-        .from("prediction_scores")
-        .select("points, predictions!inner(user_id, fixture_id, fixtures!inner(round_id, rounds!inner(season_id)))")
-        .order("points", { ascending: false });
-
-      const totals = new Map<string, number>();
-      for (const pid of profileIds) totals.set(pid, 0);
-
-      for (const row of (scores ?? []) as Array<Record<string, unknown>>) {
-        const pred = row.predictions as Record<string, unknown> | null;
-        if (!pred) continue;
-        const uid = pred.user_id as string;
-        totals.set(uid, (totals.get(uid) ?? 0) + ((row.points as number) ?? 0));
+      // Le classement général en direct de la ligue à laquelle appartient
+      // cette journée — le même que celui affiché sur /classement, et
+      // restreint aux membres de cette ligue (pas tous les profils actifs de
+      // l'appli, sinon un joueur d'une autre ligue pourrait être visé).
+      // Avant ce correctif, ce calcul sommait les points de TOUS les joueurs
+      // actifs sur TOUTE l'histoire de l'application, toutes saisons et
+      // compétitions confondues — un classement sans rapport avec le vrai,
+      // qui pouvait laisser le joueur "premier" à tort et donc sans aucune
+      // cible éligible pour le Duel.
+      const leagueId = await resolveLeagueForSeason(sb, seasonId);
+      if (leagueId) {
+        const standingsData = await loadStandingsData(
+          sb,
+          { id: seasonId, label: "", competitionName: "", competitionLogoUrl: null },
+          leagueId,
+        );
+        standings = computeStandings(standingsData, { kind: "overall", scope: "live" }).rows.map(
+          (r) => ({ userId: r.player.userId, position: r.position }),
+        );
       }
-
-      standings = [...totals.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([userId], i) => ({ userId, position: i + 1 }));
     }
 
     const validation = pk.validateDeclaration({

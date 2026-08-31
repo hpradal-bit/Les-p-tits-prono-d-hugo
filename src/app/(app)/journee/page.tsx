@@ -5,6 +5,8 @@ import { z } from "zod";
 import { Card, CompetitionLogo } from "@/components/ui";
 import { LeagueSwitcher } from "@/components/league-switcher";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { computeStandings } from "@/lib/standings/engine";
+import { loadStandingsData } from "@/lib/standings/queries";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
@@ -89,13 +91,21 @@ export default async function JourneePage({
   const seasonId = board.seasonId;
   const currentRoundId = board.round.id;
 
-  const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles, appSettings, powerAdjustments] =
+  const [allBonusItems, activePowers, userTokens, roundUsages, standingsData, appSettings, powerAdjustments] =
     await Promise.all([
       listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
       loadActivePowers(admin),
       loadUserTokens(admin, viewer.id, seasonId),
       loadRoundUsages(admin, currentRoundId),
-      admin.from("profiles").select("id, display_name, first_name").eq("is_active", true),
+      // Les membres de CETTE ligue, pas tous les profils actifs de l'appli
+      // (sinon un joueur d'une autre ligue apparaîtrait comme cible) — et leur
+      // vrai classement, pas un ordre arbitraire : le Duel n'a de sens que
+      // contre un adversaire réellement mieux classé (cf. règle du pouvoir).
+      loadStandingsData(
+        sb,
+        { id: seasonId, label: "", competitionName: board.competitionName, competitionLogoUrl: board.competitionLogoUrl },
+        leagueId,
+      ),
       loadSettings(admin),
       loadPowerAdjustmentsByFixture(admin, viewer.id, seasonId),
     ]);
@@ -111,7 +121,10 @@ export default async function JourneePage({
     (u) => u.initiatorId === viewer.id && (u.state === "declared" || u.state === "accepted"),
   );
 
-  const profiles = ((allProfiles.data ?? []) as Array<{ id: string; display_name: string; first_name: string }>);
+  // Classement général en direct : c'est celui que le joueur voit sur
+  // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
+  const standingsRows = computeStandings(standingsData, { kind: "overall", scope: "live" }).rows;
+  const displayNameById = new Map(standingsRows.map((r) => [r.player.userId, r.player.displayName]));
   const fallbackCost = setting<number>(
     appSettings,
     "powers.default_credit_cost",
@@ -139,10 +152,13 @@ export default async function JourneePage({
     label: `${f.fixture.homeTeam.shortName} - ${f.fixture.awayTeam.shortName}`,
   }));
 
-  const playerOptions = profiles.map((p, i) => ({
-    userId: p.id,
-    displayName: p.display_name,
-    position: i + 1,
+  // Le viewer reste dans la liste (pas filtré ici) : `PowerBanner` a besoin
+  // de sa propre position pour savoir qui est "mieux classé" pour le Duel —
+  // il exclut lui-même le joueur courant des cibles proposées.
+  const playerOptions = standingsRows.map((r) => ({
+    userId: r.player.userId,
+    displayName: r.player.displayName,
+    position: r.position,
   }));
 
   // L'Espion révèle le pronostic — même encore provisoire — de sa cible dès
@@ -197,9 +213,7 @@ export default async function JourneePage({
         powerCode: myUsage.powerCode,
         powerEmoji: activePowers.find((p) => p.id === myUsage.powerId)?.emoji ?? "⚡",
         powerName: activePowers.find((p) => p.id === myUsage.powerId)?.name ?? myUsage.powerCode,
-        targetName: myUsage.targetId
-          ? profiles.find((p) => p.id === myUsage.targetId)?.display_name ?? null
-          : null,
+        targetName: myUsage.targetId ? displayNameById.get(myUsage.targetId) ?? null : null,
         fixtureName: myUsage.snapshotBefore.fixtureId
           ? fixtureOptions.find((f) => f.id === myUsage.snapshotBefore.fixtureId)?.label ?? null
           : null,
