@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadMatchCenter, loadSeasonForRound } from "@/lib/standings/queries";
 import { loadRuleset } from "@/lib/settings";
 import { PlayerAvatar } from "../../../_components/player-avatar";
@@ -44,7 +45,10 @@ export default async function PointsPage({
   if (!viewer) redirect("/connexion");
 
   const sb = await createClient();
-  const data = await loadMatchCenter(sb, parsed.data, viewer.id);
+  const [data, clubs] = await Promise.all([
+    loadMatchCenter(sb, parsed.data, viewer.id),
+    loadClubAvatars(sb),
+  ]);
   if (!data) notFound();
   // La saison vient du match lui-même, jamais d'une compétition par défaut :
   // plusieurs ligues, sur des compétitions différentes, vivent en même temps.
@@ -220,7 +224,7 @@ export default async function PointsPage({
                 href={data.leagueId ? `/profil/${p.player.userId}?league=${data.leagueId}` : `/profil/${p.player.userId}`}
                 className="flex flex-col items-center gap-1.5"
               >
-                <PlayerAvatar player={p.player} size={34} />
+                <PlayerAvatar player={p.player} clubs={clubs} size={34} />
                 <span
                   className={`tabular text-[12px] font-bold ${
                     (p.score?.points ?? 0) > 0 ? "text-winner" : "text-ink-faint"

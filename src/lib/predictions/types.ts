@@ -53,6 +53,20 @@ export interface RoundSummary {
   status: string;
 }
 
+/**
+ * Une journée de la saison, avec ses matchs assemblés — pour l'affichage
+ * « Mes pronos » en défilement continu (une section par journée, la journée
+ * courante développée, les autres repliées).
+ */
+export interface SeasonRound {
+  round: RoundSummary;
+  /** Date du premier coup d'envoi de la journée (ISO), pour le bandeau. */
+  firstKickoffAt: string | null;
+  /** La journée que `pickCurrentRound` retiendrait pour l'écran classique. */
+  isCurrent: boolean;
+  fixtures: JourneyFixture[];
+}
+
 /** Tout ce dont l'écran « Ma journée » a besoin, en un seul objet. */
 export interface JourneyBoard {
   userId: Uuid;
@@ -68,6 +82,14 @@ export interface JourneyBoard {
   /** Toutes les journées de la saison, pour le bandeau de navigation. */
   allRounds: RoundSummary[];
   fixtures: JourneyFixture[];
+  /**
+   * Toute la saison, journée par journée, matchs assemblés — pour la vue
+   * « Mes pronos » en défilement continu. Vide si la saison n'a aucune
+   * journée (ne devrait pas arriver, `loadJourneyBoard` renvoie `null` avant).
+   */
+  seasonRounds: SeasonRound[];
+  /** Tous les scores exacts déjà tentés sur la saison, quelle que soit la journée. */
+  allAttempts: ExactAttempt[];
   /** Le barème en vigueur : tranches, quotas, points. Rien n'est en dur à l'écran. */
   ruleset: Ruleset;
   /** Budget de scores exacts sur la période en cours. */

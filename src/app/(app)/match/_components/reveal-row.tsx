@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PlayerAvatar } from "../../_components/player-avatar";
 import { ScorePill } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { MatchPrediction } from "@/lib/standings/queries";
 
 /**
@@ -20,12 +21,14 @@ export function RevealRow({
   isMine,
   isAlone,
   startRevealed,
+  clubs = [],
 }: {
   prediction: MatchPrediction;
   label: string;
   isMine: boolean;
   isAlone: boolean;
   startRevealed: boolean;
+  clubs?: readonly ClubAvatar[];
 }) {
   const [revealed, setRevealed] = useState(startRevealed);
   const score = prediction.score;
@@ -39,7 +42,7 @@ export function RevealRow({
       )}
     >
       {revealed ? (
-        <PlayerAvatar player={prediction.player} size={36} />
+        <PlayerAvatar player={prediction.player} clubs={clubs} size={36} />
       ) : (
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-line text-[15px] font-bold text-ink-muted">
           ?

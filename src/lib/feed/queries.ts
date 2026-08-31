@@ -22,6 +22,10 @@ export interface FeedItem {
   rendered: RenderedEvent | null;
   body: string | null;
   authorName: string | null;
+  /** Pour afficher l'avatar de l'auteur — l'avatar apparaît partout où son nom apparaît. */
+  authorFirstName: string | null;
+  authorAvatarKind: "emoji" | "photo" | "club" | null;
+  authorAvatarValue: string | null;
   reactions: { emoji: string; count: number; mine: boolean }[];
 }
 
@@ -86,7 +90,7 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
   let query = sb
     .from("feed_posts")
     .select(`id, body, created_at, event_id,
-             author:author_id (display_name),
+             author:author_id (display_name, first_name, avatar_kind, avatar_value),
              event:event_id (id, kind, payload, created_at,
                              actor:actor_id (display_name),
                              target:target_id (display_name))`)
@@ -142,13 +146,21 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
       rendered = renderEvent(event);
     }
 
+    const author = one<{
+      display_name: string; first_name: string;
+      avatar_kind: "emoji" | "photo" | "club"; avatar_value: string;
+    }>(p.author);
+
     return {
       id: p.id as string,
       kind: raw?.kind ?? null,
       createdAt: (p.created_at as string),
       rendered,
       body: (p.body as string | null) ?? null,
-      authorName: one<{ display_name: string }>(p.author)?.display_name ?? null,
+      authorName: author?.display_name ?? null,
+      authorFirstName: author?.first_name ?? null,
+      authorAvatarKind: author?.avatar_kind ?? null,
+      authorAvatarValue: author?.avatar_value ?? null,
       reactions: (byPost.get(p.id as string) ?? []).sort((a, b) => b.count - a.count),
     };
   }).filter((item) => {

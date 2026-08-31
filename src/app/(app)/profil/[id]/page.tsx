@@ -5,6 +5,7 @@ import { Card, Label } from "@/components/ui";
 import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadProfiles } from "@/lib/stats/queries";
 import { computeHeadToHead } from "@/lib/stats/head-to-head";
 import { PlayerAvatar } from "../../_components/player-avatar";
@@ -35,7 +36,10 @@ export default async function ProfilJoueurPage({
   const resolved = await resolveLeagueId(sb, viewer.id, requested);
   if (!resolved) redirect("/accueil");
 
-  const data = await loadProfiles(resolved.leagueId);
+  const [data, clubs] = await Promise.all([
+    loadProfiles(resolved.leagueId),
+    loadClubAvatars(sb),
+  ]);
   const them = data?.profiles.get(parsed.data);
   if (!them) notFound();
 
@@ -50,7 +54,7 @@ export default async function ProfilJoueurPage({
 
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <PlayerAvatar player={h2h.a.player} size={36} />
+              <PlayerAvatar player={h2h.a.player} clubs={clubs} size={36} />
               <span className="truncate text-[15px] font-semibold text-ink">
                 {h2h.a.player.firstName}
               </span>
@@ -62,7 +66,7 @@ export default async function ProfilJoueurPage({
               <span className="truncate text-[15px] font-semibold text-ink">
                 {h2h.b.player.firstName}
               </span>
-              <PlayerAvatar player={h2h.b.player} size={36} />
+              <PlayerAvatar player={h2h.b.player} clubs={clubs} size={36} />
             </div>
           </div>
 
@@ -98,7 +102,7 @@ export default async function ProfilJoueurPage({
         </Card>
       )}
 
-      <ProfileView profile={them} others={[]} isMe={false} leagueId={resolved.leagueId} />
+      <ProfileView profile={them} others={[]} isMe={false} leagueId={resolved.leagueId} clubs={clubs} />
     </div>
   );
 }

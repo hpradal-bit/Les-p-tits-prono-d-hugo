@@ -4,9 +4,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, Label } from "@/components/ui";
 import { LeagueSwitcher } from "@/components/league-switcher";
+import { PlayerAvatar } from "../_components/player-avatar";
 import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queries";
 import { loadLastDebrief } from "@/lib/feed/debrief";
 import { ReactionBar } from "./_components/reaction-bar";
@@ -59,10 +61,11 @@ export default async function VestiairePage({
   if (!resolved) redirect("/accueil");
   const { leagueId, leagues: myLeagues } = resolved;
 
-  const [items, choices, debrief] = await Promise.all([
+  const [items, choices, debrief, clubs] = await Promise.all([
     loadFeed(leagueId, filtre),
     loadReactionChoices(),
     loadLastDebrief(leagueId),
+    loadClubAvatars(sb),
   ]);
 
   const withLeague = (href: string) =>
@@ -133,12 +136,25 @@ export default async function VestiairePage({
                     {item.rendered.text}
                   </p>
                 ) : (
-                  <>
-                    <Label>{item.authorName ?? "Un joueur"}</Label>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px] leading-snug text-ink">
-                      {item.body}
-                    </p>
-                  </>
+                  <div className="flex items-start gap-2.5">
+                    <PlayerAvatar
+                      player={{
+                        userId: "",
+                        firstName: item.authorFirstName ?? "",
+                        displayName: item.authorName ?? "",
+                        avatarKind: item.authorAvatarKind ?? "emoji",
+                        avatarValue: item.authorAvatarValue ?? "🏉",
+                      }}
+                      clubs={clubs}
+                      size={32}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <Label>{item.authorName ?? "Un joueur"}</Label>
+                      <p className="mt-1 whitespace-pre-wrap text-[15px] leading-snug text-ink">
+                        {item.body}
+                      </p>
+                    </div>
+                  </div>
                 )}
                 <p className="mt-1.5 font-mono text-[11px] text-ink-faint">{ago(item.createdAt)}</p>
                 <ReactionBar postId={item.id} reactions={item.reactions} choices={choices} />

@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadMatchCenter, type MatchPrediction } from "@/lib/standings/queries";
 import { TeamLogo } from "@/components/ui";
 import { RevealRow } from "../_components/reveal-row";
@@ -34,7 +35,10 @@ export default async function MatchPage({
   if (!viewer) redirect("/connexion");
 
   const sb = await createClient();
-  const data = await loadMatchCenter(sb, parsed.data, viewer.id);
+  const [data, clubs] = await Promise.all([
+    loadMatchCenter(sb, parsed.data, viewer.id),
+    loadClubAvatars(sb),
+  ]);
   if (!data) notFound();
 
   const { fixture, predictions, mine, isLocked, leagueId } = data;
@@ -138,6 +142,7 @@ export default async function MatchPage({
                   isAlone={loner(p)}
                   // Le sien est déjà connu : inutile de le faire retourner.
                   startRevealed={p.player.userId === viewer.id || hasScore}
+                  clubs={clubs}
                 />
               ))
             )}

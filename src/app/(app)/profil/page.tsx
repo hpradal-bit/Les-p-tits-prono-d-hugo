@@ -5,6 +5,7 @@ import { Card } from "@/components/ui";
 import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadProfiles } from "@/lib/stats/queries";
 import { ProfileView } from "./_components/profile-view";
 
@@ -26,7 +27,10 @@ export default async function MonProfilPage({
   const resolved = await resolveLeagueId(sb, viewer.id, requested);
   if (!resolved) redirect("/accueil");
 
-  const data = await loadProfiles(resolved.leagueId);
+  const [data, clubs] = await Promise.all([
+    loadProfiles(resolved.leagueId),
+    loadClubAvatars(sb),
+  ]);
   const profile = data?.profiles.get(viewer.id);
 
   if (!profile) {
@@ -43,5 +47,13 @@ export default async function MonProfilPage({
     .filter((p) => p.player.userId !== viewer.id)
     .sort((a, b) => b.points - a.points);
 
-  return <ProfileView profile={profile} others={others} isMe leagueId={resolved.leagueId} />;
+  return (
+    <ProfileView
+      profile={profile}
+      others={others}
+      isMe
+      leagueId={resolved.leagueId}
+      clubs={clubs}
+    />
+  );
 }

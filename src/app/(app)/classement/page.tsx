@@ -12,6 +12,7 @@ import { z } from "zod";
 import { Card, CompetitionLogo, Label } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import {
   DEFAULT_FORM_WINDOW,
@@ -115,9 +116,10 @@ export default async function ClassementPage({
   const effectiveVue: View = isTop14 && query.vue === "forme" ? "general" : query.vue;
   const effectivePortee: Reach = isTop14 ? "live" : query.portee;
 
-  const [data, history] = await Promise.all([
+  const [data, history, clubs] = await Promise.all([
     loadStandingsData(sb, season, leagueId),
     loadStandingsHistory(sb, season.id),
+    loadClubAvatars(sb),
   ]);
   const scope = SCOPE_OF[effectivePortee];
   const kind = KIND_OF[effectiveVue];
@@ -181,7 +183,7 @@ export default async function ClassementPage({
           : `${season.competitionName} · ${season.label}`
       }
       logo={<CompetitionLogo name={season.competitionName} logoUrl={season.competitionLogoUrl} size={30} />}
-      banner={table.referenceRoundId !== null ? <Podium rows={table.rows} /> : undefined}
+      banner={table.referenceRoundId !== null ? <Podium rows={table.rows} clubs={clubs} /> : undefined}
     >
       <div className="flex flex-col gap-3">
         {ligueOptions.length > 1 && isTop14 && (
@@ -232,7 +234,7 @@ export default async function ClassementPage({
       {/* Le classement reste visible même sans le moindre résultat : une ligue
           qui vient de se créer doit voir ses membres, à 0 point, plutôt qu'un
           écran vide qui laisserait croire à une panne. */}
-      <StandingsList rows={table.rows} viewerId={viewer.id} />
+      <StandingsList rows={table.rows} viewerId={viewer.id} clubs={clubs} />
       {table.referenceRoundId === null ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">
           {effectivePortee === "officiel"

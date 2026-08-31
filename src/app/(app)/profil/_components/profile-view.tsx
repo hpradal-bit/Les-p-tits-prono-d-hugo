@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, Label } from "@/components/ui";
 import { PlayerAvatar } from "../../_components/player-avatar";
+import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { PlayerProfile } from "@/lib/stats/profile";
 
 /** Une statistique, grand chiffre et légende. */
@@ -26,12 +27,14 @@ export function ProfileView({
   others,
   isMe,
   leagueId,
+  clubs = [],
 }: {
   profile: PlayerProfile;
   others: PlayerProfile[];
   isMe: boolean;
   /** Pour rester dans la même ligue en comparant deux fiches. */
   leagueId: string;
+  clubs?: readonly ClubAvatar[];
 }) {
   const s = profile.streaks;
 
@@ -39,7 +42,7 @@ export function ProfileView({
     <div className="flex flex-col gap-4">
       <Card className="flex flex-col items-center gap-3 p-6">
         <div className="relative">
-          <PlayerAvatar player={profile.player} size={80} />
+          <PlayerAvatar player={profile.player} clubs={clubs} size={80} />
           {profile.played > 0 && (
             <span className="absolute -bottom-1 -right-1 flex size-8 items-center justify-center rounded-full bg-clay font-mono text-[13px] font-bold text-surface shadow-sm">
               {profile.rank}
@@ -141,7 +144,7 @@ export function ProfileView({
                   href={`/profil/${o.player.userId}?league=${leagueId}`}
                   className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-surface-sunk"
                 >
-                  <PlayerAvatar player={o.player} size={32} />
+                  <PlayerAvatar player={o.player} clubs={clubs} size={32} />
                   <span className="flex-1 truncate text-[15px] text-ink">{o.player.displayName}</span>
                   <span className="tabular font-mono text-[13px] text-ink-muted">{o.points} pts</span>
                 </Link>

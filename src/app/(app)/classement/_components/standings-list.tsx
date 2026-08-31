@@ -8,14 +8,17 @@ import { cn } from "@/lib/cn";
 import { Card } from "@/components/ui";
 import { PlayerAvatar } from "../../_components/player-avatar";
 import { Movement, RowStats } from "./bits";
+import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { StandingsRow } from "@/lib/standings/engine";
 
 export function StandingsList({
   rows,
   viewerId,
+  clubs = [],
 }: {
   rows: StandingsRow[];
   viewerId: string | null;
+  clubs?: readonly ClubAvatar[];
 }) {
   if (rows.length === 0) {
     return (
@@ -49,7 +52,7 @@ export function StandingsList({
                 {row.position}
               </span>
 
-              <PlayerAvatar player={row.player} size={38} />
+              <PlayerAvatar player={row.player} clubs={clubs} size={38} />
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-ink">

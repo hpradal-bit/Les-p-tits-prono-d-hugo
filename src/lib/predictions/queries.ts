@@ -9,7 +9,7 @@ import {
   type ExactAttempt,
 } from "./exact-score";
 import { isLockedAt, nextLockAt } from "./lock";
-import type { JourneyBoard, JourneyFixture, ParticipationRow, PredictionDraft, PredictionScore, RoundSummary } from "./types";
+import type { JourneyBoard, JourneyFixture, ParticipationRow, PredictionDraft, PredictionScore, RoundSummary, SeasonRound } from "./types";
 
 /* ---------------------------------------------------------------------------
    Lecture de l'écran « Ma journée ».
@@ -279,8 +279,12 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
       monthKey: monthKeyOf(f.kickoff_at, timeZone),
     }));
 
-  // --- Assemblage ------------------------------------------------------------
-  const fixtures: JourneyFixture[] = roundFixtureRows
+  // --- Assemblage --------------------------------------------------------
+  // Une seule passe sur TOUTE la saison (déjà chargée pour le calcul des
+  // tentatives de score exact ci-dessus) : la journée affichée par défaut
+  // et la vue « toute la saison » de Mes pronos en dérivent toutes les deux,
+  // sans dupliquer la logique d'assemblage ni relire la base une seconde fois.
+  const seasonAssembled: JourneyFixture[] = seasonFixtures
     .map((row) => {
       const fixture = toFixture(row, teams);
       if (!fixture) return null;
@@ -304,6 +308,19 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
       } satisfies JourneyFixture;
     })
     .filter((f): f is JourneyFixture => f !== null);
+
+  const fixtures = seasonAssembled.filter((f) => f.fixture.roundId === roundRow.id);
+
+  const seasonRounds: SeasonRound[] = rounds.map((r) => {
+    const roundFx = seasonAssembled.filter((f) => f.fixture.roundId === r.id);
+    const firstKickoffAt = roundFx.length > 0 ? roundFx[0].fixture.kickoffAt : (r.starts_at ?? null);
+    return {
+      round: { id: r.id, number: r.number, name: r.name, status: r.status },
+      firstKickoffAt,
+      isCurrent: r.id === roundRow.id,
+      fixtures: roundFx,
+    };
+  });
 
   const open = fixtures.filter((f) => !f.isLocked);
   const firstOfRound = roundFixtureRows[0];
@@ -337,6 +354,8 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
     nextRound: next ? { id: next.id, number: next.number, name: next.name } : null,
     allRounds,
     fixtures,
+    seasonRounds,
+    allAttempts: attempts,
     ruleset,
     exactScoreBudget: budget,
     otherAttempts: attempts.filter((a) => a.roundId !== roundRow.id),

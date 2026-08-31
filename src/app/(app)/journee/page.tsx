@@ -8,6 +8,7 @@ import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
+import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
@@ -21,9 +22,14 @@ import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { RoundNav } from "./_components/round-nav";
+import { RoundBanner } from "./_components/round-banner";
+import { RoundSection } from "./_components/round-section";
 import { Countdown } from "./_components/countdown";
+import type { JourneyFixture } from "@/lib/predictions/types";
+import type { ExactAttempt } from "@/lib/predictions/exact-score";
+import type { Ruleset } from "@/lib/types";
 
-export const metadata: Metadata = { title: "Ma journée" };
+export const metadata: Metadata = { title: "Mes pronos" };
 export const dynamic = "force-dynamic";
 
 const params = z.object({
@@ -47,6 +53,12 @@ export default async function JourneePage({
 
   const board = await loadJourneyBoard({ userId: viewer.id, roundNumber: j, leagueId });
   const admin = createAdminClient();
+  const clubs = await loadClubAvatars(sb);
+
+  // La vue « toute la saison » (bandeaux, journée mise en évidence) est un
+  // chantier Top 14 uniquement pour le moment : la Pro D2 garde l'écran
+  // d'une journée à la fois, à l'identique.
+  const isTop14 = myLeagues.find((l) => l.leagueId === leagueId)?.competitionCode === "top14";
 
   const ligueOptions = myLeagues.map((l) => ({
     value: l.leagueId,
@@ -141,17 +153,12 @@ export default async function JourneePage({
       }
     : null;
 
-  const toPlay = board.fixtures.filter(
-    (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
-  );
-  const live = board.fixtures.filter((f) => f.fixture.status === "live");
+  // Uniquement pour les pastilles d'en-tête (points marqués sur la journée
+  // courante) — la répartition à jouer/verrouillés/en cours/terminés du
+  // contenu lui-même est désormais dans `RoundFixturesBlock`, par journée.
   const done = board.fixtures.filter(
     (f) => f.fixture.status === "finished" || f.fixture.status === "official",
   );
-  const locked = board.fixtures.filter(
-    (f) => f.isLocked && f.fixture.status !== "live" && f.fixture.status !== "finished" && f.fixture.status !== "official",
-  );
-
   const totalPoints = board.fixtures.reduce((sum, f) => sum + (f.score?.points ?? 0), 0);
 
   return (
@@ -183,12 +190,18 @@ export default async function JourneePage({
               avatarKind: viewer.avatarKind,
               avatarValue: viewer.avatarValue,
             }}
+            clubs={clubs}
             size={48}
           />
         </Link>
       </header>
 
-      <RoundNav rounds={board.allRounds} currentNumber={board.round.number} leagueId={board.leagueId} />
+      <RoundNav
+        rounds={board.allRounds}
+        currentNumber={board.round.number}
+        leagueId={board.leagueId}
+        mode={isTop14 ? "anchor" : "reload"}
+      />
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full bg-clay-soft px-3 py-1.5 text-[12px] font-semibold text-clay">
@@ -217,49 +230,39 @@ export default async function JourneePage({
         viewerId={viewer.id}
       />
 
-      {board.fixtures.length === 0 ? (
+      {isTop14 ? (
+        <div className="flex flex-col gap-3">
+          {board.seasonRounds.map((sr) => (
+            <RoundSection
+              key={sr.round.id}
+              id={`round-${sr.round.id}`}
+              defaultOpen={sr.isCurrent}
+              banner={<RoundBanner seasonRound={sr} timeZone={board.timeZone} />}
+            >
+              <RoundFixturesBlock
+                fixtures={sr.fixtures}
+                ruleset={board.ruleset}
+                timeZone={board.timeZone}
+                roundId={sr.round.id}
+                seasonId={seasonId}
+                otherAttempts={board.allAttempts.filter((a) => a.roundId !== sr.round.id)}
+              />
+            </RoundSection>
+          ))}
+        </div>
+      ) : board.fixtures.length === 0 ? (
         <Card className="p-8 text-center">
           <p className="text-ink-muted">Aucun match sur cette journée.</p>
         </Card>
       ) : (
-        <div className="flex flex-col gap-4">
-          {toPlay.length > 0 && (
-            <MatchSection title="À jouer" count={toPlay.length}>
-              <PredictionsBoard
-                fixtures={toPlay}
-                ruleset={board.ruleset}
-                timeZone={board.timeZone}
-                roundId={currentRoundId}
-                seasonId={seasonId}
-                otherAttempts={board.otherAttempts}
-              />
-            </MatchSection>
-          )}
-
-          {locked.length > 0 && (
-            <MatchSection title="Verrouillés" count={locked.length}>
-              {locked.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
-              ))}
-            </MatchSection>
-          )}
-
-          {live.length > 0 && (
-            <MatchSection title="En cours" count={live.length}>
-              {live.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
-              ))}
-            </MatchSection>
-          )}
-
-          {done.length > 0 && (
-            <MatchSection title="Terminés" count={done.length}>
-              {done.map((item) => (
-                <MatchCard key={item.fixture.id} item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
-              ))}
-            </MatchSection>
-          )}
-        </div>
+        <RoundFixturesBlock
+          fixtures={board.fixtures}
+          ruleset={board.ruleset}
+          timeZone={board.timeZone}
+          roundId={currentRoundId}
+          seasonId={seasonId}
+          otherAttempts={board.otherAttempts}
+        />
       )}
 
       {board.remainingToPlay > 0 && (
@@ -278,6 +281,83 @@ export default async function JourneePage({
             .map((p) => `${p.firstName} : ${p.missing} à jouer`)
             .join(" · ") || "Tout le monde a joué."}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Les matchs d'une journée, répartis à jouer / verrouillés / en cours /
+ * terminés — exactement la logique qu'avait « Ma journée » pour sa seule
+ * journée courante, réutilisée telle quelle pour chaque journée affichée.
+ */
+function RoundFixturesBlock({
+  fixtures,
+  ruleset,
+  timeZone,
+  roundId,
+  seasonId,
+  otherAttempts,
+}: {
+  fixtures: JourneyFixture[];
+  ruleset: Ruleset;
+  timeZone: string;
+  roundId: string;
+  seasonId: string;
+  otherAttempts: ExactAttempt[];
+}) {
+  const toPlay = fixtures.filter(
+    (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
+  );
+  const live = fixtures.filter((f) => f.fixture.status === "live");
+  const done = fixtures.filter(
+    (f) => f.fixture.status === "finished" || f.fixture.status === "official",
+  );
+  const locked = fixtures.filter(
+    (f) => f.isLocked && f.fixture.status !== "live" && f.fixture.status !== "finished" && f.fixture.status !== "official",
+  );
+
+  if (fixtures.length === 0) {
+    return <p className="px-1 text-[13.5px] text-ink-faint">Aucun match sur cette journée.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {toPlay.length > 0 && (
+        <MatchSection title="À jouer" count={toPlay.length}>
+          <PredictionsBoard
+            fixtures={toPlay}
+            ruleset={ruleset}
+            timeZone={timeZone}
+            roundId={roundId}
+            seasonId={seasonId}
+            otherAttempts={otherAttempts}
+          />
+        </MatchSection>
+      )}
+
+      {locked.length > 0 && (
+        <MatchSection title="Verrouillés" count={locked.length}>
+          {locked.map((item) => (
+            <MatchCard key={item.fixture.id} item={item} ruleset={ruleset} timeZone={timeZone} />
+          ))}
+        </MatchSection>
+      )}
+
+      {live.length > 0 && (
+        <MatchSection title="En cours" count={live.length}>
+          {live.map((item) => (
+            <MatchCard key={item.fixture.id} item={item} ruleset={ruleset} timeZone={timeZone} />
+          ))}
+        </MatchSection>
+      )}
+
+      {done.length > 0 && (
+        <MatchSection title="Terminés" count={done.length}>
+          {done.map((item) => (
+            <MatchCard key={item.fixture.id} item={item} ruleset={ruleset} timeZone={timeZone} />
+          ))}
+        </MatchSection>
       )}
     </div>
   );

@@ -5,11 +5,12 @@
 
 import { cn } from "@/lib/cn";
 import { PlayerAvatar } from "../../_components/player-avatar";
+import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { StandingsRow } from "@/lib/standings/engine";
 
 const MEDALS = ["👑", "", ""];
 
-function Step({ row, rank }: { row: StandingsRow; rank: number }) {
+function Step({ row, rank, clubs }: { row: StandingsRow; rank: number; clubs: readonly ClubAvatar[] }) {
   // Marches de la maquette : 46 / 30 / 22 px, le premier dominant nettement.
   const heights = ["h-[46px]", "h-[30px]", "h-[22px]"];
   const widths = ["w-[72px]", "w-[64px]", "w-[60px]"];
@@ -23,6 +24,7 @@ function Step({ row, rank }: { row: StandingsRow; rank: number }) {
       )}
       <PlayerAvatar
         player={row.player}
+        clubs={clubs}
         size={isFirst ? 60 : 46}
         className={cn(isFirst && "ring-2 ring-clay-soft")}
       />
@@ -45,16 +47,16 @@ function Step({ row, rank }: { row: StandingsRow; rank: number }) {
   );
 }
 
-export function Podium({ rows }: { rows: StandingsRow[] }) {
+export function Podium({ rows, clubs = [] }: { rows: StandingsRow[]; clubs?: readonly ClubAvatar[] }) {
   const top3 = rows.slice(0, 3);
   if (top3.length < 3) return null;
   const [first, second, third] = top3;
 
   return (
     <section aria-label="Podium" className="flex items-end justify-center gap-3.5">
-      <Step row={second} rank={1} />
-      <Step row={first} rank={0} />
-      <Step row={third} rank={2} />
+      <Step row={second} rank={1} clubs={clubs} />
+      <Step row={first} rank={0} clubs={clubs} />
+      <Step row={third} rank={2} clubs={clubs} />
     </section>
   );
 }
