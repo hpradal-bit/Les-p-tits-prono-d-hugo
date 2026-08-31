@@ -276,10 +276,12 @@ export function PowerBanner({
 
   const openPower = powers.find((p) => p.code === openCode) ?? null;
   const viewerPosition = players.find((x) => x.userId === viewerId)?.position ?? Infinity;
-  const eligibleTargets = (power: PowerOption | null) =>
-    power?.targetRule === "better_ranked_only"
-      ? players.filter((p) => p.userId !== viewerId && p.position < viewerPosition)
-      : players.filter((p) => p.userId !== viewerId);
+  const eligibleTargets = (power: PowerOption | null) => {
+    const others = players.filter((p) => p.userId !== viewerId);
+    if (power?.targetRule === "better_ranked_only") return others.filter((p) => p.position < viewerPosition);
+    if (power?.targetRule === "better_or_equal_ranked") return others.filter((p) => p.position <= viewerPosition);
+    return others;
+  };
 
   return (
     <section className="flex flex-col gap-2">

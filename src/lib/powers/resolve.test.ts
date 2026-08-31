@@ -158,9 +158,6 @@ describe("duel", () => {
   });
 
   it("accepte n'importe quelle cible quand target_rule vaut \"any\"", () => {
-    // Demande explicite d'Hugo : le Duel doit rester jouable contre un
-    // joueur mieux classé, à égalité, ou moins bien classé — piloté depuis
-    // powers.config.target_rule (migration 0039), pas en dur dans le code.
     const standings = [
       { userId: "alice", position: 1 },
       { userId: "bob", position: 2 },
@@ -171,5 +168,32 @@ describe("duel", () => {
       initiatorId: "alice", targetId: "bob", fixtureId: null, power, standings,
     });
     assert.equal(r.valid, true);
+  });
+
+  it("\"better_or_equal_ranked\" accepte mieux classé et à égalité, refuse moins bien classé", () => {
+    // Décision finale d'Hugo (migration 0040, après un aller-retour) : mieux
+    // classé OU à égalité de points, jamais moins bien classé.
+    const standings = [
+      { userId: "bob", position: 1 },
+      { userId: "alice", position: 2 },
+      { userId: "chloe", position: 2 }, // à égalité de points avec alice
+      { userId: "denis", position: 4 },
+    ];
+    const power = makePower("duel", { target_rule: "better_or_equal_ranked" });
+
+    const betterRanked = duel.validateDeclaration({
+      initiatorId: "alice", targetId: "bob", fixtureId: null, power, standings,
+    });
+    assert.equal(betterRanked.valid, true);
+
+    const tied = duel.validateDeclaration({
+      initiatorId: "alice", targetId: "chloe", fixtureId: null, power, standings,
+    });
+    assert.equal(tied.valid, true);
+
+    const worseRanked = duel.validateDeclaration({
+      initiatorId: "alice", targetId: "denis", fixtureId: null, power, standings,
+    });
+    assert.equal(worseRanked.valid, false);
   });
 });
