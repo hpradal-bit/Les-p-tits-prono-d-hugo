@@ -12,6 +12,10 @@ interface PowerOption {
   emoji: string;
   needsTarget: boolean;
   needsFixture: boolean;
+  /** Lu depuis `powers.config.target_rule` — "better_ranked_only" restreint
+   *  les cibles proposées, toute autre valeur (ou absence) les laisse toutes
+   *  ouvertes. Jamais un pouvoir particulier codé en dur ici. */
+  targetRule: string | null;
   /** Coût en crédits, lu depuis `powers.config` — jamais en dur ici. */
   cost: number;
   description: string | null;
@@ -273,7 +277,7 @@ export function PowerBanner({
   const openPower = powers.find((p) => p.code === openCode) ?? null;
   const viewerPosition = players.find((x) => x.userId === viewerId)?.position ?? Infinity;
   const eligibleTargets = (power: PowerOption | null) =>
-    power?.code === "duel"
+    power?.targetRule === "better_ranked_only"
       ? players.filter((p) => p.userId !== viewerId && p.position < viewerPosition)
       : players.filter((p) => p.userId !== viewerId);
 

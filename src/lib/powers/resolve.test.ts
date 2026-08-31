@@ -156,4 +156,20 @@ describe("duel", () => {
     });
     assert.equal(r.valid, false);
   });
+
+  it("accepte n'importe quelle cible quand target_rule vaut \"any\"", () => {
+    // Demande explicite d'Hugo : le Duel doit rester jouable contre un
+    // joueur mieux classé, à égalité, ou moins bien classé — piloté depuis
+    // powers.config.target_rule (migration 0039), pas en dur dans le code.
+    const standings = [
+      { userId: "alice", position: 1 },
+      { userId: "bob", position: 2 },
+    ];
+    const power = makePower("duel", { target_rule: "any" });
+
+    const r = duel.validateDeclaration({
+      initiatorId: "alice", targetId: "bob", fixtureId: null, power, standings,
+    });
+    assert.equal(r.valid, true);
+  });
 });

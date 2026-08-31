@@ -140,6 +140,11 @@ export default async function JourneePage({
       emoji: p.emoji,
       needsTarget: pk?.needsTarget ?? false,
       needsFixture: pk?.needsFixture ?? false,
+      // Piloté depuis `powers.config.target_rule` (rien en dur ici) : décide
+      // si l'écran doit restreindre les cibles proposées à des joueurs mieux
+      // classés — aujourd'hui vrai pour aucun pouvoir actif, mais reste
+      // modifiable depuis l'espace admin sans redéploiement.
+      targetRule: (p.config.target_rule as string | undefined) ?? null,
       cost: creditCost(p, fallbackCost),
       description: p.description,
       effect: powerEffect(p),
