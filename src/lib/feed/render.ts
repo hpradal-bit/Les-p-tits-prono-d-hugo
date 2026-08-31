@@ -109,10 +109,30 @@ const RENDERERS: Record<string, Renderer> = {
     const h = num(e.payload, "homeScore");
     const a = num(e.payload, "awayScore");
     const score = h !== null && a !== null ? `${h}-${a}` : "?-?";
+
+    const lines = [`Debrief ${home} - ${away}`, `${home} ${score} ${away}.`];
+
+    const onHome = num(e.payload, "onHome");
+    const onAway = num(e.payload, "onAway");
+    const onDraw = num(e.payload, "onDraw");
+    if (onHome !== null && onAway !== null) {
+      lines.push("");
+      lines.push("Les pronostics :");
+      lines.push(`• ${onHome} ${plural(onHome, "joueur avait choisi", "joueurs avaient choisi")} ${home}`);
+      lines.push(`• ${onAway} ${plural(onAway, "joueur avait choisi", "joueurs avaient choisi")} ${away}`);
+      if (onDraw) lines.push(`• ${onDraw} ${plural(onDraw, "joueur avait choisi", "joueurs avaient choisi")} le nul`);
+    }
+
+    const exactNames = e.payload.exactNames;
+    if (Array.isArray(exactNames) && exactNames.length > 0) {
+      lines.push("");
+      lines.push(`Score exact : ${exactNames.join(", ")} 🎯`);
+    }
+
     return {
       emoji: "🏉",
       tone: "neutral",
-      text: `Coup de sifflet final : ${home} ${score} ${away}.`,
+      text: lines.length > 2 ? lines.join("\n") : `Coup de sifflet final : ${home} ${score} ${away}.`,
     };
   },
 

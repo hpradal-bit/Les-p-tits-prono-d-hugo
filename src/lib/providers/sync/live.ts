@@ -262,6 +262,7 @@ export async function syncLive(
       finished.push(existing.id);
       const hScore = plan.patch.home_score ?? existing.homeScore;
       const aScore = plan.patch.away_score ?? existing.awayScore;
+      const debrief = await computeFixtureDebrief(ctx, existing.id, hScore, aScore);
       await emitFixtureFinished(ctx, existing.id, {
         homeTeam: incoming.homeTeam.name,
         awayTeam: incoming.awayTeam.name,
@@ -269,6 +270,7 @@ export async function syncLive(
         awayScore: aScore,
         status: plan.patch.status,
         provider,
+        ...debrief,
       });
       if (hScore !== null && aScore !== null) {
         finishedDetails.push({
@@ -349,6 +351,50 @@ export async function syncLive(
     changes,
     warnings,
   };
+}
+
+/**
+ * La répartition des pronostics sur ce match — combien pour chaque camp, et
+ * qui avait trouvé le score exact — pour le debrief du Vestiaire (règle n° 8 :
+ * on lit ce que le jeu a déjà décidé, on ne le recalcule pas). Un échec ici
+ * n'empêche jamais d'écrire l'événement : au pire, le debrief reste sobre.
+ */
+async function computeFixtureDebrief(
+  ctx: SyncContext,
+  fixtureId: string,
+  homeScore: number | null,
+  awayScore: number | null,
+): Promise<Record<string, unknown>> {
+  const { data } = await ctx.sb
+    .from("predictions")
+    .select("user_id, outcome, exact_home_score, exact_away_score")
+    .eq("fixture_id", fixtureId);
+  const rows = (data ?? []) as Array<{
+    user_id: string;
+    outcome: string;
+    exact_home_score: number | null;
+    exact_away_score: number | null;
+  }>;
+
+  const onHome = rows.filter((r) => r.outcome === "home").length;
+  const onAway = rows.filter((r) => r.outcome === "away").length;
+  const onDraw = rows.filter((r) => r.outcome === "draw").length;
+
+  let exactNames: string[] = [];
+  if (homeScore !== null && awayScore !== null) {
+    const exactUserIds = rows
+      .filter((r) => r.exact_home_score === homeScore && r.exact_away_score === awayScore)
+      .map((r) => r.user_id);
+    if (exactUserIds.length > 0) {
+      const { data: names } = await ctx.sb
+        .from("profiles")
+        .select("id, first_name")
+        .in("id", exactUserIds);
+      exactNames = ((names ?? []) as Array<{ first_name: string }>).map((n) => n.first_name);
+    }
+  }
+
+  return { onHome, onAway, onDraw, exactNames };
 }
 
 /**

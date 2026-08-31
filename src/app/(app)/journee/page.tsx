@@ -22,8 +22,9 @@ import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { RoundNav } from "./_components/round-nav";
-import { RoundBanner } from "./_components/round-banner";
+import { RoundBanner } from "../_components/round-banner";
 import { RoundSection } from "./_components/round-section";
+import { CelebrationOverlay } from "./_components/celebration-overlay";
 import { Countdown } from "./_components/countdown";
 import type { JourneyFixture } from "@/lib/predictions/types";
 import type { ExactAttempt } from "@/lib/predictions/exact-score";
@@ -163,6 +164,8 @@ export default async function JourneePage({
 
   return (
     <div className="flex flex-col gap-3.5">
+      {isTop14 && <CelebrationOverlay leagueId={leagueId} />}
+
       <LeagueSwitcher options={ligueOptions} current={leagueId} />
 
       <header className="flex items-start justify-between gap-3">

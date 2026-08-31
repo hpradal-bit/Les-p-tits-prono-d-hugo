@@ -38,6 +38,21 @@ function IconBall({ className }: { className?: string }) {
   );
 }
 
+function IconResults({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <path
+        d="M6 3.5h9.5L19 7v13.5H6V3.5Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M15.5 3.5V7H19" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8.5 12h7M8.5 15h7M8.5 9h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconTrophy({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
@@ -100,7 +115,8 @@ function IconShield({ className }: { className?: string }) {
 }
 
 const PLAYER_TABS: Tab[] = [
-  { href: "/journee", label: "Mes pronos", matches: ["/journee", "/match"], icon: IconBall },
+  { href: "/journee", label: "Mes pronos", matches: ["/journee"], icon: IconBall },
+  { href: "/resultats", label: "Résultats", matches: ["/resultats", "/match"], icon: IconResults },
   { href: "/classement", label: "Classement", matches: ["/classement"], icon: IconTrophy },
   { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat },
   { href: "/profil", label: "Profil", matches: ["/profil", "/reglages", "/questions"], icon: IconUser },

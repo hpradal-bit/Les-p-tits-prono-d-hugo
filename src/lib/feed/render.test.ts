@@ -54,6 +54,20 @@ test("un match terminé sans noms reste lisible", () => {
   assert.equal(r!.text, "Coup de sifflet final : Domicile 10-10 Extérieur.");
 });
 
+test("un match terminé avec repartition affiche le debrief complet", () => {
+  const r = renderEvent(ev("fixture_finished", {
+    payload: {
+      homeTeam: "Castres", awayTeam: "Vannes", homeScore: 24, awayScore: 18,
+      onHome: 12, onAway: 5, onDraw: 3, exactNames: ["Hugo"],
+    },
+  }));
+  assert.match(r!.text, /Debrief Castres - Vannes/);
+  assert.match(r!.text, /12 joueurs avaient choisi Castres/);
+  assert.match(r!.text, /5 joueurs avaient choisi Vannes/);
+  assert.match(r!.text, /3 joueurs avaient choisi le nul/);
+  assert.match(r!.text, /Score exact : Hugo 🎯/);
+});
+
 test("une action d'arbitre affiche sa raison", () => {
   const r = renderEvent(ev("admin_action", { payload: { reason: "erreur de l'API, score officiel LNR" } }));
   assert.match(r!.text, /Intervention de l'arbitre — erreur de l'API/);
