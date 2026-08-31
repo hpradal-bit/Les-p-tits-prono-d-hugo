@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
-import { declarePower, cancelPower } from "@/lib/powers/actions";
+import { declarePower } from "@/lib/powers/actions";
 
 interface PowerOption {
   id: string;
@@ -31,7 +31,6 @@ interface PlayerOption {
 }
 
 interface SpyReveal {
-  locked: boolean;
   hasAnswered: boolean;
   outcomeLabel: string | null;
   exactScoreLabel: string | null;
@@ -214,21 +213,10 @@ export function PowerBanner({
   viewerId: string;
 }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [msg, setMsg] = useState("");
 
   // Les pouvoirs restent visibles même sans crédit : c'est une vitrine autant
   // qu'un outil. Seule l'activation est bloquée.
   if (powers.length === 0) return null;
-
-  async function handleCancel() {
-    if (!activeUsage) return;
-    setPending(true);
-    setMsg("");
-    const result = await cancelPower(activeUsage.id);
-    setPending(false);
-    setMsg(result.message);
-  }
 
   if (activeUsage) {
     return (
@@ -241,9 +229,9 @@ export function PowerBanner({
               ACTIF
             </span>
           </span>
-          <Button size="sm" variant="ghost" onClick={handleCancel} disabled={pending}>
-            {pending ? "…" : "Annuler"}
-          </Button>
+          {/* Un pouvoir acheté est définitif : pas de bouton "Annuler", pour
+              qu'aucun joueur ne puisse regarder puis se retirer selon ce qu'il
+              a vu (l'Espion, en particulier). */}
         </div>
         {(activeUsage.targetName || activeUsage.fixtureName) && (
           <p className="text-[11.5px] text-ink-muted">
@@ -255,11 +243,7 @@ export function PowerBanner({
 
         {activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
           <div className="rounded-xl bg-surface/70 px-3 py-2 text-[12.5px] leading-snug text-ink">
-            {!activeUsage.spyReveal.locked ? (
-              <p className="text-ink-faint">
-                Le pronostic de {activeUsage.targetName ?? "ta cible"} sera révélé au verrouillage du match.
-              </p>
-            ) : !activeUsage.spyReveal.hasAnswered ? (
+            {!activeUsage.spyReveal.hasAnswered ? (
               <p className="text-ink-faint">
                 {activeUsage.targetName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
               </p>
@@ -282,8 +266,6 @@ export function PowerBanner({
             )}
           </div>
         )}
-
-        {msg && <p className="text-[12px] font-semibold text-wrong">{msg}</p>}
       </div>
     );
   }

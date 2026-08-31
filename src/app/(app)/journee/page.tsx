@@ -21,7 +21,6 @@ import type { PowerAdjustment } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
 import { creditCost, powerEffect, powerRules, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
 import { loadSettings, setting } from "@/lib/settings";
-import { isLockedAt } from "@/lib/predictions/lock";
 import { outcomeSideLabel, marginBucketSentence } from "@/lib/predictions/display";
 import { PlayerAvatar } from "../_components/player-avatar";
 import { NotificationPrompt } from "../_components/notification-prompt";
@@ -146,14 +145,14 @@ export default async function JourneePage({
     position: i + 1,
   }));
 
-  // L'Espion doit révéler le pronostic de sa cible dès que ça devient
-  // possible — c'est-à-dire au même moment que pour n'importe qui d'autre :
-  // le verrouillage du match visé (règle n° 3, appliquée par la base). Avant
-  // ce correctif, le pouvoir enregistrait bien sa cible mais rien nulle part
-  // n'allait jamais lire ce qu'elle avait pronostiqué.
+  // L'Espion révèle le pronostic — même encore provisoire — de sa cible dès
+  // l'instant où il est acheté, et jusqu'au verrouillage du match (où tout le
+  // monde le voit de toute façon gratuitement) : c'est tout l'intérêt du
+  // pouvoir (cahier des charges §32). Le lire à chaque rendu de la page
+  // (force-dynamic) suffit à le garder "en direct" tant que la cible peut
+  // encore changer d'avis.
   let spyReveal:
     | {
-        locked: boolean;
         hasAnswered: boolean;
         outcomeLabel: string | null;
         exactScoreLabel: string | null;
@@ -165,42 +164,30 @@ export default async function JourneePage({
       (f) => f.fixture.id === myUsage.snapshotBefore.fixtureId,
     );
     if (targetFixture) {
-      const locked = isLockedAt(targetFixture.fixture.locksAt);
-      if (!locked) {
-        spyReveal = {
-          locked: false,
-          hasAnswered: false,
-          outcomeLabel: null,
-          exactScoreLabel: null,
-          marginLabel: null,
-        };
-      } else {
-        const reveal = await loadSpyReveal(
-          admin,
-          myUsage.targetId,
-          myUsage.snapshotBefore.fixtureId as string,
-        );
-        const hasExactScore = reveal.exactHomeScore !== null && reveal.exactAwayScore !== null;
-        const bucket =
-          !hasExactScore && reveal.marginBucketId
-            ? board.ruleset.buckets.find((b) => b.id === reveal.marginBucketId)
-            : undefined;
-        spyReveal = {
-          locked: true,
-          hasAnswered: reveal.hasAnswered,
-          outcomeLabel: reveal.outcome
-            ? outcomeSideLabel(
-                reveal.outcome,
-                targetFixture.fixture.homeTeam.shortName,
-                targetFixture.fixture.awayTeam.shortName,
-              )
-            : null,
-          exactScoreLabel: hasExactScore
-            ? `${reveal.exactHomeScore} - ${reveal.exactAwayScore}`
-            : null,
-          marginLabel: bucket ? marginBucketSentence(bucket) : null,
-        };
-      }
+      const reveal = await loadSpyReveal(
+        admin,
+        myUsage.targetId,
+        myUsage.snapshotBefore.fixtureId as string,
+      );
+      const hasExactScore = reveal.exactHomeScore !== null && reveal.exactAwayScore !== null;
+      const bucket =
+        !hasExactScore && reveal.marginBucketId
+          ? board.ruleset.buckets.find((b) => b.id === reveal.marginBucketId)
+          : undefined;
+      spyReveal = {
+        hasAnswered: reveal.hasAnswered,
+        outcomeLabel: reveal.outcome
+          ? outcomeSideLabel(
+              reveal.outcome,
+              targetFixture.fixture.homeTeam.shortName,
+              targetFixture.fixture.awayTeam.shortName,
+            )
+          : null,
+        exactScoreLabel: hasExactScore
+          ? `${reveal.exactHomeScore} - ${reveal.exactAwayScore}`
+          : null,
+        marginLabel: bucket ? marginBucketSentence(bucket) : null,
+      };
     }
   }
 

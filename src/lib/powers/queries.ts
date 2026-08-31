@@ -118,10 +118,18 @@ export interface SpyReveal {
 }
 
 /**
- * Le pronostic de la cible d'un Espion, sur le match visé — à n'appeler que
- * pour un match déjà verrouillé (l'appelant en est responsable : la base ne
- * connaît pas le pouvoir Espion, seulement `predictions_read`, qui autorise
- * déjà la lecture de n'importe quel pronostic après verrouillage).
+ * Le pronostic — même encore provisoire, avant verrouillage — de la cible
+ * d'un Espion, sur le match visé.
+ *
+ * Exception délibérée à la règle n° 3 (« un pronostic d'autrui n'est lisible
+ * qu'après verrouillage ») : c'est tout l'intérêt du pouvoir Espion, qui
+ * paie précisément pour voir un pronostic en avance (cahier des charges
+ * §32). La règle n° 3 protège la lecture directe par un client — RLS,
+ * `predictions_read` — qui, elle, reste inchangée et continue d'interdire
+ * ça à n'importe qui d'autre. Cette fonction n'est donc jamais appelée
+ * qu'ici, côté serveur, avec le client de service, et seulement pour le
+ * (cible, match) exact enregistré dans une utilisation d'Espion achetée par
+ * l'appelant — jamais une lecture libre.
  */
 export async function loadSpyReveal(
   sb: SupabaseClient,
