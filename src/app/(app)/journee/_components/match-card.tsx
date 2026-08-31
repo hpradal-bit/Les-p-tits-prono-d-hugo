@@ -9,6 +9,7 @@ import {
 } from "@/lib/predictions/display";
 import type { JourneyFixture, PredictionScore } from "@/lib/predictions/types";
 import type { Ruleset } from "@/lib/types";
+import type { PowerAdjustment } from "@/lib/powers/queries";
 
 /** Le panneau « Ton prono », partagé avec la carte éditable de « Ma journée ». */
 export function PredictionSummaryBox({
@@ -88,6 +89,31 @@ function ScoreBadge({ score }: { score: PredictionScore }) {
   );
 }
 
+/**
+ * "Points normaux : 3 pts / 🟣 Joker / Total gagné sur le match : 6 points" —
+ * pour que le joueur comprenne d'où vient son total sans avoir à recouper
+ * Résultats et Classement lui-même. Le classement, lui, additionne déjà
+ * `prediction_scores` (le score de base, affiché par `ScoreBadge`) et
+ * `point_adjustments` (cette ligne) : les deux écrans racontent donc
+ * exactement le même total, jamais deux chiffres différents.
+ */
+function PowerAdjustmentLine({
+  basePoints,
+  adjustment,
+}: {
+  basePoints: number;
+  adjustment: PowerAdjustment;
+}) {
+  const total = basePoints + adjustment.delta;
+  return (
+    <p className="text-[11.5px] font-semibold text-clay">
+      {adjustment.powerEmoji} {adjustment.powerName} · {basePoints >= 0 ? basePoints : 0} pts de base{" "}
+      {adjustment.delta >= 0 ? "+" : ""}
+      {adjustment.delta} → {total} pt{total > 1 ? "s" : ""} au total
+    </p>
+  );
+}
+
 function kickoffLabel(iso: string, timeZone: string, confirmed: boolean) {
   const t = new Date(iso).toLocaleString("fr-FR", {
     weekday: "short", hour: "2-digit", minute: "2-digit", timeZone,
@@ -104,10 +130,13 @@ export function MatchCard({
   item,
   ruleset,
   timeZone,
+  powerAdjustment,
 }: {
   item: JourneyFixture;
   ruleset: Ruleset;
   timeZone: string;
+  /** L'effet d'un super-pouvoir sur CE match, si le joueur en a utilisé un ici. */
+  powerAdjustment?: PowerAdjustment;
 }) {
   const { fixture } = item;
   const live = fixture.status === "live";
@@ -165,11 +194,16 @@ export function MatchCard({
       </div>
 
       {(item.draft?.outcome || item.score) && (
-        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5">
-          <div className="flex-1">
-            <PredictionSummaryBox item={item} ruleset={ruleset} />
+        <div className="mt-2.5 flex flex-col gap-1.5 border-t border-line pt-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1">
+              <PredictionSummaryBox item={item} ruleset={ruleset} />
+            </div>
+            {item.score && <ScoreBadge score={item.score} />}
           </div>
-          {item.score && <ScoreBadge score={item.score} />}
+          {item.score && powerAdjustment && (
+            <PowerAdjustmentLine basePoints={item.score.points} adjustment={powerAdjustment} />
+          )}
         </div>
       )}
     </Link>

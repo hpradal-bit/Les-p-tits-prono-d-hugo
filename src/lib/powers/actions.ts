@@ -13,13 +13,12 @@ import {
   loadUserTokens,
   loadUserRoundUsage,
   loadRoundUsages,
-  loadFixtureScoresForRound,
-  loadRoundTotals,
 } from "./queries.ts";
+import { applyResolution } from "./resolve.ts";
 import { creditCost, creditLabel, FALLBACK_CREDIT_COST } from "./credits.ts";
 import { loadSettings, setting } from "@/lib/settings";
+import { isLockedAt } from "@/lib/predictions/lock";
 import type { AdminActionState } from "@/lib/admin/types";
-import type { ResolveContext } from "./types.ts";
 
 const declareSchema = z.object({
   powerCode: z.string().min(1),
@@ -74,6 +73,25 @@ export async function declarePower(
   }
   const spentTokens = availableTokens.slice(0, cost);
 
+  // Un pouvoir ciblant un match ne peut plus être déclaré une fois ce match
+  // verrouillé (ou déjà terminé) : au-delà, ce serait parier après coup — le
+  // contraire d'un pronostic. Cf. rapport d'audit §14.
+  let fixtureLocked: boolean | undefined;
+  if (pk.needsFixture && parsed.data.fixtureId) {
+    const { data: fixture } = await admin
+      .from("fixtures")
+      .select("locks_at, status")
+      .eq("id", parsed.data.fixtureId)
+      .single();
+    if (!fixture) return { ok: false, message: "Match introuvable." };
+    fixtureLocked =
+      isLockedAt(fixture.locks_at as string) ||
+      (fixture.status as string) !== "scheduled";
+    if (fixtureLocked) {
+      return { ok: false, message: "Ce match est déjà verrouillé ou terminé." };
+    }
+  }
+
   if (pk.needsTarget || pk.needsFixture) {
     const { data: profiles } = await admin
       .from("profiles")
@@ -108,6 +126,7 @@ export async function declarePower(
       initiatorId: user.id,
       targetId: parsed.data.targetId ?? null,
       fixtureId: parsed.data.fixtureId ?? null,
+      fixtureLocked,
       power,
       standings,
     });
@@ -152,6 +171,12 @@ export async function declarePower(
 
   if (usageErr) {
     await admin.from("tokens").update({ status: "available", used_at: null }).in("id", reservedIds);
+    // Violation de l'index unique "une utilisation active par joueur et par
+    // journée" (cf. migration) : deux clics simultanés ont tenté de déclarer
+    // deux pouvoirs à la fois, la base n'en a laissé passer qu'un seul.
+    if (usageErr.code === "23505") {
+      return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
+    }
     return { ok: false, message: usageErr.message };
   }
 
@@ -205,6 +230,23 @@ export async function cancelPower(
     return { ok: false, message: "La journée est clôturée, impossible d'annuler." };
   }
 
+  // Même garde qu'à la déclaration : une fois le match visé verrouillé (ou
+  // terminé), annuler reviendrait à se retirer d'un pari après en avoir vu
+  // l'issue. Cf. rapport d'audit §14.
+  const snapshotFixtureId = (usage.snapshot_before as Record<string, unknown> | null)?.fixtureId as
+    | string
+    | undefined;
+  if (snapshotFixtureId) {
+    const { data: fixture } = await admin
+      .from("fixtures")
+      .select("locks_at, status")
+      .eq("id", snapshotFixtureId)
+      .single();
+    if (fixture && (isLockedAt(fixture.locks_at as string) || (fixture.status as string) !== "scheduled")) {
+      return { ok: false, message: "Ce match est déjà verrouillé, impossible d'annuler." };
+    }
+  }
+
   await admin.from("power_usages").update({ state: "cancelled" }).eq("id", usageId);
 
   // On restitue exactement ce qui avait été dépensé, coût figé au moment de la
@@ -256,8 +298,6 @@ export async function resolveRoundPowers(
 
   const powers = await loadActivePowers(admin);
   const powerMap = new Map(powers.map((p) => [p.id, p]));
-  const fixtureScores = await loadFixtureScoresForRound(admin, roundId);
-  const roundTotals = await loadRoundTotals(admin, roundId);
 
   let resolved = 0;
   const skipped: string[] = [];
@@ -274,51 +314,10 @@ export async function resolveRoundPowers(
       continue;
     }
 
-    const ctx_resolve: ResolveContext = { usage, power, fixtureScores, roundTotals };
-    const result = pk.resolve(ctx_resolve);
-
-    for (const adj of result.adjustments) {
-      if (adj.delta === 0) continue;
-      await admin.from("point_adjustments").insert({
-        user_id: adj.userId,
-        season_id: seasonId,
-        round_id: roundId,
-        delta: adj.delta,
-        reason: adj.reason,
-        source: `power:${power.code}`,
-        source_id: usage.id,
-        created_by: ctx.userId,
-      });
-    }
-
-    await admin
-      .from("power_usages")
-      .update({
-        state: "resolved",
-        result: result.outcome,
-        resolved_at: new Date().toISOString(),
-      })
-      .eq("id", usage.id);
-
-    // L'événement est émis même sans ajustement de points : l'Espion ne déplace
-    // aucun point mais le Vestiaire doit quand même raconter qu'il a été utilisé.
-    await admin.from("events").insert({
-      kind: "power_resolved",
-      season_id: seasonId,
-      round_id: roundId,
-      actor_id: usage.initiatorId,
-      target_id: usage.targetId,
-      payload: {
-        power_code: power.code,
-        power_emoji: power.emoji,
-        power_name: power.name,
-        outcome: result.outcome,
-        delta: result.adjustments
-          .filter((a) => a.userId === usage.initiatorId)
-          .reduce((sum, a) => sum + a.delta, 0),
-      },
-    });
-
+    // Un pouvoir déjà résolu match par match (§ resolveFixturePowers) n'est
+    // plus dans "declared"/"accepted" à ce stade : `active` ne peut donc pas
+    // le contenir deux fois. Même logique de résolution, une seule écriture.
+    await applyResolution(admin, seasonId, roundId, usage, power, ctx.userId);
     resolved++;
   }
 

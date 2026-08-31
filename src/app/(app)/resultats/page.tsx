@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { loadPowerAdjustmentsByFixture } from "@/lib/powers/queries";
 import { listQuestions, getQuestionView } from "@/lib/bonus/queries";
 import type { BonusQuestionView } from "@/lib/bonus/types";
 
@@ -57,6 +58,8 @@ export default async function ResultatsPage({
   // Les questions bonus réglées, avec le même luxe de détail que /questions
   // (qui a répondu quoi, la bonne réponse, les points) — réutilisées telles
   // quelles plutôt que reconstruites : QuestionCard fait déjà exactement ça.
+  const powerAdjustments = await loadPowerAdjustmentsByFixture(admin, viewer.id, board.seasonId);
+
   const allQuestions = await listQuestions(admin, board.seasonId);
   const settled = allQuestions.filter((q) => q.status === "settled");
   const settledViews = (
@@ -135,7 +138,12 @@ export default async function ResultatsPage({
               <ul className="flex flex-col gap-2.5">
                 {doneFixtures.map((item) => (
                   <li key={item.fixture.id}>
-                    <MatchCard item={item} ruleset={board.ruleset} timeZone={board.timeZone} />
+                    <MatchCard
+                      item={item}
+                      ruleset={board.ruleset}
+                      timeZone={board.timeZone}
+                      powerAdjustment={powerAdjustments.get(item.fixture.id)}
+                    />
                   </li>
                 ))}
               </ul>

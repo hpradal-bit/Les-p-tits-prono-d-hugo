@@ -10,10 +10,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
-import { loadActivePowers, loadUserTokens, loadRoundUsages } from "@/lib/powers/queries";
+import {
+  loadActivePowers,
+  loadUserTokens,
+  loadRoundUsages,
+  loadSpyReveal,
+  loadPowerAdjustmentsByFixture,
+} from "@/lib/powers/queries";
+import type { PowerAdjustment } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
 import { creditCost, powerEffect, powerRules, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
 import { loadSettings, setting } from "@/lib/settings";
+import { isLockedAt } from "@/lib/predictions/lock";
+import { outcomeSideLabel, marginBucketSentence } from "@/lib/predictions/display";
 import { PlayerAvatar } from "../_components/player-avatar";
 import { NotificationPrompt } from "../_components/notification-prompt";
 import { getViewer } from "@/lib/auth/session";
@@ -81,14 +90,16 @@ export default async function JourneePage({
   const seasonId = board.seasonId;
   const currentRoundId = board.round.id;
 
-  const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles, appSettings] = await Promise.all([
-    listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
-    loadActivePowers(admin),
-    loadUserTokens(admin, viewer.id, seasonId),
-    loadRoundUsages(admin, currentRoundId),
-    admin.from("profiles").select("id, display_name, first_name").eq("is_active", true),
-    loadSettings(admin),
-  ]);
+  const [allBonusItems, activePowers, userTokens, roundUsages, allProfiles, appSettings, powerAdjustments] =
+    await Promise.all([
+      listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
+      loadActivePowers(admin),
+      loadUserTokens(admin, viewer.id, seasonId),
+      loadRoundUsages(admin, currentRoundId),
+      admin.from("profiles").select("id, display_name, first_name").eq("is_active", true),
+      loadSettings(admin),
+      loadPowerAdjustmentsByFixture(admin, viewer.id, seasonId),
+    ]);
 
   const vapidKey = setting<string>(appSettings, "push_notifications.vapid_public_key", "");
 
@@ -135,6 +146,64 @@ export default async function JourneePage({
     position: i + 1,
   }));
 
+  // L'Espion doit révéler le pronostic de sa cible dès que ça devient
+  // possible — c'est-à-dire au même moment que pour n'importe qui d'autre :
+  // le verrouillage du match visé (règle n° 3, appliquée par la base). Avant
+  // ce correctif, le pouvoir enregistrait bien sa cible mais rien nulle part
+  // n'allait jamais lire ce qu'elle avait pronostiqué.
+  let spyReveal:
+    | {
+        locked: boolean;
+        hasAnswered: boolean;
+        outcomeLabel: string | null;
+        exactScoreLabel: string | null;
+        marginLabel: string | null;
+      }
+    | null = null;
+  if (myUsage?.powerCode === "spy" && myUsage.targetId && myUsage.snapshotBefore.fixtureId) {
+    const targetFixture = board.fixtures.find(
+      (f) => f.fixture.id === myUsage.snapshotBefore.fixtureId,
+    );
+    if (targetFixture) {
+      const locked = isLockedAt(targetFixture.fixture.locksAt);
+      if (!locked) {
+        spyReveal = {
+          locked: false,
+          hasAnswered: false,
+          outcomeLabel: null,
+          exactScoreLabel: null,
+          marginLabel: null,
+        };
+      } else {
+        const reveal = await loadSpyReveal(
+          admin,
+          myUsage.targetId,
+          myUsage.snapshotBefore.fixtureId as string,
+        );
+        const hasExactScore = reveal.exactHomeScore !== null && reveal.exactAwayScore !== null;
+        const bucket =
+          !hasExactScore && reveal.marginBucketId
+            ? board.ruleset.buckets.find((b) => b.id === reveal.marginBucketId)
+            : undefined;
+        spyReveal = {
+          locked: true,
+          hasAnswered: reveal.hasAnswered,
+          outcomeLabel: reveal.outcome
+            ? outcomeSideLabel(
+                reveal.outcome,
+                targetFixture.fixture.homeTeam.shortName,
+                targetFixture.fixture.awayTeam.shortName,
+              )
+            : null,
+          exactScoreLabel: hasExactScore
+            ? `${reveal.exactHomeScore} - ${reveal.exactAwayScore}`
+            : null,
+          marginLabel: bucket ? marginBucketSentence(bucket) : null,
+        };
+      }
+    }
+  }
+
   const activeUsageData = myUsage
     ? {
         id: myUsage.id,
@@ -151,6 +220,7 @@ export default async function JourneePage({
           typeof myUsage.snapshotBefore.creditCost === "number"
             ? myUsage.snapshotBefore.creditCost
             : 1,
+        spyReveal,
       }
     : null;
 
@@ -249,6 +319,7 @@ export default async function JourneePage({
                 roundId={sr.round.id}
                 seasonId={seasonId}
                 otherAttempts={board.allAttempts.filter((a) => a.roundId !== sr.round.id)}
+                powerAdjustments={powerAdjustments}
               />
             </RoundSection>
           ))}
@@ -265,6 +336,7 @@ export default async function JourneePage({
           roundId={currentRoundId}
           seasonId={seasonId}
           otherAttempts={board.otherAttempts}
+          powerAdjustments={powerAdjustments}
         />
       )}
 
@@ -301,6 +373,7 @@ function RoundFixturesBlock({
   roundId,
   seasonId,
   otherAttempts,
+  powerAdjustments,
 }: {
   fixtures: JourneyFixture[];
   ruleset: Ruleset;
@@ -308,6 +381,7 @@ function RoundFixturesBlock({
   roundId: string;
   seasonId: string;
   otherAttempts: ExactAttempt[];
+  powerAdjustments: Map<string, PowerAdjustment>;
 }) {
   const toPlay = fixtures.filter(
     (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
@@ -358,7 +432,13 @@ function RoundFixturesBlock({
       {done.length > 0 && (
         <MatchSection title="Terminés" count={done.length}>
           {done.map((item) => (
-            <MatchCard key={item.fixture.id} item={item} ruleset={ruleset} timeZone={timeZone} />
+            <MatchCard
+              key={item.fixture.id}
+              item={item}
+              ruleset={ruleset}
+              timeZone={timeZone}
+              powerAdjustment={powerAdjustments.get(item.fixture.id)}
+            />
           ))}
         </MatchSection>
       )}

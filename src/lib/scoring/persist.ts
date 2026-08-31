@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRulesetAt } from "../settings/index.ts";
 import { computeScore } from "./index.ts";
+import { resolveFixturePowers } from "../powers/resolve.ts";
 import type { FixtureResult, Prediction, Ruleset, Uuid } from "../types.ts";
 
 /**
@@ -169,6 +170,15 @@ export async function recomputeFixtures(
     if (uErr) throw uErr;
 
     await recordExactScoreEvents(admin, fixture, round.season_id, plan.exactScorers);
+
+    // Les pouvoirs dont l'effet ne dépend que de CE match (Joker, Oracle,
+    // Sabotage — `resolves_at: "fixture_finished"`) se résolvent dès que son
+    // score est connu, au lieu d'attendre la clôture manuelle de toute la
+    // journée : c'est ce qui manquait pour qu'un pouvoir ait un effet réel
+    // dès la fin du match visé, pas seulement le lundi à la clôture.
+    if (fixture.status === "finished" || fixture.status === "official") {
+      await resolveFixturePowers(admin, fixture.id, fixture.round_id, round.season_id);
+    }
 
     summary.fixtures += 1;
     summary.predictions += plan.rows.length;

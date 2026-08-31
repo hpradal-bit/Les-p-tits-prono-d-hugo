@@ -30,6 +30,14 @@ interface PlayerOption {
   position: number;
 }
 
+interface SpyReveal {
+  locked: boolean;
+  hasAnswered: boolean;
+  outcomeLabel: string | null;
+  exactScoreLabel: string | null;
+  marginLabel: string | null;
+}
+
 interface ActiveUsage {
   id: string;
   powerCode: string;
@@ -38,6 +46,7 @@ interface ActiveUsage {
   targetName: string | null;
   fixtureName: string | null;
   cost: number;
+  spyReveal?: SpyReveal | null;
 }
 
 /**
@@ -243,6 +252,37 @@ export function PowerBanner({
               .join(" · ")}
           </p>
         )}
+
+        {activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
+          <div className="rounded-xl bg-surface/70 px-3 py-2 text-[12.5px] leading-snug text-ink">
+            {!activeUsage.spyReveal.locked ? (
+              <p className="text-ink-faint">
+                Le pronostic de {activeUsage.targetName ?? "ta cible"} sera révélé au verrouillage du match.
+              </p>
+            ) : !activeUsage.spyReveal.hasAnswered ? (
+              <p className="text-ink-faint">
+                {activeUsage.targetName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <p className="font-semibold">
+                  {activeUsage.targetName} → {activeUsage.spyReveal.outcomeLabel}
+                </p>
+                {activeUsage.spyReveal.exactScoreLabel && (
+                  <p className="text-ink-muted">
+                    Score exact → {activeUsage.spyReveal.exactScoreLabel}
+                  </p>
+                )}
+                {!activeUsage.spyReveal.exactScoreLabel && activeUsage.spyReveal.marginLabel && (
+                  <p className="text-ink-muted">
+                    Écart pronostiqué → {activeUsage.spyReveal.marginLabel}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {msg && <p className="text-[12px] font-semibold text-wrong">{msg}</p>}
       </div>
     );

@@ -83,6 +83,23 @@ describe("espion", () => {
     });
     assert.equal(sansMatch.valid, false);
   });
+
+  it("refuse d'espionner un match déjà verrouillé", () => {
+    // Une fois le match verrouillé, le pronostic de tout le monde est de toute
+    // façon visible sur sa page — espionner ne coûterait un crédit pour rien,
+    // et surtout ce n'est plus un vrai pari sur ce qui va se révéler.
+    const r = spy.validateDeclaration({
+      initiatorId: "alice", targetId: "bob", fixtureId: "fix-1",
+      power: makePower("spy"), standings: [], fixtureLocked: true,
+    });
+    assert.equal(r.valid, false);
+
+    const ok = spy.validateDeclaration({
+      initiatorId: "alice", targetId: "bob", fixtureId: "fix-1",
+      power: makePower("spy"), standings: [], fixtureLocked: false,
+    });
+    assert.equal(ok.valid, true);
+  });
 });
 
 describe("oracle", () => {

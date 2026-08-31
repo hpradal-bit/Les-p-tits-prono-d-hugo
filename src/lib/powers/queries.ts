@@ -109,6 +109,124 @@ function mapUsage(r: Record<string, unknown>): PowerUsage {
   };
 }
 
+export interface SpyReveal {
+  hasAnswered: boolean;
+  outcome: "home" | "draw" | "away" | null;
+  marginBucketId: string | null;
+  exactHomeScore: number | null;
+  exactAwayScore: number | null;
+}
+
+/**
+ * Le pronostic de la cible d'un Espion, sur le match visé — à n'appeler que
+ * pour un match déjà verrouillé (l'appelant en est responsable : la base ne
+ * connaît pas le pouvoir Espion, seulement `predictions_read`, qui autorise
+ * déjà la lecture de n'importe quel pronostic après verrouillage).
+ */
+export async function loadSpyReveal(
+  sb: SupabaseClient,
+  targetId: string,
+  fixtureId: string,
+): Promise<SpyReveal> {
+  const { data, error } = await sb
+    .from("predictions")
+    .select("outcome, margin_bucket_id, exact_home_score, exact_away_score")
+    .eq("user_id", targetId)
+    .eq("fixture_id", fixtureId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    return { hasAnswered: false, outcome: null, marginBucketId: null, exactHomeScore: null, exactAwayScore: null };
+  }
+  return {
+    hasAnswered: true,
+    outcome: data.outcome as SpyReveal["outcome"],
+    marginBucketId: (data.margin_bucket_id as string) ?? null,
+    exactHomeScore: (data.exact_home_score as number) ?? null,
+    exactAwayScore: (data.exact_away_score as number) ?? null,
+  };
+}
+
+export interface PowerAdjustment {
+  fixtureId: string;
+  powerCode: string;
+  powerEmoji: string;
+  powerName: string;
+  /** Somme des ajustements de ce pouvoir sur ce match — peut être négative (Sabotage). */
+  delta: number;
+}
+
+/**
+ * Les ajustements de points d'origine "pouvoir" du joueur, par match, sur
+ * toute une saison — pour que Résultats explique "pourquoi j'ai eu N points"
+ * en plus du score de base déjà affiché (`prediction_scores`), au lieu de
+ * montrer un total silencieusement différent de celui du classement.
+ *
+ * `point_adjustments.source_id` n'a pas de clé étrangère déclarée (colonne
+ * polymorphe, réutilisée par les ajustements admin et les questions bonus) :
+ * la jointure vers `power_usages` se fait donc ici, à la main, plutôt que via
+ * l'embarquement PostgREST.
+ */
+export async function loadPowerAdjustmentsByFixture(
+  sb: SupabaseClient,
+  userId: string,
+  seasonId: string,
+): Promise<Map<string, PowerAdjustment>> {
+  const { data: adjustments, error } = await sb
+    .from("point_adjustments")
+    .select("delta, source, source_id")
+    .eq("user_id", userId)
+    .eq("season_id", seasonId)
+    .like("source", "power:%");
+  if (error) throw error;
+
+  const rows = (adjustments ?? []) as Array<{ delta: number; source: string; source_id: string | null }>;
+  const usageIds = [...new Set(rows.map((r) => r.source_id).filter((id): id is string => Boolean(id)))];
+  if (usageIds.length === 0) return new Map();
+
+  const { data: usages, error: uErr } = await sb
+    .from("power_usages")
+    .select("id, snapshot_before, powers!inner(code, emoji, name)")
+    .in("id", usageIds);
+  if (uErr) throw uErr;
+
+  const usageById = new Map<
+    string,
+    { fixtureId: string | undefined; code: string; emoji: string; name: string }
+  >();
+  for (const u of (usages ?? []) as Array<Record<string, unknown>>) {
+    const powers = u.powers as
+      | { code: string; emoji: string; name: string }
+      | { code: string; emoji: string; name: string }[]
+      | null;
+    const power = Array.isArray(powers) ? powers[0] : powers;
+    if (!power) continue;
+    const snapshot = (u.snapshot_before as Record<string, unknown>) ?? {};
+    usageById.set(u.id as string, {
+      fixtureId: (snapshot.fixtureId as string) ?? undefined,
+      code: power.code,
+      emoji: power.emoji,
+      name: power.name,
+    });
+  }
+
+  const result = new Map<string, PowerAdjustment>();
+  for (const row of rows) {
+    if (!row.source_id) continue;
+    const usage = usageById.get(row.source_id);
+    if (!usage || !usage.fixtureId) continue;
+    const existing = result.get(usage.fixtureId);
+    result.set(usage.fixtureId, {
+      fixtureId: usage.fixtureId,
+      powerCode: usage.code,
+      powerEmoji: usage.emoji,
+      powerName: usage.name,
+      delta: (existing?.delta ?? 0) + row.delta,
+    });
+  }
+  return result;
+}
+
 export async function loadFixtureScoresForRound(
   sb: SupabaseClient,
   roundId: string,
