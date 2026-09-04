@@ -105,3 +105,40 @@ export function dayKey(at: Date, timeZone: string): string {
     year: "numeric", month: "2-digit", day: "2-digit", timeZone,
   }).format(at);
 }
+
+/** N jours avant un jour civil : « 2026-09-06 » moins 1 → « 2026-09-05 ». */
+export function dayKeyMinus(day: string, days: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const at = new Date(Date.UTC(y, m - 1, d));
+  at.setUTCDate(at.getUTCDate() - days);
+  return at.toISOString().slice(0, 10);
+}
+
+/** Le décalage horaire du fuseau, en minutes, à un instant donné (été compris). */
+function offsetMinutesAt(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const asLocal = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return Math.round((asLocal - instant.getTime()) / 60_000);
+}
+
+/**
+ * L'instant UTC correspondant à une heure d'horloge, un jour civil donné,
+ * dans un fuseau nommé — l'inverse de `dayKey` + `minutesOfDay`.
+ *
+ * Sert au mode « heure précise » d'un rappel (« vendredi 16 h », peu importe
+ * l'heure d'été ou d'hiver ce jour-là). Une correction en deux passes : la
+ * première traite l'heure voulue comme si elle était déjà UTC, la seconde
+ * applique le vrai décalage du fuseau à cet instant.
+ */
+export function zonedDateTime(day: string, clockTime: string, timeZone: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  const minutes = toMinutes(clockTime) ?? 0;
+  const naiveUtc = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
+  const offset = offsetMinutesAt(new Date(naiveUtc), timeZone);
+  return new Date(naiveUtc - offset * 60_000);
+}

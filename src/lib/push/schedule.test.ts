@@ -1,7 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  toMinutes, isQuiet, scheduleFor, scheduleForAll, dedupeKey, dayKey, minutesOfDay,
+  toMinutes, isQuiet, scheduleFor, scheduleForAll, dedupeKey, dayKey, dayKeyMinus,
+  minutesOfDay, zonedDateTime,
   type QuietHours,
 } from "./schedule.ts";
 
@@ -146,6 +147,41 @@ describe("cumul des plages de silence", () => {
     assert.equal(
       scheduleForAll(at("15:00"), [cassee]).toISOString(),
       at("15:00").toISOString(),
+    );
+  });
+});
+
+describe("jour civil N jours avant", () => {
+  test("soustrait des jours simples", () => {
+    assert.equal(dayKeyMinus("2026-09-06", 1), "2026-09-05");
+    assert.equal(dayKeyMinus("2026-09-06", 0), "2026-09-06");
+  });
+
+  test("traverse un changement de mois et d'année", () => {
+    assert.equal(dayKeyMinus("2026-03-01", 1), "2026-02-28");
+    assert.equal(dayKeyMinus("2026-01-01", 1), "2025-12-31");
+  });
+});
+
+describe("heure d'horloge dans un fuseau (mode « heure précise »)", () => {
+  test("heure d'été (Paris, UTC+2)", () => {
+    assert.equal(
+      zonedDateTime("2026-09-05", "16:00", "Europe/Paris").toISOString(),
+      "2026-09-05T14:00:00.000Z",
+    );
+  });
+
+  test("heure d'hiver (Paris, UTC+1)", () => {
+    assert.equal(
+      zonedDateTime("2026-01-05", "16:00", "Europe/Paris").toISOString(),
+      "2026-01-05T15:00:00.000Z",
+    );
+  });
+
+  test("un fuseau sans décalage (UTC) revient à l'heure telle quelle", () => {
+    assert.equal(
+      zonedDateTime("2026-09-05", "16:00", "UTC").toISOString(),
+      "2026-09-05T16:00:00.000Z",
     );
   });
 });

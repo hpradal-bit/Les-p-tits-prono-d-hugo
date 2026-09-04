@@ -140,9 +140,10 @@ export default async function PushSettingsPage() {
         <div className="flex flex-col gap-1">
           <Label>Rappels avant verrouillage</Label>
           <p className="text-[13px] leading-relaxed text-ink-faint">
-            Deux créneaux, chacun avec son délai et son texte — enregistrés une fois, appliqués
-            automatiquement à chaque match ensuite. Envoyé seulement aux joueurs à qui il manque encore
-            un pronostic sur la journée concernée.
+            Deux créneaux, chacun réglable par délai (« 24 h avant ») ou par heure précise
+            (« vendredi 16 h ») — enregistrés une fois, appliqués automatiquement à chaque match
+            ensuite. Envoyé à tous les joueurs de la ligue concernée, qu&apos;ils aient déjà pronostiqué
+            ou non.
           </p>
         </div>
         <ReminderSlotsForm slots={reminderSlots} />

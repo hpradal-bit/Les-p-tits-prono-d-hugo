@@ -1594,7 +1594,10 @@ export async function updateNotificationRules(
 
 const reminderSlotFormSchema = z.object({
   enabled: z.coerce.boolean(),
+  mode: z.enum(["hours_before", "fixed_time"]),
   hoursBefore: z.coerce.number(),
+  daysBefore: z.coerce.number(),
+  clockTime: z.string().trim(),
   title: z.string().trim(),
   body: z.string().trim(),
 });
@@ -1613,7 +1616,10 @@ export async function updateLockReminderSlots(
     const ctx = await requireAdmin();
     const raw = [1, 2].map((n) => ({
       enabled: formData.get(`slot${n}Enabled`) === "on" || formData.get(`slot${n}Enabled`) === "true",
+      mode: formData.get(`slot${n}Mode`),
       hoursBefore: formData.get(`slot${n}HoursBefore`),
+      daysBefore: formData.get(`slot${n}DaysBefore`),
+      clockTime: formData.get(`slot${n}ClockTime`),
       title: formData.get(`slot${n}Title`),
       body: formData.get(`slot${n}Body`),
     }));

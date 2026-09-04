@@ -3,7 +3,12 @@ import { loadSettings, setting } from "@/lib/settings";
 import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { enqueue } from "./notify";
 import { dedupeKey, dayKey } from "./schedule";
-import { readLockReminderSlots, renderReminderText, type ReminderSlot } from "./lock-reminder-settings.ts";
+import {
+  readLockReminderSlots,
+  renderReminderText,
+  reminderTargetSendTime,
+  type ReminderSlot,
+} from "./lock-reminder-settings.ts";
 
 /**
  * Les deux notifications de cette livraison.
@@ -19,22 +24,38 @@ export interface ReminderSummary {
 }
 
 /**
- * « Il te reste 3 pronos, ça ferme dans 24 h. » puis « ...ça ferme dans 10 h. »
+ * « Encore 24 h avant la fermeture ! » puis « Dernière ligne droite ! »
  *
- * Deux créneaux, réglés depuis l'espace admin (délai et texte de chacun),
- * appliqués automatiquement à chaque match — l'admin les enregistre une fois,
- * plus rien à reprogrammer ensuite. Envoyé seulement à ceux à qui il manque
- * quelque chose : prévenir quelqu'un qui a déjà tout joué, c'est la meilleure
- * façon de le faire couper les notifications.
+ * Deux créneaux, réglés depuis l'espace admin (délai — ou heure précise — et
+ * texte de chacun), appliqués automatiquement à chaque match — l'admin les
+ * enregistre une fois, plus rien à reprogrammer ensuite. Envoyé à TOUS les
+ * membres de la ligue concernée, y compris ceux qui ont déjà joué tous leurs
+ * pronostics — demande explicite d'Hugo : ce n'est plus réservé à ceux à qui
+ * il manque quelque chose.
  */
 export async function queueLockReminders(admin: SupabaseClient): Promise<number> {
   const settings = await loadSettings(admin);
   const timeZone = setting<string>(settings, "notifications.timezone", "Europe/Paris");
   const slots = readLockReminderSlots(settings).filter((s) => s.enabled);
+  if (slots.length === 0) return 0;
+
+  // Un seul aller-retour pour tous les matchs pas encore verrouillés : à
+  // l'échelle de cette application (91 matchs par saison), pas besoin de
+  // filtrer davantage en base — chaque créneau calcule ensuite lui-même,
+  // match par match, si son instant d'envoi est atteint.
+  const now = new Date();
+  const { data: fixtures } = await admin
+    .from("fixtures")
+    .select("id, round_id, locks_at")
+    .gt("locks_at", now.toISOString());
+  if (!fixtures || fixtures.length === 0) return 0;
 
   let queued = 0;
   for (const slot of slots) {
-    queued += await queueRemindersForSlot(admin, slot, timeZone);
+    const due = fixtures.filter(
+      (f) => reminderTargetSendTime(slot, new Date(f.locks_at as string), timeZone) <= now,
+    );
+    queued += await queueRemindersForSlot(admin, slot, due, timeZone, now);
   }
   return queued;
 }
@@ -42,21 +63,14 @@ export async function queueLockReminders(admin: SupabaseClient): Promise<number>
 async function queueRemindersForSlot(
   admin: SupabaseClient,
   slot: ReminderSlot,
+  dueFixtures: Array<{ id: unknown; round_id: unknown; locks_at: unknown }>,
   timeZone: string,
+  now: Date,
 ): Promise<number> {
-  const now = new Date();
-  const horizon = new Date(now.getTime() + slot.hoursBefore * 3_600_000);
-
-  // Les matchs qui ferment dans la fenêtre de CE créneau, et pas encore fermés.
-  const { data: fixtures } = await admin
-    .from("fixtures")
-    .select("id, round_id, locks_at")
-    .gt("locks_at", now.toISOString())
-    .lte("locks_at", horizon.toISOString());
-  if (!fixtures || fixtures.length === 0) return 0;
+  if (dueFixtures.length === 0) return 0;
 
   const byRound = new Map<string, string[]>();
-  for (const f of fixtures) {
+  for (const f of dueFixtures) {
     const list = byRound.get(f.round_id as string) ?? [];
     list.push(f.id as string);
     byRound.set(f.round_id as string, list);
@@ -98,9 +112,7 @@ async function queueRemindersForSlot(
       if (profile?.is_active === false) continue;
 
       const missing = fixtureIds.length - (countByUser.get(userId) ?? 0);
-      if (missing <= 0) continue;
-
-      const vars = { journee: (round.name as string) ?? "cette journée", heures: slot.hoursBefore, restant: missing };
+      const vars = { journee: (round.name as string) ?? "cette journée", heures: slot.hoursBefore, restant: Math.max(missing, 0) };
 
       const outcome = await enqueue(admin, {
         userId,
