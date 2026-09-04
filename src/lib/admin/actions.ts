@@ -17,6 +17,12 @@ import { loadPublicKey, sendToUser } from "@/lib/push/send";
 import { enqueue, type EnqueueOutcome } from "@/lib/push/notify";
 import { scheduleFor } from "@/lib/push/schedule";
 import { describeQuiet, readRules, rulesToRows, validateRules } from "@/lib/push/rules";
+import {
+  readLockReminderSlots,
+  reminderSlotsToRow,
+  validateReminderSlots,
+  type ReminderSlotInput,
+} from "@/lib/push/lock-reminder-settings";
 import { requireAdmin, AdminError } from "./auth";
 import { logAdminAction, MissingReasonError } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
@@ -1580,6 +1586,84 @@ export async function updateNotificationRules(
       input.enabled
         ? `Réglages enregistrés : ${input.maxPerDay} message${input.maxPerDay > 1 ? "s" : ""} par jour au plus, ${describeQuiet(input)}.`
         : "Notifications éteintes pour tout le groupe. Plus rien ne partira, même une annonce.",
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+const reminderSlotFormSchema = z.object({
+  enabled: z.coerce.boolean(),
+  hoursBefore: z.coerce.number(),
+  title: z.string().trim(),
+  body: z.string().trim(),
+});
+const reminderSlotsSchema = z.tuple([reminderSlotFormSchema, reminderSlotFormSchema]);
+
+/**
+ * Les deux rappels avant verrouillage : délai et texte de chacun, réglés une
+ * fois pour toutes et appliqués automatiquement à chaque match ensuite —
+ * demande explicite d'Hugo, aucune reprogrammation manuelle nécessaire.
+ */
+export async function updateLockReminderSlots(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const raw = [1, 2].map((n) => ({
+      enabled: formData.get(`slot${n}Enabled`) === "on" || formData.get(`slot${n}Enabled`) === "true",
+      hoursBefore: formData.get(`slot${n}HoursBefore`),
+      title: formData.get(`slot${n}Title`),
+      body: formData.get(`slot${n}Body`),
+    }));
+    const parsed = reminderSlotsSchema.safeParse(raw);
+    if (!parsed.success) {
+      return adminFail("Réglages invalides.");
+    }
+    const input: ReminderSlotInput[] = parsed.data;
+
+    const errors = validateReminderSlots(input);
+    if (Object.keys(errors).length > 0) {
+      const fieldErrors: Record<string, string[]> = {};
+      const messages: string[] = [];
+      (["slot_1", "slot_2"] as const).forEach((id, i) => {
+        const slotErrors = errors[id];
+        if (!slotErrors) return;
+        for (const [field, message] of Object.entries(slotErrors)) {
+          fieldErrors[`slot${i + 1}${field[0].toUpperCase()}${field.slice(1)}`] = [message];
+          messages.push(`Créneau ${i + 1} — ${message}`);
+        }
+      });
+      return adminFail(messages.join(" "), { fieldErrors });
+    }
+
+    const admin = createAdminClient();
+    const before = readLockReminderSlots(await loadSettings(admin));
+    const row = reminderSlotsToRow(input);
+
+    const { error } = await admin
+      .from("app_settings")
+      .upsert({ ...row, updated_by: ctx.userId }, { onConflict: "key" });
+    if (error) throw error;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.lock_reminder_slots_changed",
+      entityType: "app_setting",
+      entityId: null,
+      before,
+      after: row.value,
+      reason: "Rappels de verrouillage modifiés depuis l'espace admin.",
+    });
+
+    revalidatePath("/admin/push-settings");
+
+    const active = input.filter((s) => s.enabled).length;
+    return adminOk(
+      active === 0
+        ? "Les deux créneaux sont enregistrés, mais coupés : aucun rappel ne partira."
+        : `${active} créneau${active > 1 ? "x" : ""} de rappel enregistré${active > 1 ? "s" : ""}.`,
     );
   } catch (error) {
     return handle(error);

@@ -4,12 +4,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadSettings } from "@/lib/settings";
 import { loadPublicKey } from "@/lib/push/send";
 import { readRules, describeQuiet } from "@/lib/push/rules";
+import { readLockReminderSlots, type ReminderSlot } from "@/lib/push/lock-reminder-settings";
 import { verifyPair, describePair, isValidSubject } from "@/lib/push/keys";
 import { getViewerContext } from "@/lib/admin/auth";
 import { VapidForm } from "./_components/vapid-form";
 import { TestForm } from "./_components/test-form";
 import { AnnouncementForm } from "./_components/announcement-form";
 import { RulesForm } from "./_components/rules-form";
+import { ReminderSlotsForm } from "./_components/reminder-slots-form";
 
 export const metadata: Metadata = { title: "Notifications — Admin" };
 export const dynamic = "force-dynamic";
@@ -29,6 +31,7 @@ export default async function PushSettingsPage() {
     loadSettings(admin),
   ]);
   const rules = readRules(settings);
+  const reminderSlots = readLockReminderSlots(settings) as [ReminderSlot, ReminderSlot];
   const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
   const hasPrivateKey = Boolean(privateKey);
 
@@ -131,6 +134,18 @@ export default async function PushSettingsPage() {
           </p>
         </div>
         <AnnouncementForm recipients={activeIds.length} />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-1">
+          <Label>Rappels avant verrouillage</Label>
+          <p className="text-[13px] leading-relaxed text-ink-faint">
+            Deux créneaux, chacun avec son délai et son texte — enregistrés une fois, appliqués
+            automatiquement à chaque match ensuite. Envoyé seulement aux joueurs à qui il manque encore
+            un pronostic sur la journée concernée.
+          </p>
+        </div>
+        <ReminderSlotsForm slots={reminderSlots} />
       </Card>
 
       <Card className="flex flex-col gap-4 p-4">

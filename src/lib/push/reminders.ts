@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSettings, setting } from "@/lib/settings";
+import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { enqueue } from "./notify";
 import { dedupeKey, dayKey } from "./schedule";
+import { readLockReminderSlots, renderReminderText, type ReminderSlot } from "./lock-reminder-settings.ts";
 
 /**
  * Les deux notifications de cette livraison.
@@ -17,21 +19,35 @@ export interface ReminderSummary {
 }
 
 /**
- * « Il te reste 3 pronos, ça ferme dans 3 heures. »
+ * « Il te reste 3 pronos, ça ferme dans 24 h. » puis « ...ça ferme dans 10 h. »
  *
- * Envoyé seulement à ceux à qui il manque quelque chose : prévenir quelqu'un
- * qui a déjà tout joué, c'est la meilleure façon de le faire couper les
- * notifications.
+ * Deux créneaux, réglés depuis l'espace admin (délai et texte de chacun),
+ * appliqués automatiquement à chaque match — l'admin les enregistre une fois,
+ * plus rien à reprogrammer ensuite. Envoyé seulement à ceux à qui il manque
+ * quelque chose : prévenir quelqu'un qui a déjà tout joué, c'est la meilleure
+ * façon de le faire couper les notifications.
  */
 export async function queueLockReminders(admin: SupabaseClient): Promise<number> {
   const settings = await loadSettings(admin);
-  const hoursBefore = setting<number>(settings, "notifications.reminder_hours_before_lock", 3);
   const timeZone = setting<string>(settings, "notifications.timezone", "Europe/Paris");
+  const slots = readLockReminderSlots(settings).filter((s) => s.enabled);
 
+  let queued = 0;
+  for (const slot of slots) {
+    queued += await queueRemindersForSlot(admin, slot, timeZone);
+  }
+  return queued;
+}
+
+async function queueRemindersForSlot(
+  admin: SupabaseClient,
+  slot: ReminderSlot,
+  timeZone: string,
+): Promise<number> {
   const now = new Date();
-  const horizon = new Date(now.getTime() + hoursBefore * 3_600_000);
+  const horizon = new Date(now.getTime() + slot.hoursBefore * 3_600_000);
 
-  // Les matchs qui ferment dans la fenêtre, et pas encore fermés.
+  // Les matchs qui ferment dans la fenêtre de CE créneau, et pas encore fermés.
   const { data: fixtures } = await admin
     .from("fixtures")
     .select("id, round_id, locks_at")
@@ -46,15 +62,23 @@ export async function queueLockReminders(admin: SupabaseClient): Promise<number>
     byRound.set(f.round_id as string, list);
   }
 
-  const { data: members } = await admin
-    .from("group_members")
-    .select("user_id, profiles!inner(first_name, is_active)");
-
   let queued = 0;
 
   for (const [roundId, fixtureIds] of byRound) {
     const { data: round } = await admin
-      .from("rounds").select("name").eq("id", roundId).maybeSingle();
+      .from("rounds").select("name, season_id").eq("id", roundId).maybeSingle();
+    if (!round) continue;
+
+    // Les membres de la ligue de CETTE saison, pas tout le groupe historique :
+    // un joueur d'une autre ligue sur une autre compétition ne doit pas être
+    // relancé pour un match qui ne le concerne pas.
+    const leagueId = await resolveLeagueForSeason(admin, round.season_id as string);
+    if (!leagueId) continue;
+
+    const { data: members } = await admin
+      .from("league_members")
+      .select("user_id, profiles!inner(first_name, is_active)")
+      .eq("league_id", leagueId);
 
     const { data: played } = await admin
       .from("predictions")
@@ -76,17 +100,18 @@ export async function queueLockReminders(admin: SupabaseClient): Promise<number>
       const missing = fixtureIds.length - (countByUser.get(userId) ?? 0);
       if (missing <= 0) continue;
 
+      const vars = { journee: (round.name as string) ?? "cette journée", heures: slot.hoursBefore, restant: missing };
+
       const outcome = await enqueue(admin, {
         userId,
         kind: "lock_reminder",
-        title: round?.name ? `⏰ ${round.name} ferme dans ${hoursBefore} h` : `⏰ Plus que ${hoursBefore} h`,
-        body:
-          missing === 1
-            ? "Il te reste 1 prono à jouer sur cette journée."
-            : `Il te reste ${missing} pronos à jouer sur cette journée.`,
+        title: renderReminderText(slot.title, vars),
+        body: renderReminderText(slot.body, vars),
         url: "/journee",
-        // Une clé par journée et par jour : un seul rappel, pas un par match.
-        dedupeKey: dedupeKey("lock_reminder", roundId, dayKey(now, timeZone)),
+        // Une clé par créneau, par journée et par jour : les deux créneaux ne
+        // se déduplent jamais l'un l'autre, et le planificateur peut repasser
+        // toutes les cinq minutes sans jamais doubler quoi que ce soit.
+        dedupeKey: dedupeKey("lock_reminder", `${slot.id}:${roundId}`, dayKey(now, timeZone)),
       });
       if (outcome === "queued") queued += 1;
     }
