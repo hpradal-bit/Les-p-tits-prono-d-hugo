@@ -35,6 +35,16 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   formatDetection: { telephone: false },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    // iOS ignore le manifest PWA pour l'icône d'écran d'accueil : sans ce
+    // lien dédié, il se rabat sur une capture d'écran de la page. Générée
+    // (avec les trois autres) par `npm run icons:generate`.
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
