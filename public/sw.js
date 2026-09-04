@@ -1,5 +1,5 @@
 /**
- * Les p'tits pronos d'Hugo — service worker.
+ * LE VESTIAIRE — service worker.
  * ---------------------------------------------------------------------------
  * Deux stratégies, pas une de plus :
  *
@@ -226,7 +226,7 @@ function offlineHtml(available) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hors-ligne · Les p'tits pronos d'Hugo</title>
+<title>Hors-ligne · LE VESTIAIRE</title>
 <style>
   :root {
     --ground:#F2F4F0; --surface:#FFFFFF; --surface-sunk:#EAEEE7;
@@ -290,7 +290,7 @@ function offlineHtml(available) {
   </svg>
 
   <header>
-    <p class="eyebrow">Les p'tits pronos d'Hugo</p>
+    <p class="eyebrow">LE VESTIAIRE</p>
     <h1>Pas de réseau</h1>
     <p class="lede">Le téléphone n'attrape rien pour l'instant — un tunnel, un stade plein, ça arrive. L'application reprendra toute seule dès que ça revient.</p>
   </header>
@@ -328,7 +328,7 @@ self.addEventListener("push", (event) => {
     payload = { body: event.data ? event.data.text() : "" };
   }
 
-  const title = payload.title || "Les p'tits pronos d'Hugo";
+  const title = payload.title || "LE VESTIAIRE";
   const options = {
     body: payload.body || "",
     icon: "/icons/icon-192.png",
