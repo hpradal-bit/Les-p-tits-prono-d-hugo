@@ -2,8 +2,10 @@
 # Planificateur de synchronisation — Cloudflare Worker
 # ----------------------------------------------------------------------------
 # Offre gratuite : 100 000 requêtes par jour, cron compris. On en consomme 288
-# (un réveil toutes les 5 minutes), dont une poignée seulement déclenche un
-# appel réel à l'application.
+# (un réveil toutes les 5 minutes). Chaque réveil appelle au moins
+# /api/push/dispatch (rappels avant verrouillage — une simple requête
+# Postgres, sans quota) ; les appels aux fournisseurs de données sportives,
+# eux, restent throttlés hors fenêtre de match.
 #
 # Déploiement : par GitHub Actions — voir
 # `.github/workflows/deploy-worker.yml`. Toute modification de `worker/`

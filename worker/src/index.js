@@ -10,6 +10,10 @@
  *   · sinon, au plus une fois par heure → POST /api/sync/live (ce passage
  *     maintient aussi le projet Supabase éveillé : un projet gratuit se met en
  *     veille après une semaine d'inactivité) ;
+ *   · à CHAQUE réveil, sans exception → POST /api/push/dispatch (les rappels
+ *     avant verrouillage, en particulier ceux à heure précise, ont besoin de
+ *     la cadence des 5 minutes — l'appel est gratuit, une simple requête
+ *     Postgres, rien à voir avec le quota d'un fournisseur de données) ;
  *   · une fois par jour → POST /api/sync/calendar puis /api/sync/standings.
  *
  * L'heure du prochain passage n'est pas devinée : elle est renvoyée par
@@ -83,6 +87,18 @@ async function runCycle(env, now, options = {}) {
     report.actions.push({ job: "live", error: String(error) });
   }
 
+  // Hors de maybeRunLive, volontairement : celui-ci se met en veille jusqu'à
+  // une heure entre deux passages hors match (pour épargner le quota d'un
+  // fournisseur de données payant). Les rappels avant verrouillage n'ont rien
+  // à voir avec ce quota — un oubli ici les aurait fait attendre la même
+  // heure de silence, ratant une heure précise programmée par Hugo.
+  try {
+    const dispatched = await callSync(env, "dispatch", "push");
+    report.actions.push({ job: "push", status: dispatched.status, ...dispatched.body });
+  } catch (error) {
+    report.actions.push({ job: "push", error: String(error) });
+  }
+
   return report;
 }
 
@@ -123,9 +139,6 @@ async function maybeRunLive(env, now, force) {
   // de match : c'est la cadence horaire qui s'en charge, largement à temps.
   // L'opération est rejouable, l'appeler à chaque passage ne coûte rien.
   const locked = await callSync(env, "lock");
-
-  // Chaque cycle est aussi l'occasion de voir si un verrouillage approche.
-  await callSync(env, "dispatch", "push");
 
   // Le prochain réveil est le plus proche demandé par une saison — celle qui
   // joue le plus tôt décide de la cadence.
