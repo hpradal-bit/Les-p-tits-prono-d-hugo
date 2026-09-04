@@ -5,9 +5,12 @@ import { enqueue } from "./notify";
 import { dedupeKey, dayKey } from "./schedule";
 import {
   readLockReminderSlots,
+  readLockReminderMessages,
   renderReminderText,
   reminderTargetSendTime,
+  pickReminderMessage,
   type ReminderSlot,
+  type ReminderMessage,
 } from "./lock-reminder-settings.ts";
 
 /**
@@ -38,6 +41,10 @@ export async function queueLockReminders(admin: SupabaseClient): Promise<number>
   const timeZone = setting<string>(settings, "notifications.timezone", "Europe/Paris");
   const slots = readLockReminderSlots(settings).filter((s) => s.enabled);
   if (slots.length === 0) return 0;
+  // Le pot commun de messages (demande explicite d'Hugo : une vingtaine de
+  // titres/textes différents, tirés au hasard pour ne pas répéter toujours
+  // le même). Vide, chaque créneau retombe sur son propre titre/texte.
+  const messages = readLockReminderMessages(settings);
 
   // Un seul aller-retour pour tous les matchs pas encore verrouillés : à
   // l'échelle de cette application (91 matchs par saison), pas besoin de
@@ -55,7 +62,7 @@ export async function queueLockReminders(admin: SupabaseClient): Promise<number>
     const due = fixtures.filter(
       (f) => reminderTargetSendTime(slot, new Date(f.locks_at as string), timeZone) <= now,
     );
-    queued += await queueRemindersForSlot(admin, slot, due, timeZone, now);
+    queued += await queueRemindersForSlot(admin, slot, due, messages, timeZone, now);
   }
   return queued;
 }
@@ -64,6 +71,7 @@ async function queueRemindersForSlot(
   admin: SupabaseClient,
   slot: ReminderSlot,
   dueFixtures: Array<{ id: unknown; round_id: unknown; locks_at: unknown }>,
+  messages: ReminderMessage[],
   timeZone: string,
   now: Date,
 ): Promise<number> {
@@ -104,6 +112,11 @@ async function queueRemindersForSlot(
       countByUser.set(p.user_id as string, (countByUser.get(p.user_id as string) ?? 0) + 1);
     }
 
+    // Un seul tirage pour tout l'envoi de ce créneau sur cette journée : tous
+    // les joueurs reçoivent la même variante ce jour-là — un tirage par
+    // destinataire donnerait un fil de discussion incohérent entre coéquipiers.
+    const chosen = pickReminderMessage(messages, { title: slot.title, body: slot.body });
+
     for (const member of members ?? []) {
       const userId = member.user_id as string;
       const profile = (Array.isArray(member.profiles) ? member.profiles[0] : member.profiles) as
@@ -117,8 +130,8 @@ async function queueRemindersForSlot(
       const outcome = await enqueue(admin, {
         userId,
         kind: "lock_reminder",
-        title: renderReminderText(slot.title, vars),
-        body: renderReminderText(slot.body, vars),
+        title: renderReminderText(chosen.title, vars),
+        body: renderReminderText(chosen.body, vars),
         url: "/journee",
         // Une clé par créneau, par journée et par jour : les deux créneaux ne
         // se déduplent jamais l'un l'autre, et le planificateur peut repasser

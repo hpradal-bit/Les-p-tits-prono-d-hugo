@@ -31,6 +31,7 @@ export const ADMIN_ACTIONS = {
   "push.announcement_sent": "Message envoyé au groupe",
   "push.rules_changed": "Règles de notification modifiées",
   "push.lock_reminder_slots_changed": "Rappels de verrouillage modifiés",
+  "push.lock_reminder_messages_changed": "Messages de rappel modifiés",
 
   "sync.calendar_run": "Calendrier synchronisé",
   "sync.live_run": "Scores relevés",

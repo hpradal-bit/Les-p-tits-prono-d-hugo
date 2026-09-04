@@ -21,7 +21,11 @@ import {
   readLockReminderSlots,
   reminderSlotsToRow,
   validateReminderSlots,
+  readLockReminderMessages,
+  reminderMessagesToRow,
+  validateReminderMessages,
   type ReminderSlotInput,
+  type ReminderMessageInput,
 } from "@/lib/push/lock-reminder-settings";
 import { requireAdmin, AdminError } from "./auth";
 import { logAdminAction, MissingReasonError } from "./log";
@@ -1670,6 +1674,76 @@ export async function updateLockReminderSlots(
       active === 0
         ? "Les deux créneaux sont enregistrés, mais coupés : aucun rappel ne partira."
         : `${active} créneau${active > 1 ? "x" : ""} de rappel enregistré${active > 1 ? "s" : ""}.`,
+    );
+  } catch (error) {
+    return handle(error);
+  }
+}
+
+const reminderMessagesFormSchema = z.array(
+  z.object({ title: z.string(), body: z.string() }),
+);
+
+/**
+ * Le pot commun de messages tirés au hasard pour les rappels — demande
+ * explicite d'Hugo, pour que le texte change d'une journée à l'autre. La
+ * liste est de taille variable (une vingtaine typiquement), donc transmise en
+ * un seul champ JSON plutôt qu'en champs nommés fixes comme les créneaux.
+ */
+export async function updateLockReminderMessages(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requireAdmin();
+    const raw = formData.get("messages");
+    let json: unknown;
+    try {
+      json = JSON.parse(typeof raw === "string" ? raw : "[]");
+    } catch {
+      return adminFail("Liste de messages illisible.");
+    }
+    const parsed = reminderMessagesFormSchema.safeParse(json);
+    if (!parsed.success) {
+      return adminFail("Réglages invalides.");
+    }
+    const input: ReminderMessageInput[] = parsed.data.map((m) => ({
+      title: m.title.trim(),
+      body: m.body.trim(),
+    }));
+
+    const errors = validateReminderMessages(input);
+    if (errors.general || errors.items) {
+      const first = errors.general
+        ?? Object.values(errors.items ?? {}).flatMap((e) => [e.title, e.body]).filter(Boolean)[0];
+      return adminFail(first ?? "Réglages invalides.");
+    }
+
+    const admin = createAdminClient();
+    const before = readLockReminderMessages(await loadSettings(admin));
+    const row = reminderMessagesToRow(input);
+
+    const { error } = await admin
+      .from("app_settings")
+      .upsert({ ...row, updated_by: ctx.userId }, { onConflict: "key" });
+    if (error) throw error;
+
+    await logAdminAction(admin, {
+      adminId: ctx.userId,
+      action: "push.lock_reminder_messages_changed",
+      entityType: "app_setting",
+      entityId: null,
+      before,
+      after: row.value,
+      reason: `${input.length} message(s) de rappel enregistré(s) depuis l'espace admin.`,
+    });
+
+    revalidatePath("/admin/push-settings");
+
+    return adminOk(
+      input.length === 0
+        ? "Pot de messages vidé : chaque créneau retombe sur son propre texte."
+        : `${input.length} message${input.length > 1 ? "s" : ""} enregistré${input.length > 1 ? "s" : ""}.`,
     );
   } catch (error) {
     return handle(error);

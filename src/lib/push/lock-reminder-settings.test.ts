@@ -3,11 +3,16 @@ import assert from "node:assert/strict";
 import {
   LOCK_REMINDER_SLOTS_DEFAULTS,
   LOCK_REMINDER_SLOTS_KEY,
+  LOCK_REMINDER_MESSAGES_KEY,
   readLockReminderSlots,
   validateReminderSlots,
   reminderSlotsToRow,
   renderReminderText,
   reminderTargetSendTime,
+  readLockReminderMessages,
+  validateReminderMessages,
+  reminderMessagesToRow,
+  pickReminderMessage,
   type ReminderSlotInput,
   type ReminderSlot,
 } from "./lock-reminder-settings.ts";
@@ -178,5 +183,60 @@ describe("l'instant d'envoi d'un créneau", () => {
     };
     const sent = reminderTargetSendTime(slot, locksAt, timeZone);
     assert.equal(sent.toISOString(), "2026-09-05T07:00:00.000Z");
+  });
+});
+
+describe("pot commun de messages", () => {
+  test("une base muette rend une liste vide", () => {
+    assert.deepEqual(readLockReminderMessages({}), []);
+  });
+
+  test("lit les messages enregistrés", () => {
+    const stored = [{ id: "msg_1", title: "Titre", body: "Corps" }];
+    assert.deepEqual(readLockReminderMessages({ [LOCK_REMINDER_MESSAGES_KEY]: stored }), stored);
+  });
+
+  test("ignore une entrée mal formée plutôt que de planter", () => {
+    const stored = [{ id: "msg_1", title: "Titre", body: "Corps" }, { id: "msg_2" }];
+    assert.deepEqual(
+      readLockReminderMessages({ [LOCK_REMINDER_MESSAGES_KEY]: stored }),
+      [{ id: "msg_1", title: "Titre", body: "Corps" }],
+    );
+  });
+
+  test("valide titre et texte non vides", () => {
+    const errors = validateReminderMessages([{ title: "", body: "Corps" }, { title: "Titre", body: "" }]);
+    assert.ok(errors.items?.[0]?.title);
+    assert.ok(errors.items?.[1]?.body);
+  });
+
+  test("refuse plus de 50 messages", () => {
+    const many = Array.from({ length: 51 }, (_, i) => ({ title: `T${i}`, body: `C${i}` }));
+    assert.ok(validateReminderMessages(many).general);
+  });
+
+  test("reminderMessagesToRow attribue un id stable à chaque message", () => {
+    const row = reminderMessagesToRow([{ title: "A", body: "B" }, { title: "C", body: "D" }]);
+    assert.equal(row.key, LOCK_REMINDER_MESSAGES_KEY);
+    assert.equal(row.value[0].id, "msg_1");
+    assert.equal(row.value[1].id, "msg_2");
+  });
+
+  test("pickReminderMessage retombe sur le texte du créneau si le pot est vide", () => {
+    const fallback = { title: "Titre créneau", body: "Corps créneau" };
+    assert.deepEqual(pickReminderMessage([], fallback), fallback);
+  });
+
+  test("pickReminderMessage choisit selon le tirage fourni", () => {
+    const messages = [
+      { id: "msg_1", title: "A", body: "a" },
+      { id: "msg_2", title: "B", body: "b" },
+      { id: "msg_3", title: "C", body: "c" },
+    ];
+    const fallback = { title: "?", body: "?" };
+    assert.deepEqual(pickReminderMessage(messages, fallback, () => 0), { title: "A", body: "a" });
+    assert.deepEqual(pickReminderMessage(messages, fallback, () => 0.5), { title: "B", body: "b" });
+    // Un tirage à la borne (1, jamais renvoyé par Math.random) ne doit pas déborder du tableau.
+    assert.deepEqual(pickReminderMessage(messages, fallback, () => 0.999999), { title: "C", body: "c" });
   });
 });
