@@ -136,11 +136,83 @@ export function planCalendarUpdate(
   return { patch, reasons };
 }
 
+/**
+ * Verdict du recoupement entre deux fournisseurs indépendants.
+ *
+ * `unavailable` n'est pas un échec : le second fournisseur peut n'avoir aucune
+ * donnée sur ce match. C'est `conflicting` qui doit arrêter la machine.
+ */
+export type Corroboration = "confirmed" | "conflicting" | "unavailable";
+
+export interface ScoreOpinion {
+  provider: string;
+  homeScore: number | null;
+  awayScore: number | null;
+}
+
+export interface CorroborationResult {
+  verdict: Corroboration;
+  /** En clair, pour le journal et l'espace admin. */
+  detail: string;
+}
+
+/**
+ * Deux fournisseurs disent-ils la même chose ?
+ *
+ * C'est le garde-fou qui manquait : le 5 septembre, TheSportsDB a servi un
+ * `19-0` figé à la 30ᵉ minute pendant toute la soirée, et personne n'était là
+ * pour le contredire — les trois autres fournisseurs de la chaîne n'ont jamais
+ * été interrogés, puisque le premier répondait.
+ */
+export function corroborateScore(
+  primary: ScoreOpinion,
+  second: ScoreOpinion | null,
+): CorroborationResult {
+  if (primary.homeScore === null || primary.awayScore === null) {
+    return { verdict: "unavailable", detail: `${primary.provider} n'a pas de score` };
+  }
+  if (!second || second.homeScore === null || second.awayScore === null) {
+    const who = second?.provider ?? "aucun second fournisseur";
+    return { verdict: "unavailable", detail: `${who} n'a pas de score à opposer` };
+  }
+
+  const agree =
+    primary.homeScore === second.homeScore && primary.awayScore === second.awayScore;
+
+  if (agree) {
+    return {
+      verdict: "confirmed",
+      detail: `${primary.provider} et ${second.provider} concordent sur ${primary.homeScore}-${primary.awayScore}`,
+    };
+  }
+
+  return {
+    verdict: "conflicting",
+    detail:
+      `${primary.provider} annonce ${primary.homeScore}-${primary.awayScore}, ` +
+      `${second.provider} annonce ${second.homeScore}-${second.awayScore}`,
+  };
+}
+
 export interface LivePlanOptions {
   provider: string;
   now?: Date;
   /** Délai après lequel un score terminé devient officiel (`app_settings`). */
   officialAfterMinutes: number;
+  /**
+   * Verdict du recoupement avec un second fournisseur. Un score qui n'est pas
+   * confirmé ne franchit pas le passage en « officiel » : c'est le point de
+   * non-retour, après lequel la synchro n'a plus le droit de corriger.
+   *
+   * Absent = comportement d'origine, pour les appels qui ne recoupent pas.
+   */
+  corroboration?: Corroboration;
+  /**
+   * Laisse le passage en « officiel » à la passe de recoupement, qui décidera
+   * une fois le second avis obtenu. Sans ça, la passe principale officialiserait
+   * avant même qu'on ait demandé à quiconque de confirmer.
+   */
+  deferOfficial?: boolean;
 }
 
 /** Ordre de fermeté des statuts : on ne redescend jamais. */
@@ -199,8 +271,18 @@ export function planLiveUpdate(
     const elapsedMinutes = (now.getTime() - kickoff) / 60_000;
     const scoreStable = !("home_score" in patch);
     if (scoreStable && elapsedMinutes >= options.officialAfterMinutes) {
-      patch.status = "official";
-      reasons.push(`résultat déclaré officiel (${Math.round(elapsedMinutes)} min après le coup d'envoi)`);
+      // Un score contredit par un autre fournisseur ne devient pas officiel :
+      // mieux vaut un match qui reste « terminé » en attendant l'arbitrage
+      // qu'un résultat faux gravé dans le marbre.
+      const verdict = options.corroboration ?? "confirmed";
+      if (options.deferOfficial) {
+        reasons.push("passage en officiel différé : recoupement en attente");
+      } else if (verdict === "conflicting") {
+        reasons.push("passage en officiel suspendu : les fournisseurs se contredisent");
+      } else {
+        patch.status = "official";
+        reasons.push(`résultat déclaré officiel (${Math.round(elapsedMinutes)} min après le coup d'envoi)`);
+      }
     }
   }
 

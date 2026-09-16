@@ -41,7 +41,12 @@ import {
   paceToQuota,
   staleDatesToQuery,
 } from "../schedule.ts";
-import { planLiveUpdate, type StoredFixture } from "../reconcile.ts";
+import {
+  corroborateScore,
+  planLiveUpdate,
+  type ScoreOpinion,
+  type StoredFixture,
+} from "../reconcile.ts";
 import { TeamResolver, loadRefs, loadSeasonExternalId } from "../refs.ts";
 import { describeError, runWithFallback } from "../registry.ts";
 import { ProviderError, type ProviderFixture } from "../types.ts";
@@ -215,6 +220,8 @@ export async function syncLive(
   const unmatched: string[] = [];
 
   const officialAfterMinutes = setting(ctx.settings, "sync.official_after_minutes", 180);
+  // Quand on recoupe, l'officialisation revient a la passe de recoupement.
+  const requireCorroboration = setting(ctx.settings, "sync.require_corroboration", true);
   const finishedDetails: LiveSyncReport["finishedDetails"] = [];
 
   // On ne compare qu'aux matchs du jour : deux jours de marge suffisent.
@@ -241,6 +248,7 @@ export async function syncLive(
     provider,
     now,
     officialAfterMinutes,
+    deferOfficial: requireCorroboration,
   });
   fixturesUpdated += batch.updated;
   changes.push(...batch.changes);
@@ -300,12 +308,36 @@ export async function syncLive(
       provider: catchup.response.provider,
       now,
       officialAfterMinutes,
+      deferOfficial: requireCorroboration,
     });
 
     fixturesUpdated += caught.updated;
     finished.push(...caught.finished);
     finishedDetails.push(...caught.finishedDetails);
     changes.push(...caught.changes.map((c) => `rattrapage ${staleDate} · ${c}`));
+  }
+
+  // --- Recoupement avant le passage en officiel ----------------------------
+  //
+  // Le passage en « officiel » est le point de non-retour : après lui, la
+  // synchro n'a plus le droit de corriger le score. On exige donc qu'un second
+  // fournisseur, indépendant du premier, dise la même chose.
+  //
+  // C'est ce qui manquait le 5 septembre : la chaîne est un repli en cascade,
+  // le premier qui répond gagne. TheSportsDB répondait toujours — avec un score
+  // figé — et les trois autres fournisseurs n'étaient jamais interrogés.
+  if (requireCorroboration) {
+    const promoted = await corroborateAndPromote(ctx, {
+      resolver,
+      fixtureRefs,
+      primaryProvider: provider,
+      now,
+      officialAfterMinutes,
+      maxDates: setting(ctx.settings, "sync.corroboration_max_dates_per_run", 1),
+    });
+    fixturesUpdated += promoted.updated;
+    changes.push(...promoted.changes);
+    warnings.push(...promoted.warnings);
   }
 
   // Ce qui reste bloqué après le rattrapage doit se voir : un match encore
@@ -387,6 +419,129 @@ export async function syncLive(
   };
 }
 
+/**
+ * Demande un second avis à un fournisseur autre que celui qui a déjà répondu,
+ * et ne laisse passer en « officiel » que les scores confirmés.
+ *
+ * Ne coûte une requête que s'il y a réellement un match à officialiser : hors
+ * de ce moment précis, la fonction sort sans rien consommer.
+ */
+async function corroborateAndPromote(
+  ctx: SyncContext,
+  opts: {
+    resolver: TeamResolver;
+    fixtureRefs: Awaited<ReturnType<typeof loadRefs>>;
+    primaryProvider: string;
+    now: Date;
+    officialAfterMinutes: number;
+    maxDates: number;
+  },
+): Promise<{ updated: number; changes: string[]; warnings: string[] }> {
+  const { sb } = ctx;
+  const out = { updated: 0, changes: [] as string[], warnings: [] as string[] };
+
+  // Qui est candidat au passage en officiel ? On relit la base : les patchs de
+  // la passe précédente viennent d'être écrits.
+  const fixtures = await loadSeasonFixtures(sb, ctx.season.id);
+  const candidates = fixtures.filter((f) => {
+    if (f.status !== "finished") return false;
+    const elapsed = (opts.now.getTime() - new Date(f.kickoffAt).getTime()) / 60_000;
+    return elapsed >= opts.officialAfterMinutes;
+  });
+  if (candidates.length === 0) return out;
+
+  // Un second fournisseur, forcément différent du premier.
+  const others = ctx
+    .chainFor("live")
+    .providers.filter((p) => p.name !== opts.primaryProvider);
+  if (others.length === 0) {
+    out.warnings.push(
+      `${candidates.length} match(s) à officialiser sans second fournisseur pour recouper ` +
+        "(renseigner HIGHLIGHTLY_KEY ou APISPORTS_KEY)",
+    );
+    return out;
+  }
+
+  const dates: string[] = [];
+  for (const f of candidates) {
+    const key = localDateKey(f.kickoffAt);
+    if (!dates.includes(key)) dates.push(key);
+    if (dates.length >= Math.max(1, opts.maxDates)) break;
+  }
+
+  for (const date of dates) {
+    const second = await runWithFallback({ providers: others, skipped: [] }, async (p) => {
+      const externalId = await loadSeasonExternalId(
+        sb,
+        p.name,
+        ctx.season.id,
+        ctx.season.competitionId,
+      );
+      if (!externalId) {
+        throw new ProviderError(p.name, `aucune référence de saison pour ${ctx.season.label}`);
+      }
+      return p.getLiveScores(externalId, date);
+    });
+
+    await recordProviderUsage(sb, "live", second.attempts, second.requestsByProvider);
+
+    if (!second.response) {
+      out.warnings.push(
+        `recoupement du ${date} impossible : aucun second fournisseur n'a répondu`,
+      );
+      continue;
+    }
+
+    // L'avis du second fournisseur, rangé par match de notre base.
+    const opinions = new Map<string, ScoreOpinion>();
+    const byPair = new Map(fixtures.map((f) => [`${f.homeTeamId}|${f.awayTeamId}`, f]));
+    for (const incoming of second.response.data) {
+      const home = opts.resolver.resolve(incoming.homeTeam);
+      const away = opts.resolver.resolve(incoming.awayTeam);
+      if (!home.teamId || !away.teamId) continue;
+      const known = opts.fixtureRefs.byExternalId.get(incoming.externalId);
+      const match =
+        (known ? fixtures.find((f) => f.id === known) : undefined) ??
+        byPair.get(`${home.teamId}|${away.teamId}`);
+      if (!match) continue;
+      opinions.set(match.id, {
+        provider: second.response.provider,
+        homeScore: incoming.homeScore,
+        awayScore: incoming.awayScore,
+      });
+    }
+
+    for (const fixture of candidates) {
+      if (localDateKey(fixture.kickoffAt) !== date) continue;
+
+      const verdict = corroborateScore(
+        {
+          provider: opts.primaryProvider,
+          homeScore: fixture.homeScore,
+          awayScore: fixture.awayScore,
+        },
+        opinions.get(fixture.id) ?? null,
+      );
+
+      if (verdict.verdict === "conflicting") {
+        out.warnings.push(
+          `${fixture.id} non officialisé : ${verdict.detail} — trancher depuis l'espace admin`,
+        );
+        continue;
+      }
+
+      await applyFixturePatch(sb, fixture.id, {
+        status: "official",
+        last_synced_at: opts.now.toISOString(),
+      });
+      out.updated += 1;
+      out.changes.push(`${fixture.id} · officialisé — ${verdict.detail}`);
+    }
+  }
+
+  return out;
+}
+
 interface BatchInput {
   incoming: ProviderFixture[];
   candidates: StoredFixture[];
@@ -395,6 +550,8 @@ interface BatchInput {
   provider: string;
   now: Date;
   officialAfterMinutes: number;
+  /** Laisse l'officialisation a la passe de recoupement. */
+  deferOfficial?: boolean;
 }
 
 interface BatchOutput {
@@ -417,6 +574,7 @@ async function applyProviderBatch(
 ): Promise<BatchOutput> {
   const { sb } = ctx;
   const { resolver, fixtureRefs, provider, now, officialAfterMinutes } = input;
+  const deferOfficial = input.deferOfficial ?? false;
 
   const out: BatchOutput = {
     updated: 0,
@@ -449,7 +607,12 @@ async function applyProviderBatch(
       continue;
     }
 
-    const plan = planLiveUpdate(existing, incoming, { provider, now, officialAfterMinutes });
+    const plan = planLiveUpdate(existing, incoming, {
+      provider,
+      now,
+      officialAfterMinutes,
+      deferOfficial,
+    });
     if (Object.keys(plan.patch).length === 0) continue;
 
     await applyFixturePatch(sb, existing.id, plan.patch);
