@@ -15,7 +15,11 @@ import { cn } from "@/lib/cn";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
-import { loadActiveSeason, loadCompetitionStandings } from "@/lib/standings/queries";
+import {
+  loadActiveSeason,
+  loadCompetitionStandings,
+  computeCompetitionStandings,
+} from "@/lib/standings/queries";
 import { formatDateTime } from "@/lib/standings/format";
 
 export const metadata = { title: "Classement réel" };
@@ -36,9 +40,22 @@ export default async function ClassementReelPage({
   const { leagueId } = resolved;
 
   const season = await loadActiveSeason(sb, leagueId);
-  const rows = season ? await loadCompetitionStandings(sb, season.id) : [];
 
-  const updatedAt = rows.reduce<string | null>(
+  // La table synchronisée fait foi quand elle existe. Aucun fournisseur ne sait
+  // l'alimenter aujourd'hui, alors plutôt que d'afficher « pas encore
+  // synchronisé » toute la saison, on reconstitue le tableau depuis nos propres
+  // résultats. `computed` sert à le dire à l'écran, sans faire passer une
+  // reconstitution pour le classement officiel.
+  const synced = season ? await loadCompetitionStandings(sb, season.id) : [];
+  const computed = synced.length === 0 && season
+    ? await computeCompetitionStandings(sb, season.id)
+    : [];
+  const rows = synced.length > 0 ? synced : computed;
+  const isComputed = synced.length === 0 && computed.length > 0;
+
+  // Un tableau reconstitué n'a pas d'horodatage de synchronisation : il vaut
+  // ce que valent nos résultats, à l'instant où la page est rendue.
+  const updatedAt = synced.reduce<string | null>(
     (latest, row) => (latest === null || row.updatedAt > latest ? row.updatedAt : latest),
     null,
   );
@@ -55,6 +72,15 @@ export default async function ClassementReelPage({
           ligue.
         </p>
       </header>
+
+      {isComputed && (
+        <Card className="p-4 text-[13px] leading-relaxed text-ink-muted">
+          Ce tableau est <strong className="text-ink">reconstitué à partir des résultats</strong>
+          {" "}déjà enregistrés dans l&apos;application, la synchronisation officielle n&apos;étant
+          pas disponible. Les bonus offensifs (nombre d&apos;essais) n&apos;y figurent pas : le
+          classement de la LNR fait foi.
+        </Card>
+      )}
 
       {rows.length === 0 ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">

@@ -84,18 +84,52 @@ test("renonce au-delà de la fenêtre de rattrapage", () => {
   assert.equal(stale.length, 0);
 });
 
-test("rend les matchs du plus récent au plus ancien", () => {
+test("à urgence égale, rend les matchs du plus récent au plus ancien", () => {
   const now = new Date("2026-09-14T10:00:00.000Z");
   const stale = findStaleFixtures(
     now,
     [
-      fx("vieux", "2026-09-03T19:00:00.000Z", "live"),
-      fx("recent", "2026-09-13T19:05:00.000Z", "live"),
-      fx("milieu", "2026-09-12T19:00:00.000Z", "live"),
+      { ...fx("vieux", "2026-09-03T19:00:00.000Z", "live"), homeScore: 3 },
+      { ...fx("recent", "2026-09-13T19:05:00.000Z", "live"), homeScore: 3 },
+      { ...fx("milieu", "2026-09-12T19:00:00.000Z", "live"), homeScore: 3 },
     ],
     SETTINGS,
   );
   assert.deepEqual(stale.map((s) => s.id), ["recent", "milieu", "vieux"]);
+});
+
+/**
+ * Le défaut trouvé en production le 16 septembre : les matchs qui n'attendaient
+ * qu'une officialisation occupaient les deux créneaux de rattrapage par passage,
+ * pendant que six matchs Pro D2 sans le moindre score approchaient de
+ * l'expiration de la fenêtre. Un match sans données passe désormais devant.
+ */
+test("un match sans aucun score passe avant un match qui attend son officialisation", () => {
+  const now = new Date("2026-09-16T12:00:00.000Z");
+  const stale = findStaleFixtures(
+    now,
+    [
+      // Plus récent, mais le score est connu : ce n'est qu'une formalité.
+      { ...fx("attend-officialisation", "2026-09-13T19:05:00.000Z", "finished"), homeScore: 48 },
+      // Plus ancien, mais les joueurs n'ont aucun point dessus.
+      { ...fx("aucune-donnee", "2026-09-04T17:30:00.000Z", "scheduled"), homeScore: null },
+    ],
+    SETTINGS,
+  );
+  assert.deepEqual(stale.map((s) => s.id), ["aucune-donnee", "attend-officialisation"]);
+});
+
+test("un score figé en direct passe avant une simple officialisation", () => {
+  const now = new Date("2026-09-16T12:00:00.000Z");
+  const stale = findStaleFixtures(
+    now,
+    [
+      { ...fx("officialisation", "2026-09-15T19:00:00.000Z", "finished"), homeScore: 20 },
+      { ...fx("fige-en-direct", "2026-09-14T19:00:00.000Z", "live"), homeScore: 15 },
+    ],
+    SETTINGS,
+  );
+  assert.deepEqual(stale.map((s) => s.id), ["fige-en-direct", "officialisation"]);
 });
 
 test("compte les minutes écoulées depuis le coup d'envoi", () => {
@@ -122,10 +156,10 @@ test("un match tard le soir reste rattaché à sa date locale", () => {
 
 test("déduplique les dates et respecte le plafond", () => {
   const stale = [
-    { id: "a", kickoffAt: "2026-09-13T19:05:00.000Z", status: "live", elapsedMinutes: 100, dateKey: "2026-09-13" },
-    { id: "b", kickoffAt: "2026-09-13T14:35:00.000Z", status: "live", elapsedMinutes: 300, dateKey: "2026-09-13" },
-    { id: "c", kickoffAt: "2026-09-12T19:00:00.000Z", status: "live", elapsedMinutes: 500, dateKey: "2026-09-12" },
-    { id: "d", kickoffAt: "2026-09-04T17:30:00.000Z", status: "scheduled", elapsedMinutes: 900, dateKey: "2026-09-04" },
+    { id: "a", kickoffAt: "2026-09-13T19:05:00.000Z", status: "live", elapsedMinutes: 100, dateKey: "2026-09-13", urgency: 1 },
+    { id: "b", kickoffAt: "2026-09-13T14:35:00.000Z", status: "live", elapsedMinutes: 300, dateKey: "2026-09-13", urgency: 1 },
+    { id: "c", kickoffAt: "2026-09-12T19:00:00.000Z", status: "live", elapsedMinutes: 500, dateKey: "2026-09-12", urgency: 1 },
+    { id: "d", kickoffAt: "2026-09-04T17:30:00.000Z", status: "scheduled", elapsedMinutes: 900, dateKey: "2026-09-04", urgency: 0 },
   ];
 
   assert.deepEqual(staleDatesToQuery(stale, 2), ["2026-09-13", "2026-09-12"]);

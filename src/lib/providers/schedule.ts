@@ -165,6 +165,8 @@ export interface StaleFixture {
   elapsedMinutes: number;
   /** La date locale à interroger chez le fournisseur — celle du match, pas celle du jour. */
   dateKey: string;
+  /** 0 = aucun score, 1 = score figé en direct, 2 = en attente d'officialisation. */
+  urgency: number;
 }
 
 export interface StaleSettings {
@@ -190,13 +192,29 @@ function isSettled(status: string): boolean {
  * C'est exactement ce qui est arrivé aux matchs du samedi soir : une seule
  * remontée trente minutes après le coup d'envoi, puis plus rien.
  *
- * Renvoie les matchs à rattraper, du plus récent au plus ancien : quand le
- * quota impose de n'en traiter que quelques-uns, autant commencer par ceux dont
- * le fournisseur a encore la donnée.
+ * Renvoie les matchs à rattraper par **urgence**, pas par date.
+ *
+ * Un match sans aucun score passe avant un match dont le score est connu mais
+ * qui attend seulement son officialisation : le premier prive les joueurs de
+ * leurs points, le second est une formalité. Sans cette priorité, les matchs en
+ * attente d'officialisation monopolisaient les créneaux de rattrapage et
+ * affamaient ceux qui n'avaient aucune donnée — jusqu'à ce que la fenêtre de
+ * rattrapage expire et que la donnée soit perdue pour de bon.
+ *
+ * À urgence égale, le plus récent d'abord : le fournisseur a plus de chances
+ * d'avoir encore la donnée.
  */
+
+/** Plus le rang est bas, plus le rattrapage est urgent. */
+function staleUrgency(status: string, hasScore: boolean): number {
+  if (!hasScore) return 0; // aucune donnée : les points ne sont pas distribués
+  if (status === "live") return 1; // score figé, affiché comme « en cours »
+  return 2; // terminé, il ne manque que l'officialisation
+}
+
 export function findStaleFixtures(
   now: Date,
-  fixtures: Array<WindowFixture & { id: string }>,
+  fixtures: Array<WindowFixture & { id: string; homeScore?: number | null }>,
   settings: StaleSettings,
   timeZone = COMPETITION_TIMEZONE,
 ): StaleFixture[] {
@@ -223,11 +241,14 @@ export function findStaleFixtures(
       status: fixture.status,
       elapsedMinutes: Math.round(since / MINUTE_MS),
       dateKey: localDateKey(fixture.kickoffAt, timeZone),
+      urgency: staleUrgency(fixture.status, fixture.homeScore !== null && fixture.homeScore !== undefined),
     });
   }
 
   return stale.sort(
-    (a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime(),
+    (a, b) =>
+      a.urgency - b.urgency ||
+      new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime(),
   );
 }
 

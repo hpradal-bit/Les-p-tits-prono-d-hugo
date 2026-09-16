@@ -24,6 +24,11 @@ import type {
   StandingsInput,
 } from "./engine";
 import { explainScore, levelFromBreakdown, parseBreakdown } from "./breakdown";
+import {
+  computeCompetitionTable,
+  type ComputedStandingRow,
+  type PlayedFixture,
+} from "./competition-table";
 
 export interface SeasonRef {
   id: Uuid;
@@ -779,4 +784,57 @@ export async function loadStandingsHistory(
   }));
 
   return { roundLabels, players };
+}
+
+/**
+ * Le classement de la compétition reconstitué depuis nos propres matchs.
+ *
+ * Repli quand `competition_standings` est vide — c'est-à-dire, à ce jour,
+ * toujours : aucun des quatre fournisseurs ne sait alimenter cette table (voir
+ * l'en-tête de `competition-table.ts`). Plutôt que d'afficher « pas encore
+ * synchronisé » toute la saison, on calcule ce qu'on peut à partir des
+ * résultats que nous possédons déjà.
+ */
+export async function computeCompetitionStandings(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<ComputedStandingRow[]> {
+  const [teamsRes, fixturesRes] = await Promise.all([
+    sb
+      .from("season_teams")
+      .select(`team_id, teams!inner(${TEAM_COLUMNS})`)
+      .eq("season_id", seasonId),
+    sb
+      .from("fixtures")
+      .select("home_team_id, away_team_id, home_score, away_score, status, rounds!inner(season_id)")
+      .eq("rounds.season_id", seasonId)
+      .in("status", ["finished", "official"])
+      .not("home_score", "is", null)
+      .not("away_score", "is", null),
+  ]);
+
+  if (teamsRes.error) throw teamsRes.error;
+  if (fixturesRes.error) throw fixturesRes.error;
+
+  const teams: Team[] = [];
+  for (const row of (teamsRes.data ?? []) as Array<Record<string, unknown>>) {
+    const raw = row.teams as unknown;
+    const one = Array.isArray(raw) ? raw[0] : raw;
+    if (one) teams.push(toTeam(one as RawTeamRow));
+  }
+
+  const fixtures: PlayedFixture[] = ((fixturesRes.data ?? []) as Array<{
+    home_team_id: string;
+    away_team_id: string;
+    home_score: number;
+    away_score: number;
+  }>).map((f) => ({
+    homeTeamId: f.home_team_id,
+    awayTeamId: f.away_team_id,
+    homeScore: f.home_score,
+    awayScore: f.away_score,
+  }));
+
+  if (teams.length === 0) return [];
+  return computeCompetitionTable(teams, fixtures);
 }
