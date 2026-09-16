@@ -16,6 +16,69 @@ Fichier de reprise. À lire en début de session, avec `CLAUDE.md` et
 Les secrets ne vivent que dans les variables d'environnement Vercel et dans
 `.env.local` (ignoré par git). Ne jamais les écrire ici.
 
+## Scores figés : cause trouvée et corrigée (16 septembre)
+
+Symptômes signalés : Bordeaux – Racing 92 affiché 19-0, La Rochelle –
+Toulouse 7-12, Toulouse – Bordeaux bloqué à 15-0 alors que la mi-temps
+était à 33-0. **Onze matchs sur vingt-neuf étaient dans un état cassé.**
+
+Chaîne de causes, cinq maillons dont aucun n'est faux isolément :
+
+1. TheSportsDB s'est **figé en cours de match** : une remontée à la 30ᵉ
+   minute, puis la même valeur toute la soirée. La synchro tournait
+   pourtant (journal : `inWindow: true` à 20h00, 20h15, 20h30, 20h45).
+2. **Rien ne distinguait « figé » de « rien de neuf »** : un fournisseur
+   muet et un match sans action produisent le même `fixtures_updated: 0`.
+3. **La fenêtre s'est refermée** (`coup d'envoi + 135 min`) sur un match
+   encore `live`. Comme `syncLive` ne demande que les matchs *du jour*,
+   un match du 5 septembre ne peut plus jamais être redemandé le 6.
+4. Le formulaire admin **pré-remplissait le score figé** : `admin_actions`
+   montre `before: {live, 19-0}` → `after: {official, 19-0}`. En validant
+   le statut, le score faux a été gravé.
+5. `planLiveUpdate` **refuse de toucher un match `official`** (règle
+   produit volontaire) : l'erreur est devenue définitive.
+
+Le maillon structurel est le 3 : un match qui n'atteint jamais un statut
+final était abandonné pour toujours.
+
+**Cause plus profonde, trouvée ensuite :** la chaîne de fournisseurs est un
+repli en cascade — le premier qui répond gagne. TheSportsDB répondant
+toujours, Highlightly, ESPN et API-Sports **n'ont jamais été interrogés une
+seule fois** (521 appels sur vingt jours, tous vers le même fournisseur).
+Personne n'était là pour contredire une donnée figée.
+
+Corrigé en deux temps :
+
+- **Rattrapage** (migration 0044) — `findStaleFixtures` /
+  `staleDatesToQuery` dans `schedule.ts` repèrent les matchs sortis de leur
+  fenêtre sans statut final ; `syncLive` les redemande **à leur propre
+  date**. Bornes : `sync.catchup_lookback_days` (14),
+  `sync.catchup_max_dates_per_run` (2). Ce qui reste bloqué après
+  rattrapage remonte en avertissement dans `sync_runs` — c'est le silence
+  qui avait laissé passer le problème deux semaines.
+- **Recoupement** (migration 0045) — `corroborateScore` dans
+  `reconcile.ts` : le passage en `official` (point de non-retour) exige
+  désormais qu'un **second fournisseur indépendant** confirme. Un désaccord
+  laisse le match en `finished` avec les deux versions du score en
+  avertissement. Un second fournisseur *muet* laisse passer : une panne
+  chez ESPN ne doit pas immobiliser le championnat. Réglages :
+  `sync.require_corroboration`, `sync.corroboration_max_dates_per_run`.
+
+ESPN est déjà dans la chaîne sans clé (`registry.ts` ligne 78) et n'a pas
+de référence de saison, mais `loadSeasonExternalId` retombe sur sa
+référence de *compétition*, qui existe — le recoupement part donc sans
+configuration. **Non vérifié : qu'ESPN couvre réellement le Top 14 en
+direct** (proxy du conteneur bloque les appels sortants). Le premier match
+officialisé tranchera, dans `sync_runs`.
+
+Piste écartée après analyse : **SerpApi** (API Google Sports, proposée par
+Hugo). Bonne donnée, mauvais emplacement — c'est un lecteur de pages
+Google, pas un flux sportif (une requête par match, format dépendant de la
+mise en page), et en fournisseur principal le volume impose ~75 $/mois,
+contre la règle « 0 €/mois ». En *arbitre* (un appel par match à
+officialiser) le volume tiendrait dans l'offre gratuite : à reconsidérer
+seulement si ESPN ne répond pas.
+
 ## Logos, parité Pro D2, règles par sport, renommage (26 août)
 
 - Logos des 13 clubs Pro D2 fournis par Hugo posés dans `public/logos/` et
@@ -411,7 +474,20 @@ place telle quelle.
 
 ## Points ouverts
 
-Aucun pour l'instant.
+- **Deux matchs de J1 verrouillés sur un score faux**, à trancher par Hugo :
+  Bordeaux – Racing 92 (19-0) et La Rochelle – Toulouse (7-12), passés en
+  `official` / `data_source = manual` le 8 septembre depuis le formulaire
+  admin, qui pré-remplissait le score figé. Le recoupement empêche que ça se
+  reproduise mais ne défait pas ce qui est gravé. Deux issues : saisir les
+  vrais scores depuis l'admin (les points se recalculent aussitôt), ou les
+  déverrouiller (retour en `finished`, `data_source` rendue au fournisseur)
+  pour que le rattrapage aille rechercher la vraie valeur. Ne jamais taper un
+  score « de mémoire » : c'est exactement ce qui a créé le problème.
+- **Vérifier au prochain match officialisé** que le recoupement fonctionne :
+  chercher dans `sync_runs` soit `thesportsdb et espn concordent sur X-Y`,
+  soit `recoupement impossible : aucun second fournisseur n'a répondu`. Dans
+  le second cas, une clé `HIGHLIGHTLY_KEY` (gratuite, 100 req/jour sur
+  RapidAPI) donne un troisième arbitre — le câblage existe déjà.
 
 - ~~**Clé secrète Supabase à faire tourner.**~~ ✅ fait le 26 août. Nouvelle
   clé `sb_secret_...` créée dans Supabase, posée dans Vercel
@@ -431,3 +507,12 @@ Aucun pour l'instant.
   est celui présent en base. Un test verrouille cette correspondance.
 - `next dev` réécrit un bloc dans `CLAUDE.md` à chaque lancement. Le commettre
   avec le reste plutôt que d'essayer de l'enlever.
+- `recordResult` (saisie admin d'un score) écrivait sans toucher `updated_at` :
+  l'horodatage « dernière mise à jour » montré aux joueurs restait celui de la
+  synchro. Corrigé le 16 septembre — mais garder en tête que `updated_at` n'est
+  pas maintenu par un déclencheur en base : **toute écriture sur `fixtures`
+  doit le poser explicitement**, comme le fait `applyFixturePatch`.
+- La chaîne de fournisseurs est un **repli**, pas un consensus : le premier qui
+  répond gagne, les suivants ne sont jamais appelés. Ne jamais supposer qu'un
+  fournisseur listé dans `sync.provider_order` est réellement sollicité — le
+  vérifier dans `sync_runs.detail->'attempts'`.
