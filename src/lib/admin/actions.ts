@@ -138,6 +138,9 @@ export async function recordResult(
         status,
         data_source: "manual",
         last_synced_at: new Date().toISOString(),
+        // Sans ça, l'horodatage « dernière mise à jour » resterait celui de la
+        // dernière écriture de la synchro et mentirait aux joueurs.
+        updated_at: new Date().toISOString(),
       })
       .eq("id", fixtureId);
     if (uErr) throw uErr;

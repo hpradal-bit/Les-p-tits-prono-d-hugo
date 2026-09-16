@@ -156,6 +156,96 @@ export function evaluateWindow(
 }
 
 /** Plage de dates couvrant une liste de matchs, élargie d'un jour de marge. */
+/** Un match que la fenêtre a laissé derrière elle sans résultat définitif. */
+export interface StaleFixture {
+  id: string;
+  kickoffAt: string;
+  status: string;
+  /** Minutes écoulées depuis le coup d'envoi. */
+  elapsedMinutes: number;
+  /** La date locale à interroger chez le fournisseur — celle du match, pas celle du jour. */
+  dateKey: string;
+}
+
+export interface StaleSettings {
+  matchWindowMinutes: number;
+  /** Au-delà de ce nombre de jours, on renonce : le fournisseur n'a plus la donnée. */
+  lookbackDays: number;
+}
+
+/** Un statut dont on ne repart pas : inutile d'interroger le fournisseur. */
+function isSettled(status: string): boolean {
+  return status === "official" || status === "cancelled" || status === "postponed";
+}
+
+/**
+ * Les matchs abandonnés par la fenêtre de synchronisation.
+ *
+ * La fenêtre est calculée depuis le coup d'envoi (`kickoff + matchWindowMinutes`).
+ * Passé ce délai, plus personne n'interroge le match — or `syncLive` ne demande
+ * au fournisseur que les rencontres *du jour*. Un match dont le fournisseur n'a
+ * jamais annoncé la fin reste donc `live` ou `scheduled` indéfiniment, avec le
+ * score figé sur la dernière valeur reçue.
+ *
+ * C'est exactement ce qui est arrivé aux matchs du samedi soir : une seule
+ * remontée trente minutes après le coup d'envoi, puis plus rien.
+ *
+ * Renvoie les matchs à rattraper, du plus récent au plus ancien : quand le
+ * quota impose de n'en traiter que quelques-uns, autant commencer par ceux dont
+ * le fournisseur a encore la donnée.
+ */
+export function findStaleFixtures(
+  now: Date,
+  fixtures: Array<WindowFixture & { id: string }>,
+  settings: StaleSettings,
+  timeZone = COMPETITION_TIMEZONE,
+): StaleFixture[] {
+  const t = now.getTime();
+  const windowMs = Math.max(1, settings.matchWindowMinutes) * MINUTE_MS;
+  const lookbackMs = Math.max(0, settings.lookbackDays) * DAY_MS;
+  const stale: StaleFixture[] = [];
+
+  for (const fixture of fixtures) {
+    if (isSettled(fixture.status)) continue;
+
+    const kickoff = new Date(fixture.kickoffAt).getTime();
+    if (Number.isNaN(kickoff)) continue;
+
+    const since = t - kickoff;
+    // Encore dans sa fenêtre : la synchro normale s'en occupe.
+    if (since <= windowMs) continue;
+    // Trop ancien : on ne s'acharne pas, le fournisseur ne répondra plus.
+    if (since > lookbackMs) continue;
+
+    stale.push({
+      id: fixture.id,
+      kickoffAt: fixture.kickoffAt,
+      status: fixture.status,
+      elapsedMinutes: Math.round(since / MINUTE_MS),
+      dateKey: localDateKey(fixture.kickoffAt, timeZone),
+    });
+  }
+
+  return stale.sort(
+    (a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime(),
+  );
+}
+
+/**
+ * Les dates distinctes à interroger pour rattraper ces matchs, plafonnées.
+ *
+ * Une requête couvre tous les matchs d'une même journée : on déduplique, et on
+ * s'arrête à `maxDates` pour ne pas vider le quota d'un fournisseur en une fois.
+ */
+export function staleDatesToQuery(stale: StaleFixture[], maxDates: number): string[] {
+  const dates: string[] = [];
+  for (const fixture of stale) {
+    if (dates.length >= Math.max(0, maxDates)) break;
+    if (!dates.includes(fixture.dateKey)) dates.push(fixture.dateKey);
+  }
+  return dates;
+}
+
 export function rangeAround(dateKey: string, daysBefore: number, daysAfter: number) {
   const [y, m, d] = dateKey.split("-").map(Number);
   const base = Date.UTC(y, m - 1, d);

@@ -33,11 +33,18 @@ function paceNextCheck(
 // pour les imports de valeur, et ce module est désormais couvert.
 import { setting } from "../../settings/index.ts";
 import { recomputeFixtures } from "../../scoring/persist.ts";
-import { evaluateWindow, localDateKey, minutesLeftInDay, paceToQuota } from "../schedule.ts";
-import { planLiveUpdate } from "../reconcile.ts";
+import {
+  evaluateWindow,
+  findStaleFixtures,
+  localDateKey,
+  minutesLeftInDay,
+  paceToQuota,
+  staleDatesToQuery,
+} from "../schedule.ts";
+import { planLiveUpdate, type StoredFixture } from "../reconcile.ts";
 import { TeamResolver, loadRefs, loadSeasonExternalId } from "../refs.ts";
 import { describeError, runWithFallback } from "../registry.ts";
-import { ProviderError } from "../types.ts";
+import { ProviderError, type ProviderFixture } from "../types.ts";
 import type { SyncContext } from "./context.ts";
 import {
   applyFixturePatch,
@@ -224,64 +231,91 @@ export async function syncLive(
     loadRefs(sb, provider, "fixture"),
   ]);
 
-  const byId = new Map(candidates.map((f) => [f.id, f]));
-  const byPair = new Map(candidates.map((f) => [`${f.homeTeamId}|${f.awayTeamId}`, f]));
-
   let fixturesUpdated = 0;
 
-  for (const incoming of outcome.response.data) {
-    const home = resolver.resolve(incoming.homeTeam);
-    const away = resolver.resolve(incoming.awayTeam);
-    if (!home.teamId || !away.teamId) {
-      unmatched.push(`${incoming.homeTeam.name} – ${incoming.awayTeam.name}`);
-      continue;
-    }
+  const batch = await applyProviderBatch(ctx, {
+    incoming: outcome.response.data,
+    candidates,
+    resolver,
+    fixtureRefs,
+    provider,
+    now,
+    officialAfterMinutes,
+  });
+  fixturesUpdated += batch.updated;
+  changes.push(...batch.changes);
+  finished.push(...batch.finished);
+  finishedDetails.push(...batch.finishedDetails);
+  unmatched.push(...batch.unmatched);
+  warnings.push(...batch.warnings);
 
-    const knownId = fixtureRefs.byExternalId.get(incoming.externalId);
-    const existing =
-      (knownId ? byId.get(knownId) : undefined) ?? byPair.get(`${home.teamId}|${away.teamId}`);
-    if (!existing) {
-      warnings.push(
-        `match inconnu au calendrier : ${incoming.homeTeam.name} – ${incoming.awayTeam.name}` +
-          " (lancer /api/sync/calendar)",
+  // --- Rattrapage des matchs abandonnés par la fenêtre ----------------------
+  //
+  // La passe normale n'interroge que les matchs du jour. Un match dont le
+  // fournisseur n'a jamais annoncé la fin sort de sa fenêtre et n'est plus
+  // jamais redemandé : il reste `live` avec un score figé en cours de match.
+  // Ce second passage va rechercher ces matchs à *leur* date.
+  const staleSettings = {
+    matchWindowMinutes: windowSettings.matchWindowMinutes,
+    lookbackDays: setting(ctx.settings, "sync.catchup_lookback_days", 14),
+  };
+  const maxCatchupDates = setting(ctx.settings, "sync.catchup_max_dates_per_run", 2);
+
+  const stale = findStaleFixtures(now, seasonFixtures, staleSettings);
+  const catchupDates = staleDatesToQuery(stale, maxCatchupDates).filter((d) => d !== date);
+
+  for (const staleDate of catchupDates) {
+    const catchup = await runWithFallback(ctx.chainFor("live"), async (p) => {
+      const externalId = await loadSeasonExternalId(
+        sb,
+        p.name,
+        ctx.season.id,
+        ctx.season.competitionId,
       );
+      if (!externalId) {
+        throw new ProviderError(p.name, `aucune référence de saison pour ${ctx.season.label}`);
+      }
+      return p.getLiveScores(externalId, staleDate);
+    });
+
+    await recordProviderUsage(sb, "live", catchup.attempts, catchup.requestsByProvider);
+    if (!catchup.response) {
+      warnings.push(`rattrapage du ${staleDate} : aucun fournisseur joignable`);
       continue;
     }
 
-    const plan = planLiveUpdate(existing, incoming, { provider, now, officialAfterMinutes });
-    if (Object.keys(plan.patch).length === 0) continue;
+    const dayStart = new Date(`${staleDate}T00:00:00.000Z`);
+    const dayCandidates = await loadFixturesBetween(
+      sb,
+      ctx.season.id,
+      new Date(dayStart.getTime() - 86_400_000).toISOString(),
+      new Date(dayStart.getTime() + 2 * 86_400_000).toISOString(),
+    );
 
-    await applyFixturePatch(sb, existing.id, plan.patch);
-    fixturesUpdated += 1;
-    changes.push(`${existing.id} · ${plan.reasons.join(" ; ")}`);
+    const caught = await applyProviderBatch(ctx, {
+      incoming: catchup.response.data,
+      candidates: dayCandidates,
+      resolver,
+      fixtureRefs,
+      provider: catchup.response.provider,
+      now,
+      officialAfterMinutes,
+    });
 
-    // Un match qui vient de se terminer alimente le flux d'événements : le fil,
-    // les badges et les notifications le liront, ils ne le recalculent pas.
-    const becameFinal = plan.patch.status === "finished" || plan.patch.status === "official";
-    if (becameFinal) {
-      finished.push(existing.id);
-      const hScore = plan.patch.home_score ?? existing.homeScore;
-      const aScore = plan.patch.away_score ?? existing.awayScore;
-      const debrief = await computeFixtureDebrief(ctx, existing.id, hScore, aScore);
-      await emitFixtureFinished(ctx, existing.id, {
-        homeTeam: incoming.homeTeam.name,
-        awayTeam: incoming.awayTeam.name,
-        homeScore: hScore,
-        awayScore: aScore,
-        status: plan.patch.status,
-        provider,
-        ...debrief,
-      });
-      if (hScore !== null && aScore !== null) {
-        finishedDetails.push({
-          fixtureId: existing.id,
-          homeTeam: incoming.homeTeam.name,
-          awayTeam: incoming.awayTeam.name,
-          homeScore: hScore,
-          awayScore: aScore,
-        });
-      }
-    }
+    fixturesUpdated += caught.updated;
+    finished.push(...caught.finished);
+    finishedDetails.push(...caught.finishedDetails);
+    changes.push(...caught.changes.map((c) => `rattrapage ${staleDate} · ${c}`));
+  }
+
+  // Ce qui reste bloqué après le rattrapage doit se voir : un match encore
+  // `live` trois jours après son coup d'envoi est une panne, pas un silence.
+  const stillStale = findStaleFixtures(now, await loadSeasonFixtures(sb, ctx.season.id), staleSettings);
+  for (const f of stillStale) {
+    warnings.push(
+      `match ${f.id} toujours « ${f.status} » ${Math.round(f.elapsedMinutes / 60)} h après le coup ` +
+        "d'envoi : le fournisseur n'a jamais annoncé la fin (saisir le résultat depuis l'admin)",
+    );
   }
 
   await resolver.flush(sb);
@@ -351,6 +385,107 @@ export async function syncLive(
     changes,
     warnings,
   };
+}
+
+interface BatchInput {
+  incoming: ProviderFixture[];
+  candidates: StoredFixture[];
+  resolver: TeamResolver;
+  fixtureRefs: Awaited<ReturnType<typeof loadRefs>>;
+  provider: string;
+  now: Date;
+  officialAfterMinutes: number;
+}
+
+interface BatchOutput {
+  updated: number;
+  changes: string[];
+  finished: string[];
+  finishedDetails: FinishedFixtureDetail[];
+  unmatched: string[];
+  warnings: string[];
+}
+
+/**
+ * Rapproche une réponse de fournisseur des matchs en base et applique les
+ * patchs. Extraite de `syncLive` pour servir aussi au rattrapage, qui rejoue
+ * exactement la même logique sur une autre date.
+ */
+async function applyProviderBatch(
+  ctx: SyncContext,
+  input: BatchInput,
+): Promise<BatchOutput> {
+  const { sb } = ctx;
+  const { resolver, fixtureRefs, provider, now, officialAfterMinutes } = input;
+
+  const out: BatchOutput = {
+    updated: 0,
+    changes: [],
+    finished: [],
+    finishedDetails: [],
+    unmatched: [],
+    warnings: [],
+  };
+
+  const byId = new Map(input.candidates.map((f) => [f.id, f]));
+  const byPair = new Map(input.candidates.map((f) => [`${f.homeTeamId}|${f.awayTeamId}`, f]));
+
+  for (const incoming of input.incoming) {
+    const home = resolver.resolve(incoming.homeTeam);
+    const away = resolver.resolve(incoming.awayTeam);
+    if (!home.teamId || !away.teamId) {
+      out.unmatched.push(`${incoming.homeTeam.name} – ${incoming.awayTeam.name}`);
+      continue;
+    }
+
+    const knownId = fixtureRefs.byExternalId.get(incoming.externalId);
+    const existing =
+      (knownId ? byId.get(knownId) : undefined) ?? byPair.get(`${home.teamId}|${away.teamId}`);
+    if (!existing) {
+      out.warnings.push(
+        `match inconnu au calendrier : ${incoming.homeTeam.name} – ${incoming.awayTeam.name}` +
+          " (lancer /api/sync/calendar)",
+      );
+      continue;
+    }
+
+    const plan = planLiveUpdate(existing, incoming, { provider, now, officialAfterMinutes });
+    if (Object.keys(plan.patch).length === 0) continue;
+
+    await applyFixturePatch(sb, existing.id, plan.patch);
+    out.updated += 1;
+    out.changes.push(`${existing.id} · ${plan.reasons.join(" ; ")}`);
+
+    // Un match qui vient de se terminer alimente le flux d'événements : le fil,
+    // les badges et les notifications le liront, ils ne le recalculent pas.
+    const becameFinal = plan.patch.status === "finished" || plan.patch.status === "official";
+    if (becameFinal) {
+      out.finished.push(existing.id);
+      const hScore = plan.patch.home_score ?? existing.homeScore;
+      const aScore = plan.patch.away_score ?? existing.awayScore;
+      const debrief = await computeFixtureDebrief(ctx, existing.id, hScore, aScore);
+      await emitFixtureFinished(ctx, existing.id, {
+        homeTeam: incoming.homeTeam.name,
+        awayTeam: incoming.awayTeam.name,
+        homeScore: hScore,
+        awayScore: aScore,
+        status: plan.patch.status,
+        provider,
+        ...debrief,
+      });
+      if (hScore !== null && aScore !== null) {
+        out.finishedDetails.push({
+          fixtureId: existing.id,
+          homeTeam: incoming.homeTeam.name,
+          awayTeam: incoming.awayTeam.name,
+          homeScore: hScore,
+          awayScore: aScore,
+        });
+      }
+    }
+  }
+
+  return out;
 }
 
 /**
