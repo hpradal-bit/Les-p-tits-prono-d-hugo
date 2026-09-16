@@ -227,3 +227,34 @@ test("classement : la casse du nom n'a pas d'importance", () => {
   const { rows } = parseEspnStandings(entry([{ abbreviation: "gp", value: 22 }]));
   assert.equal(rows[0].played, 22);
 });
+
+/**
+ * Le classement ESPN revenait toujours sur la dernière saison terminée : sept
+ * rejets par jour du garde-fou de fraîcheur, et la table `competition_standings`
+ * vide depuis le début de la saison. L'URL n'emportait aucune année.
+ */
+test("ESPN : le classement demande explicitement l'année de saison", async () => {
+  const calls: string[] = [];
+  const provider = createEspnProvider({
+    fetchJson: async (url) => {
+      calls.push(url);
+      return espnStandingsSample;
+    },
+  });
+
+  await provider.getStandings("270559", 2026);
+  assert.match(calls[0], /season=2026/);
+});
+
+test("ESPN : sans année, l'URL reste celle d'avant — aucune régression", async () => {
+  const calls: string[] = [];
+  const provider = createEspnProvider({
+    fetchJson: async (url) => {
+      calls.push(url);
+      return espnStandingsSample;
+    },
+  });
+
+  await provider.getStandings("270559");
+  assert.ok(!calls[0].includes("season="), `paramètre inattendu : ${calls[0]}`);
+});

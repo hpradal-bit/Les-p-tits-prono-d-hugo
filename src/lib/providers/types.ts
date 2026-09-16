@@ -97,9 +97,17 @@ export interface SportsDataProvider {
     date: string,
   ): Promise<ProviderResponse<ProviderFixture[]>>;
 
-  /** Le classement sportif réel de la compétition. */
+  /**
+   * Le classement sportif réel de la compétition.
+   *
+   * `seasonYear` est l'année de début de saison (2026 pour 2026/2027). Sans
+   * elle, ESPN renvoie sa saison par défaut — la dernière terminée — et le
+   * garde-fou de fraîcheur rejette à juste titre un tableau à 26 journées
+   * jouées alors que la saison en cours n'en compte aucune.
+   */
   getStandings(
     seasonExternalId: string,
+    seasonYear?: number,
   ): Promise<ProviderResponse<ProviderStandingRow[]>>;
 }
 

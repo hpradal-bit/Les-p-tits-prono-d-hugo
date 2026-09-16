@@ -24,6 +24,19 @@ export interface StandingsSyncReport {
   error?: string;
 }
 
+/**
+ * L'annee de debut de saison, celle qu'attendent les fournisseurs : 2026 pour
+ * « 2026/2027 ». Lue depuis `starts_on`, jamais deduite de l'horloge — une
+ * synchronisation lancee en janvier porte toujours sur la saison commencee en
+ * septembre.
+ */
+function seasonStartYear(season: { startsOn: string; label: string }): number | undefined {
+  const from = new Date(season.startsOn);
+  if (!Number.isNaN(from.getTime())) return from.getUTCFullYear();
+  const match = season.label.match(/(\d{4})/);
+  return match ? Number(match[1]) : undefined;
+}
+
 export async function syncStandings(ctx: SyncContext): Promise<StandingsSyncReport> {
   const { sb } = ctx;
   const run = await openRun(sb, "standings");
@@ -41,7 +54,7 @@ export async function syncStandings(ctx: SyncContext): Promise<StandingsSyncRepo
         `aucune référence de saison dans external_refs pour ${ctx.season.label}`,
       );
     }
-    return provider.getStandings(externalId);
+    return provider.getStandings(externalId, seasonStartYear(ctx.season));
   });
 
   const requestsUsed = Object.values(outcome.requestsByProvider).reduce((a, b) => a + b, 0);

@@ -301,8 +301,11 @@ export function createEspnProvider(options: EspnOptions = {}): SportsDataProvide
       return scoreboard(seasonExternalId, compactDate(date));
     },
 
-    async getStandings(seasonExternalId: string) {
-      const url = `${standingsUrl}/${encodeURIComponent(seasonExternalId)}/standings`;
+    async getStandings(seasonExternalId: string, seasonYear?: number) {
+      // Sans `season`, ESPN sert la dernière saison terminée. C'est la cause
+      // des sept rejets quotidiens du garde-fou de fraîcheur.
+      const query = seasonYear ? `?season=${seasonYear}` : "";
+      const url = `${standingsUrl}/${encodeURIComponent(seasonExternalId)}/standings${query}`;
       const payload = await fetchJson(url);
       const { rows, warnings } = parseEspnStandings(payload);
       return { provider: ESPN, data: rows, requestsUsed: 1, warnings };

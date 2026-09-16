@@ -74,11 +74,12 @@ export default async function ClassementReelPage({
       </header>
 
       {isComputed && (
-        <Card className="p-4 text-[13px] leading-relaxed text-ink-muted">
-          Ce tableau est <strong className="text-ink">reconstitué à partir des résultats</strong>
-          {" "}déjà enregistrés dans l&apos;application, la synchronisation officielle n&apos;étant
-          pas disponible. Les bonus offensifs (nombre d&apos;essais) n&apos;y figurent pas : le
-          classement de la LNR fait foi.
+        <Card className="border border-wrong/30 bg-wrong-soft/40 p-4 text-[13px] leading-relaxed text-ink">
+          <strong>Classement approximatif.</strong> Il est reconstitué à partir des résultats
+          enregistrés ici, faute de synchronisation officielle.{" "}
+          <strong>Les bonus offensifs manquent</strong> : ils dépendent du nombre d&apos;essais,
+          que nous ne recevons pas. Une équipe peut donc afficher jusqu&apos;à un point de moins
+          par match gagné avec le bonus. Seul le classement de la LNR fait foi.
         </Card>
       )}
 
