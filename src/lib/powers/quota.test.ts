@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildQuotas, maxUses, quotaRefusal, quotaLabel, FALLBACK_MAX_USES } from "./quota.ts";
+import {
+  buildQuotas,
+  maxUses,
+  quotaRefusal,
+  quotaLabel,
+  FALLBACK_MAX_USES,
+  quotaResetAt,
+  QUOTA_RESET_KEY,
+} from "./quota.ts";
 import type { Power } from "./types.ts";
 
 function power(id: string, code: string, config: Record<string, unknown> = {}): Power {
@@ -72,4 +80,21 @@ test("un pouvoir inconnu est refusé plutôt qu'autorisé par défaut", () => {
 test("l'étiquette courte dit restant sur total", () => {
   const [q] = buildQuotas([power("p1", "spy")], new Map([["p1", 1]]), 3);
   assert.equal(quotaLabel(q), "2/3");
+});
+
+test("la date de remise à zéro se lit depuis les réglages", () => {
+  assert.equal(
+    quotaResetAt({ [QUOTA_RESET_KEY]: "2026-09-17T10:00:00.000Z" }),
+    "2026-09-17T10:00:00.000Z",
+  );
+});
+
+test("sans réglage, aucune remise à zéro : tout l'historique compte", () => {
+  assert.equal(quotaResetAt({}), null);
+});
+
+test("une date illisible ne remet rien à zéro en silence", () => {
+  assert.equal(quotaResetAt({ [QUOTA_RESET_KEY]: "la semaine derniere" }), null);
+  assert.equal(quotaResetAt({ [QUOTA_RESET_KEY]: "" }), null);
+  assert.equal(quotaResetAt({ [QUOTA_RESET_KEY]: 42 }), null);
 });

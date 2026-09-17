@@ -17,7 +17,7 @@ import {
   loadRoundUsages,
 } from "./queries.ts";
 import { applyResolution } from "./resolve.ts";
-import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES } from "./quota.ts";
+import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES, quotaResetAt, QUOTA_RESET_KEY } from "./quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { isLockedAt } from "@/lib/predictions/lock";
 import type { AdminActionState } from "@/lib/admin/types";
@@ -65,7 +65,7 @@ export async function declarePower(
   const fallbackMax = setting<number>(settings, "powers.max_uses_per_player", FALLBACK_MAX_USES);
 
   // Quota par pouvoir : plus de bourse commune, chaque pouvoir a son compteur.
-  const counts = await loadUsageCounts(admin, user.id, seasonId);
+  const counts = await loadUsageCounts(admin, user.id, seasonId, quotaResetAt(settings));
   const quotas = buildQuotas(powers, counts, fallbackMax);
   const quota = quotas.find((q) => q.powerId === power.id);
   const refusal = quotaRefusal(quota, power.name);
@@ -337,4 +337,44 @@ export async function togglePower(
   revalidatePath("/admin/pouvoirs");
   revalidatePath("/journee");
   return { status: "success", message: `${power.name as string} ${active ? "activé" : "désactivé"}.` };
+}
+
+/**
+ * Remettre tous les compteurs de pouvoirs à neuf.
+ *
+ * On ne supprime rien : les utilisations passées restent dans `power_usages`,
+ * le fil du Vestiaire et l'onglet Super-pouvoirs continuent de les raconter, et
+ * les points déjà distribués ne bougent pas. Seule la ligne de départ du quota
+ * avance — tout ce qui précède cesse de compter.
+ */
+export async function resetPowerQuotas(): Promise<AdminActionState> {
+  const ctx = await requireAdmin();
+  const admin = createAdminClient();
+
+  const settings = await loadSettings(admin);
+  const before = quotaResetAt(settings);
+  const now = new Date().toISOString();
+
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({ key: QUOTA_RESET_KEY, value: now }, { onConflict: "key" });
+  if (error) return { status: "error", message: error.message };
+
+  await logAdminAction(admin, {
+    adminId: ctx.userId,
+    action: "settings.updated",
+    entityType: "app_setting",
+    entityId: null,
+    before: { [QUOTA_RESET_KEY]: before },
+    after: { [QUOTA_RESET_KEY]: now },
+    reason: "Compteurs de super-pouvoirs remis à zéro pour tous les joueurs",
+  });
+
+  revalidatePath("/admin/pouvoirs");
+  revalidatePath("/journee");
+  revalidatePath("/classement");
+  return {
+    status: "success",
+    message: "Compteurs remis à neuf : chaque joueur retrouve son quota complet.",
+  };
 }

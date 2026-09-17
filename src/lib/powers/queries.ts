@@ -267,13 +267,17 @@ export async function loadUsageCounts(
   sb: SupabaseClient,
   userId: string,
   seasonId: string,
+  /** Ligne de départ : les utilisations antérieures ne comptent plus. */
+  since: string | null = null,
 ): Promise<Map<string, number>> {
-  const { data, error } = await sb
+  let query = sb
     .from("power_usages")
     .select("power_id, rounds!inner(season_id)")
     .eq("initiator_id", userId)
     .eq("rounds.season_id", seasonId)
     .in("state", [...CONSUMING_STATES]);
+  if (since) query = query.gte("created_at", since);
+  const { data, error } = await query;
   if (error) throw error;
 
   const counts = new Map<string, number>();
@@ -291,12 +295,16 @@ export async function loadUsageCounts(
 export async function loadSeasonUsageByPlayer(
   sb: SupabaseClient,
   seasonId: string,
+  /** Ligne de départ : les utilisations antérieures ne comptent plus. */
+  since: string | null = null,
 ): Promise<Map<string, Map<string, number>>> {
-  const { data, error } = await sb
+  let query = sb
     .from("power_usages")
     .select("power_id, initiator_id, rounds!inner(season_id)")
     .eq("rounds.season_id", seasonId)
     .in("state", [...CONSUMING_STATES]);
+  if (since) query = query.gte("created_at", since);
+  const { data, error } = await query;
   if (error) throw error;
 
   const byPlayer = new Map<string, Map<string, number>>();

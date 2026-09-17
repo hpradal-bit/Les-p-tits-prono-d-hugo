@@ -23,7 +23,7 @@ import {
 import type { PowerAdjustment } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
 import { powerEffect, powerRules } from "@/lib/powers/credits";
-import { buildQuotas, FALLBACK_MAX_USES } from "@/lib/powers/quota";
+import { buildQuotas, quotaResetAt, FALLBACK_MAX_USES } from "@/lib/powers/quota";
 import { loadSettings, setting } from "@/lib/settings";
 import { outcomeSideLabel, marginBucketSentence } from "@/lib/predictions/display";
 import { PlayerAvatar } from "../_components/player-avatar";
@@ -168,7 +168,12 @@ export default async function JourneePage({
   );
 
   // Le quota restant de chaque pouvoir pour ce joueur, sur cette saison.
-  const usageCounts = await loadUsageCounts(admin, viewer.id, seasonId);
+  const usageCounts = await loadUsageCounts(
+    admin,
+    viewer.id,
+    seasonId,
+    quotaResetAt(appSettings),
+  );
   const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
   const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
 

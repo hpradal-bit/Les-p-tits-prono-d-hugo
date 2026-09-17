@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyNewPost } from "./notify.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/session";
 import { failure, success, type ActionState } from "@/lib/auth/action-state";
@@ -80,12 +82,37 @@ export async function publishPost(
 
   // `feed_posts_insert` (RLS) refuse déjà toute ligue dont le joueur n'est
   // pas membre : pas besoin de le revérifier ici.
-  const { error } = await sb.from("feed_posts").insert({
-    league_id: parsed.data.leagueId,
-    author_id: viewer.id,
-    body: parsed.data.body,
-  });
-  if (error) return failure("La publication a échoué. Réessaie dans un instant.");
+  const { data: inserted, error } = await sb
+    .from("feed_posts")
+    .insert({
+      league_id: parsed.data.leagueId,
+      author_id: viewer.id,
+      body: parsed.data.body,
+    })
+    .select("id")
+    .single();
+  if (error || !inserted) return failure("La publication a échoué. Réessaie dans un instant.");
+
+  // Prévenir le groupe fait partie de la publication, mais pas au point de la
+  // faire échouer : le message est écrit, il est en ligne. Une notification
+  // qui ne part pas ne doit pas faire croire à l'auteur qu'il a perdu son mot.
+  try {
+    const { data: author } = await sb
+      .from("profiles")
+      .select("display_name")
+      .eq("id", viewer.id)
+      .maybeSingle();
+
+    await notifyNewPost(createAdminClient(), {
+      postId: inserted.id as string,
+      leagueId: parsed.data.leagueId,
+      authorId: viewer.id,
+      authorName: (author?.display_name as string) ?? "Quelqu'un",
+      body: parsed.data.body,
+    });
+  } catch (cause) {
+    console.error("[vestiaire] notification du message impossible", cause);
+  }
 
   revalidatePath("/vestiaire");
   return success("Publié.");

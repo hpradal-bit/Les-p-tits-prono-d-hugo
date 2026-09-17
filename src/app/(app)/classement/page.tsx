@@ -31,7 +31,7 @@ import {
 import { loadPointsHistory } from "@/lib/standings/points-history";
 import { loadActivePowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries.ts";
 import { buildPowerCounters } from "@/lib/powers/counters.ts";
-import { FALLBACK_MAX_USES } from "@/lib/powers/quota.ts";
+import { FALLBACK_MAX_USES, quotaResetAt } from "@/lib/powers/quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { Podium } from "./_components/podium";
 import { StandingsList } from "./_components/standings-list";
@@ -123,15 +123,18 @@ export default async function ClassementPage({
   const effectiveVue: View = isTop14 && query.vue === "forme" ? "general" : query.vue;
   const effectivePortee: Reach = isTop14 ? "live" : query.portee;
 
-  const [data, history, clubs, pointsHistory, powers, powerUsage, settings] = await Promise.all([
+  const [data, history, clubs, pointsHistory, powers, settings] = await Promise.all([
     loadStandingsData(sb, season, leagueId),
     loadStandingsHistory(sb, season.id),
     loadClubAvatars(sb),
     loadPointsHistory(sb, season.id, leagueId),
     loadActivePowers(sb),
-    loadSeasonUsageByPlayer(sb, season.id),
     loadSettings(sb),
   ]);
+
+  // Les compteurs repartent de la dernière remise à zéro : l'historique des
+  // pouvoirs reste entier, seule la ligne de départ du quota bouge.
+  const powerUsage = await loadSeasonUsageByPlayer(sb, season.id, quotaResetAt(settings));
   const scope = SCOPE_OF[effectivePortee];
   const kind = KIND_OF[effectiveVue];
   const played = playedRounds(data.rounds, data.entries, scope);

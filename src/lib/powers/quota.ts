@@ -12,9 +12,28 @@
  */
 
 import type { Power } from "./types.ts";
+import type { Settings } from "@/lib/settings";
 
 /** Plafond appliqué à un pouvoir qui n'en déclare pas. */
 export const FALLBACK_MAX_USES = 3;
+
+/**
+ * La date de remise à zéro des compteurs, réglée depuis l'espace admin.
+ *
+ * Remettre les compteurs à neuf ne peut pas passer par la suppression des
+ * utilisations passées : elles sont l'histoire du jeu, elles alimentent le fil
+ * du Vestiaire et l'onglet Super-pouvoirs. On déplace donc la ligne de départ —
+ * seules les utilisations postérieures à cette date comptent — et le passé
+ * reste lisible.
+ */
+export const QUOTA_RESET_KEY = "powers.quota_reset_at";
+
+export function quotaResetAt(settings: Settings): string | null {
+  const raw = settings[QUOTA_RESET_KEY];
+  if (typeof raw !== "string" || raw === "") return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
 
 /** Les états qui consomment le quota. `cancelled` en est volontairement absent. */
 export const CONSUMING_STATES = ["declared", "accepted", "resolved"] as const;

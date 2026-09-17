@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
-import { togglePower, setPowerMaxUses } from "@/lib/powers/actions";
+import { togglePower, setPowerMaxUses, resetPowerQuotas } from "@/lib/powers/actions";
 
 interface PowerRow {
   id: string;
@@ -86,6 +86,50 @@ export function PowerPanel({ powers }: { powers: PowerRow[] }) {
           </div>
         </div>
       ))}
+      {msg && <p className="text-[12px] font-semibold text-ink-muted">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * Le bouton qui rend leurs pouvoirs à tout le monde.
+ *
+ * Confirmation obligatoire : le geste est visible par les six joueurs d'un
+ * coup. Il n'efface rien — l'historique reste — mais il rouvre le jeu.
+ */
+export function QuotaResetButton() {
+  const [pending, setPending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function handleReset() {
+    setPending(true);
+    setMsg("");
+    const result = await resetPowerQuotas();
+    setPending(false);
+    setConfirming(false);
+    setMsg(result.message ?? "");
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {confirming ? (
+        <>
+          <span className="text-[12.5px] font-semibold text-ink">
+            Tout le monde retrouve son quota complet ?
+          </span>
+          <Button size="sm" variant="danger" onClick={handleReset} disabled={pending}>
+            {pending ? "…" : "Oui, remettre à neuf"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={pending}>
+            Annuler
+          </Button>
+        </>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+          Remettre tous les compteurs à neuf
+        </Button>
+      )}
       {msg && <p className="text-[12px] font-semibold text-ink-muted">{msg}</p>}
     </div>
   );

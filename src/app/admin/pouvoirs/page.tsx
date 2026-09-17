@@ -9,9 +9,9 @@ import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason } from "@/lib/standings/queries";
 import { loadAllPowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries";
-import { maxUses, FALLBACK_MAX_USES } from "@/lib/powers/quota";
+import { maxUses, quotaResetAt, FALLBACK_MAX_USES } from "@/lib/powers/quota";
 import { loadSettings, setting } from "@/lib/settings";
-import { PowerPanel } from "./_components/power-panel";
+import { PowerPanel, QuotaResetButton } from "./_components/power-panel";
 import { buildPowerCounters } from "@/lib/powers/counters.ts";
 
 export const metadata: Metadata = { title: "Pouvoirs — Admin" };
@@ -62,7 +62,7 @@ export default async function AdminPowersPage({
       | undefined;
     if (profile) members.push({ userId: profile.id, displayName: profile.display_name });
   }
-  const usage = await loadSeasonUsageByPlayer(admin, seasonId);
+  const usage = await loadSeasonUsageByPlayer(admin, seasonId, quotaResetAt(settings));
   const counters = buildPowerCounters(members, powers, usage, fallbackMax);
 
   return (
@@ -93,7 +93,7 @@ export default async function AdminPowersPage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <Label>Quotas consommes</Label>
+        <Label>Quotas consommés</Label>
         <Card className="flex flex-col gap-2 p-4">
           {counters.length === 0 ? (
             <p className="text-[13px] text-ink-muted">Aucun joueur dans cette ligue.</p>
@@ -119,6 +119,9 @@ export default async function AdminPowersPage({
               </div>
             ))
           )}
+          <div className="mt-2 border-t border-line pt-3">
+            <QuotaResetButton />
+          </div>
         </Card>
       </section>
     </div>
