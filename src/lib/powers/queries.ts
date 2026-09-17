@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Power, Token, PowerUsage } from "./types.ts";
+import { CONSUMING_STATES } from "./quota.ts";
 
 export async function loadActivePowers(sb: SupabaseClient): Promise<Power[]> {
   const { data, error } = await sb
@@ -278,4 +279,29 @@ export async function loadRoundTotals(
     }
   }
   return totals;
+}
+
+/**
+ * Combien de fois chaque pouvoir a déjà été utilisé par un joueur sur une
+ * saison. Ne compte que les états consommateurs : une déclaration annulée n'a
+ * jamais eu lieu et ne doit rien coûter.
+ */
+export async function loadUsageCounts(
+  sb: SupabaseClient,
+  userId: string,
+  seasonId: string,
+): Promise<Map<string, number>> {
+  const { data, error } = await sb
+    .from("power_usages")
+    .select("power_id, rounds!inner(season_id)")
+    .eq("initiator_id", userId)
+    .eq("rounds.season_id", seasonId)
+    .in("state", [...CONSUMING_STATES]);
+  if (error) throw error;
+
+  const counts = new Map<string, number>();
+  for (const row of (data ?? []) as Array<{ power_id: string }>) {
+    counts.set(row.power_id, (counts.get(row.power_id) ?? 0) + 1);
+  }
+  return counts;
 }

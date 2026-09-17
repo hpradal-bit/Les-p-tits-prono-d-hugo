@@ -16,8 +16,10 @@ interface PowerOption {
    *  les cibles proposées, toute autre valeur (ou absence) les laisse toutes
    *  ouvertes. Jamais un pouvoir particulier codé en dur ici. */
   targetRule: string | null;
-  /** Coût en crédits, lu depuis `powers.config` — jamais en dur ici. */
-  cost: number;
+  /** Quota de ce pouvoir pour ce joueur — lu depuis `powers.config`, jamais en dur. */
+  used: number;
+  max: number;
+  remaining: number;
   description: string | null;
   effect: string | null;
   rules: string | null;
@@ -48,7 +50,9 @@ interface ActiveUsage {
   powerName: string;
   targetName: string | null;
   fixtureName: string | null;
-  cost: number;
+  /** « 2ᵉ sur 3 » : le rang figé au moment de la déclaration. */
+  useIndex: number | null;
+  maxUses: number | null;
   spyReveal?: SpyReveal | null;
 }
 
@@ -60,14 +64,12 @@ interface ActiveUsage {
  */
 function PowerModal({
   power,
-  tokensAvailable,
   fixtures,
   eligibleTargets,
   roundId,
   onClose,
 }: {
   power: PowerOption;
-  tokensAvailable: number;
   fixtures: FixtureOption[];
   eligibleTargets: PlayerOption[];
   roundId: string;
@@ -78,7 +80,7 @@ function PowerModal({
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const affordable = tokensAvailable >= power.cost;
+  const affordable = power.remaining > 0;
   const missing = power.needsTarget && eligibleTargets.length === 0;
 
   async function handleDeclare(e: React.FormEvent) {
@@ -175,7 +177,7 @@ function PowerModal({
 
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-sunk px-3.5 py-2.5">
             <span className="font-mono text-[13px] font-bold text-ink">
-              {power.cost} crédit{power.cost > 1 ? "s" : ""}
+              {power.remaining} / {power.max} restant{power.remaining > 1 ? "s" : ""}
             </span>
             <Button
               type="submit"
@@ -184,11 +186,7 @@ function PowerModal({
                 pending || !affordable || (power.needsFixture && !fixtureId) || (power.needsTarget && !targetId)
               }
             >
-              {pending
-                ? "…"
-                : affordable
-                  ? "Utiliser"
-                  : `${power.cost - tokensAvailable} crédit${power.cost - tokensAvailable > 1 ? "s" : ""} nécessaire${power.cost - tokensAvailable > 1 ? "s" : ""}`}
+              {pending ? "…" : affordable ? "Utiliser" : "Épuisé"}
             </Button>
           </div>
         </form>
@@ -201,7 +199,6 @@ function PowerModal({
 
 export function PowerBanner({
   powers,
-  tokensAvailable,
   roundId,
   fixtures,
   players,
@@ -209,7 +206,6 @@ export function PowerBanner({
   viewerId,
 }: {
   powers: PowerOption[];
-  tokensAvailable: number;
   roundId: string;
   fixtures: FixtureOption[];
   players: PlayerOption[];
@@ -291,7 +287,8 @@ export function PowerBanner({
           <h2 className="text-[12.5px] font-bold text-ink">Super-pouvoirs</h2>
         </div>
         <span className="rounded-full bg-clay-soft px-2.5 py-1 text-[11px] font-bold text-clay">
-          {tokensAvailable} crédit{tokensAvailable > 1 ? "s" : ""}
+          {powers.filter((p) => p.remaining > 0).length} disponible
+          {powers.filter((p) => p.remaining > 0).length > 1 ? "s" : ""}
         </span>
       </div>
 
@@ -299,7 +296,7 @@ export function PowerBanner({
           plutôt que de pousser le reste de l'écran. */}
       <div className="scrollbar-none -mx-1 flex gap-3 overflow-x-auto px-1 pb-0.5">
         {powers.map((p) => {
-          const affordable = tokensAvailable >= p.cost;
+          const affordable = p.remaining > 0;
           return (
             <button
               key={p.code}
@@ -314,8 +311,13 @@ export function PowerBanner({
                 )}
               >
                 {p.emoji}
-                <span className="absolute -bottom-1 -right-1 rounded-full bg-surface px-1 font-mono text-[9px] font-bold text-ink-faint shadow-sm">
-                  {p.cost}
+                <span
+                  className={cn(
+                    "absolute -bottom-1 -right-1 rounded-full px-1 font-mono text-[9px] font-bold shadow-sm",
+                    affordable ? "bg-surface text-ink" : "bg-wrong-soft text-wrong",
+                  )}
+                >
+                  {p.remaining}/{p.max}
                 </span>
               </span>
               <span className="w-full truncate text-center text-[10.5px] font-semibold text-ink">
@@ -329,8 +331,7 @@ export function PowerBanner({
       {openPower && (
         <PowerModal
           power={openPower}
-          tokensAvailable={tokensAvailable}
-          fixtures={fixtures}
+                    fixtures={fixtures}
           eligibleTargets={eligibleTargets(openPower)}
           roundId={roundId}
           onClose={() => setOpenCode(null)}

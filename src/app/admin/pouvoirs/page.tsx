@@ -9,7 +9,7 @@ import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason } from "@/lib/standings/queries";
 import { loadAllPowers } from "@/lib/powers/queries";
-import { creditCost, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
+import { maxUses, FALLBACK_MAX_USES } from "@/lib/powers/quota";
 import { loadSettings, setting } from "@/lib/settings";
 import { PowerPanel, TokenGrantForm } from "./_components/power-panel";
 
@@ -42,10 +42,10 @@ export default async function AdminPowersPage({
   const seasonId = season.id;
   const powers = await loadAllPowers(admin);
   const settings = await loadSettings(admin);
-  const fallbackCost = setting<number>(
+  const fallbackMax = setting<number>(
     settings,
-    "powers.default_credit_cost",
-    FALLBACK_CREDIT_COST,
+    "powers.max_uses_per_player",
+    FALLBACK_MAX_USES,
   );
 
   const { data: tokenRows } = await admin
@@ -79,7 +79,7 @@ export default async function AdminPowersPage({
               name: p.name,
               emoji: p.emoji,
               isActive: p.isActive,
-              cost: creditCost(p, fallbackCost),
+              maxUses: maxUses(p, fallbackMax),
             }))}
           />
         </Card>

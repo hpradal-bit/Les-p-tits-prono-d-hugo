@@ -12,12 +12,12 @@ import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { getPower, requirePower } from "./registry.ts";
 import {
   loadActivePowers,
-  loadUserTokens,
+  loadUsageCounts,
   loadUserRoundUsage,
   loadRoundUsages,
 } from "./queries.ts";
 import { applyResolution } from "./resolve.ts";
-import { creditCost, creditLabel, FALLBACK_CREDIT_COST } from "./credits.ts";
+import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES } from "./quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { isLockedAt } from "@/lib/predictions/lock";
 import type { AdminActionState } from "@/lib/admin/types";
@@ -62,18 +62,14 @@ export async function declarePower(
   if (existing) return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
 
   const settings = await loadSettings(admin);
-  const fallbackCost = setting<number>(settings, "powers.default_credit_cost", FALLBACK_CREDIT_COST);
-  const cost = creditCost(power, fallbackCost);
+  const fallbackMax = setting<number>(settings, "powers.max_uses_per_player", FALLBACK_MAX_USES);
 
-  const tokens = await loadUserTokens(admin, user.id, seasonId);
-  const availableTokens = tokens.filter((t) => t.status === "available");
-  if (availableTokens.length < cost) {
-    return {
-      ok: false,
-      message: `${power.name} coûte ${creditLabel(cost)}, il ne t'en reste que ${availableTokens.length}.`,
-    };
-  }
-  const spentTokens = availableTokens.slice(0, cost);
+  // Quota par pouvoir : plus de bourse commune, chaque pouvoir a son compteur.
+  const counts = await loadUsageCounts(admin, user.id, seasonId);
+  const quotas = buildQuotas(powers, counts, fallbackMax);
+  const quota = quotas.find((q) => q.powerId === power.id);
+  const refusal = quotaRefusal(quota, power.name);
+  if (refusal) return { ok: false, message: refusal };
 
   // Un pouvoir ciblant un match ne peut plus être déclaré une fois ce match
   // verrouillé (ou déjà terminé) : au-delà, ce serait parier après coup — le
@@ -130,34 +126,18 @@ export async function declarePower(
     if (!validation.valid) return { ok: false, message: validation.error ?? "Déclaration invalide." };
   }
 
-  // Le coût est figé dans le snapshot : rééquilibrer un pouvoir plus tard ne doit
-  // pas réécrire l'histoire d'une utilisation passée (§39 du cahier des charges).
-  const snapshotBefore: Record<string, unknown> = { creditCost: cost };
+  // Le rang d'utilisation est figé dans le snapshot : relever le plafond plus
+  // tard ne doit pas réécrire l'histoire d'une utilisation passée.
+  const snapshotBefore: Record<string, unknown> = {
+    useIndex: (quota?.used ?? 0) + 1,
+    maxUses: quota?.max ?? fallbackMax,
+  };
   if (parsed.data.fixtureId) snapshotBefore.fixtureId = parsed.data.fixtureId;
   if (parsed.data.targetId) snapshotBefore.targetId = parsed.data.targetId;
 
-  const spentIds = spentTokens.map((t) => t.id);
-
-  // `eq("status", "available")` garde la réservation atomique : deux déclarations
-  // concurrentes ne peuvent pas dépenser le même crédit.
-  const { data: reserved, error: tokenErr } = await admin
-    .from("tokens")
-    .update({ status: "used", used_at: new Date().toISOString() })
-    .in("id", spentIds)
-    .eq("status", "available")
-    .select("id");
-
-  const reservedIds = ((reserved ?? []) as Array<{ id: string }>).map((t) => t.id);
-
-  if (tokenErr || reservedIds.length < cost) {
-    if (reservedIds.length > 0) {
-      await admin.from("tokens").update({ status: "available", used_at: null }).in("id", reservedIds);
-    }
-    return { ok: false, message: "Tes crédits viennent de changer, réessaie." };
-  }
-
   const { error: usageErr } = await admin.from("power_usages").insert({
-    token_id: reservedIds[0],
+    // Plus de jeton : c'est le nombre d'utilisations qui fait foi (quota).
+    token_id: null,
     power_id: power.id,
     initiator_id: user.id,
     target_id: parsed.data.targetId ?? null,
@@ -167,7 +147,6 @@ export async function declarePower(
   });
 
   if (usageErr) {
-    await admin.from("tokens").update({ status: "available", used_at: null }).in("id", reservedIds);
     // Violation de l'index unique "une utilisation active par joueur et par
     // journée" (cf. migration) : deux clics simultanés ont tenté de déclarer
     // deux pouvoirs à la fois, la base n'en a laissé passer qu'un seul.
@@ -187,7 +166,8 @@ export async function declarePower(
       power_code: power.code,
       power_emoji: power.emoji,
       power_name: power.name,
-      credit_cost: cost,
+      use_index: (quota?.used ?? 0) + 1,
+      max_uses: quota?.max ?? fallbackMax,
     },
   });
 
@@ -195,7 +175,9 @@ export async function declarePower(
   revalidatePath("/classement");
   return {
     ok: true,
-    message: `${power.emoji} ${power.name} activé — ${creditLabel(cost)} dépensés.`,
+    message:
+      `${power.emoji} ${power.name} activé !` +
+      (quota ? ` Il t'en reste ${quota.remaining - 1} sur ${quota.max}.` : ""),
   };
 }
 
@@ -326,21 +308,24 @@ export async function grantTokens(
 }
 
 /**
- * Rééquilibrer un pouvoir depuis l'admin. Le coût vit dans `powers.config`, pas
- * dans le code : changer un prix ne doit jamais demander un redéploiement.
- * Les utilisations déjà déclarées gardent le coût figé dans leur snapshot.
+ * Régler le nombre d'utilisations d'un pouvoir, depuis l'admin.
+ *
+ * Le plafond vit dans `powers.config`, pas dans le code : rééquilibrer le jeu
+ * ne doit jamais demander un redéploiement. Les utilisations déjà déclarées
+ * gardent leur rang fige dans leur snapshot — relever le plafond n'efface pas
+ * l'histoire, il ouvre seulement la suite.
  */
-export async function setPowerCost(
+export async function setPowerMaxUses(
   input: unknown,
 ): Promise<AdminActionState> {
   const schema = z.object({
     powerId: z.string().uuid(),
-    cost: z.number().int().min(0).max(100),
+    maxUses: z.number().int().min(0).max(50),
   });
 
   const ctx = await requireAdmin();
   const parsed = schema.safeParse(input);
-  if (!parsed.success) return { status: "error", message: "Coût invalide (0 à 100)." };
+  if (!parsed.success) return { status: "error", message: "Nombre invalide (0 à 50)." };
 
   const admin = createAdminClient();
 
@@ -352,11 +337,11 @@ export async function setPowerCost(
   if (!power) return { status: "error", message: "Pouvoir introuvable." };
 
   const config = ((power.config as Record<string, unknown>) ?? {});
-  const before = config.credit_cost ?? null;
+  const before = config.max_uses_per_player ?? null;
 
   const { error } = await admin
     .from("powers")
-    .update({ config: { ...config, credit_cost: parsed.data.cost } })
+    .update({ config: { ...config, max_uses_per_player: parsed.data.maxUses } })
     .eq("id", parsed.data.powerId);
   if (error) return { status: "error", message: error.message };
 
@@ -365,16 +350,20 @@ export async function setPowerCost(
     action: "settings.updated",
     entityType: "app_setting",
     entityId: parsed.data.powerId,
-    before: { credit_cost: before },
-    after: { credit_cost: parsed.data.cost },
-    reason: `Coût de ${power.name as string} : ${parsed.data.cost} crédit(s)`,
+    before: { max_uses_per_player: before },
+    after: { max_uses_per_player: parsed.data.maxUses },
+    reason: `${power.name as string} : ${parsed.data.maxUses} utilisation(s) par joueur`,
   });
 
   revalidatePath("/admin/pouvoirs");
   revalidatePath("/journee");
+  revalidatePath("/classement");
   return {
     status: "success",
-    message: `${power.name as string} coûte désormais ${creditLabel(parsed.data.cost)}.`,
+    message:
+      parsed.data.maxUses === 0
+        ? `${power.name as string} est désormais désactivé.`
+        : `${power.name as string} : ${parsed.data.maxUses} utilisation(s) par joueur.`,
   };
 }
 

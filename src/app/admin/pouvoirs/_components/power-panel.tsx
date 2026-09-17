@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
-import { togglePower, grantTokens, setPowerCost } from "@/lib/powers/actions";
+import { togglePower, grantTokens, setPowerMaxUses } from "@/lib/powers/actions";
 
 interface PowerRow {
   id: string;
@@ -10,14 +10,14 @@ interface PowerRow {
   name: string;
   emoji: string;
   isActive: boolean;
-  cost: number;
+  maxUses: number;
 }
 
 export function PowerPanel({ powers }: { powers: PowerRow[] }) {
   const [pending, setPending] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
-  const [costs, setCosts] = useState<Record<string, number>>(
-    Object.fromEntries(powers.map((p) => [p.id, p.cost])),
+  const [quotas, setQuotas] = useState<Record<string, number>>(
+    Object.fromEntries(powers.map((p) => [p.id, p.maxUses])),
   );
 
   async function handleToggle(powerId: string, active: boolean) {
@@ -28,10 +28,10 @@ export function PowerPanel({ powers }: { powers: PowerRow[] }) {
     setMsg(result.message ?? "");
   }
 
-  async function handleCost(powerId: string) {
+  async function handleMaxUses(powerId: string) {
     setPending(powerId);
     setMsg("");
-    const result = await setPowerCost({ powerId, cost: costs[powerId] ?? 0 });
+    const result = await setPowerMaxUses({ powerId, maxUses: quotas[powerId] ?? 0 });
     setPending(null);
     setMsg(result.message ?? "");
   }
@@ -51,27 +51,27 @@ export function PowerPanel({ powers }: { powers: PowerRow[] }) {
 
           <div className="flex items-center gap-2">
             <label
-              htmlFor={`cost-${p.id}`}
+              htmlFor={`quota-${p.id}`}
               className="text-[11px] font-semibold text-ink-muted"
             >
-              Coût
+              Max / joueur
             </label>
             <input
-              id={`cost-${p.id}`}
+              id={`quota-${p.id}`}
               type="number"
               min={0}
-              max={100}
-              value={costs[p.id] ?? 0}
+              max={50}
+              value={quotas[p.id] ?? 0}
               onChange={(e) =>
-                setCosts((c) => ({ ...c, [p.id]: parseInt(e.target.value, 10) || 0 }))
+                setQuotas((c) => ({ ...c, [p.id]: parseInt(e.target.value, 10) || 0 }))
               }
               className="w-16 rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
             />
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => handleCost(p.id)}
-              disabled={pending === p.id || costs[p.id] === p.cost}
+              onClick={() => handleMaxUses(p.id)}
+              disabled={pending === p.id || quotas[p.id] === p.maxUses}
             >
               {pending === p.id ? "…" : "Enregistrer"}
             </Button>

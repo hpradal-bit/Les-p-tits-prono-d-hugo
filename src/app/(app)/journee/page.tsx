@@ -14,14 +14,15 @@ import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
 import {
   loadActivePowers,
-  loadUserTokens,
+  loadUsageCounts,
   loadRoundUsages,
   loadSpyReveal,
   loadPowerAdjustmentsByFixture,
 } from "@/lib/powers/queries";
 import type { PowerAdjustment } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
-import { creditCost, powerEffect, powerRules, FALLBACK_CREDIT_COST } from "@/lib/powers/credits";
+import { powerEffect, powerRules } from "@/lib/powers/credits";
+import { buildQuotas, FALLBACK_MAX_USES } from "@/lib/powers/quota";
 import { loadSettings, setting } from "@/lib/settings";
 import { outcomeSideLabel, marginBucketSentence } from "@/lib/predictions/display";
 import { PlayerAvatar } from "../_components/player-avatar";
@@ -91,11 +92,10 @@ export default async function JourneePage({
   const seasonId = board.seasonId;
   const currentRoundId = board.round.id;
 
-  const [allBonusItems, activePowers, userTokens, roundUsages, standingsData, appSettings, powerAdjustments] =
+  const [allBonusItems, activePowers, roundUsages, standingsData, appSettings, powerAdjustments] =
     await Promise.all([
       listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
       loadActivePowers(admin),
-      loadUserTokens(admin, viewer.id, seasonId),
       loadRoundUsages(admin, currentRoundId),
       // Les membres de CETTE ligue, pas tous les profils actifs de l'appli
       // (sinon un joueur d'une autre ligue apparaîtrait comme cible) — et leur
@@ -116,7 +116,6 @@ export default async function JourneePage({
     (b) => !b.question.roundId || b.question.roundId === currentRoundId,
   );
 
-  const tokensAvailable = userTokens.filter((t) => t.status === "available").length;
   const myUsage = roundUsages.find(
     (u) => u.initiatorId === viewer.id && (u.state === "declared" || u.state === "accepted"),
   );
@@ -125,11 +124,16 @@ export default async function JourneePage({
   // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
   const standingsRows = computeStandings(standingsData, { kind: "overall", scope: "live" }).rows;
   const displayNameById = new Map(standingsRows.map((r) => [r.player.userId, r.player.displayName]));
-  const fallbackCost = setting<number>(
+  const fallbackMax = setting<number>(
     appSettings,
-    "powers.default_credit_cost",
-    FALLBACK_CREDIT_COST,
+    "powers.max_uses_per_player",
+    FALLBACK_MAX_USES,
   );
+
+  // Le quota restant de chaque pouvoir pour ce joueur, sur cette saison.
+  const usageCounts = await loadUsageCounts(admin, viewer.id, seasonId);
+  const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
+  const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
 
   const powerOptions = activePowers.map((p) => {
     const pk = getPower(p.code);
@@ -145,7 +149,9 @@ export default async function JourneePage({
       // classés — aujourd'hui vrai pour aucun pouvoir actif, mais reste
       // modifiable depuis l'espace admin sans redéploiement.
       targetRule: (p.config.target_rule as string | undefined) ?? null,
-      cost: creditCost(p, fallbackCost),
+      used: quotaByPowerId.get(p.id)?.used ?? 0,
+      max: quotaByPowerId.get(p.id)?.max ?? fallbackMax,
+      remaining: quotaByPowerId.get(p.id)?.remaining ?? fallbackMax,
       description: p.description,
       effect: powerEffect(p),
       rules: powerRules(p),
@@ -222,10 +228,14 @@ export default async function JourneePage({
         fixtureName: myUsage.snapshotBefore.fixtureId
           ? fixtureOptions.find((f) => f.id === myUsage.snapshotBefore.fixtureId)?.label ?? null
           : null,
-        cost:
-          typeof myUsage.snapshotBefore.creditCost === "number"
-            ? myUsage.snapshotBefore.creditCost
-            : 1,
+        useIndex:
+          typeof myUsage.snapshotBefore.useIndex === "number"
+            ? myUsage.snapshotBefore.useIndex
+            : null,
+        maxUses:
+          typeof myUsage.snapshotBefore.maxUses === "number"
+            ? myUsage.snapshotBefore.maxUses
+            : null,
         spyReveal,
       }
     : null;
@@ -301,7 +311,6 @@ export default async function JourneePage({
 
       <PowerBanner
         powers={powerOptions}
-        tokensAvailable={tokensAvailable}
         roundId={currentRoundId}
         fixtures={fixtureOptions}
         players={playerOptions}
