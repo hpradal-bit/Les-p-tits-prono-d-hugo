@@ -148,16 +148,17 @@ export async function resolveFixturePowers(
  */
 export async function sweepOrphanedPowers(
   admin: SupabaseClient,
-  seasonId: Uuid,
 ): Promise<{ resolved: number; pending: string[] }> {
   const { data: rows, error } = await admin
     .from("power_usages")
-    .select("id, round_id, snapshot_before, state, powers!inner(config)")
+    .select(
+      "id, round_id, snapshot_before, state, powers!inner(config), rounds!inner(season_id)",
+    )
     .in("state", ["declared", "accepted"]);
   if (error) throw error;
 
   const pending: string[] = [];
-  const toResolve: Array<{ fixtureId: string; roundId: string }> = [];
+  const toResolve: Array<{ fixtureId: string; roundId: string; seasonId: string }> = [];
 
   for (const row of (rows ?? []) as Array<Record<string, unknown>>) {
     const snapshot = (row.snapshot_before ?? {}) as Record<string, unknown>;
@@ -165,14 +166,21 @@ export async function sweepOrphanedPowers(
     const power = (Array.isArray(row.powers) ? row.powers[0] : row.powers) as
       | { config: Record<string, unknown> }
       | undefined;
+    const round = (Array.isArray(row.rounds) ? row.rounds[0] : row.rounds) as
+      | { season_id: string }
+      | undefined;
 
     // Sans match, le pouvoir attend la clôture de la journée : ce n'est pas un
     // orphelin, c'est son fonctionnement normal.
-    if (!fixtureId || power?.config?.resolves_at !== "fixture_finished") {
+    if (!fixtureId || !round || power?.config?.resolves_at !== "fixture_finished") {
       pending.push(row.id as string);
       continue;
     }
-    toResolve.push({ fixtureId, roundId: row.round_id as string });
+    // La saison vient de la journée du pouvoir, **jamais** de la saison active :
+    // un pouvoir posé sur une compétition de test doit rester dans sa
+    // compétition. Prendre la saison active ici avait fait remonter deux points
+    // de Pro D2 dans le classement du Top 14.
+    toResolve.push({ fixtureId, roundId: row.round_id as string, seasonId: round.season_id });
   }
 
   if (toResolve.length === 0) return { resolved: 0, pending };
@@ -191,7 +199,7 @@ export async function sweepOrphanedPowers(
   );
 
   let resolved = 0;
-  for (const { fixtureId, roundId } of toResolve) {
+  for (const { fixtureId, roundId, seasonId } of toResolve) {
     if (!final.has(fixtureId)) continue;
     const outcome = await resolveFixturePowers(admin, fixtureId, roundId, seasonId);
     resolved += outcome.resolved;

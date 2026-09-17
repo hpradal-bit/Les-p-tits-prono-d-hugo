@@ -345,7 +345,7 @@ export async function syncLive(
   // attente : le joueur a dépensé ses crédits. Trois l'étaient depuis le
   // 27 août, avant que la résolution match par match n'existe.
   try {
-    const swept = await sweepOrphanedPowers(sb, ctx.season.id);
+    const swept = await sweepOrphanedPowers(sb);
     if (swept.resolved > 0) {
       changes.push(`${swept.resolved} pouvoir(s) en attente résolu(s)`);
     }
