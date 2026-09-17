@@ -95,13 +95,19 @@ export function MatchBreakdown({
                       </>
                     )}
                   </span>
+                  {/* Un zéro ne s'affiche pas : le Sabotage ne rapporte rien à
+                      son auteur, l'Espion ne déplace aucun point. « +0 » en vert
+                      laisserait croire à un gain nul plutôt qu'à l'absence
+                      d'enjeu en points. */}
                   <span className="flex shrink-0 gap-1.5 font-mono font-bold">
-                    <span className={power.actorDelta >= 0 ? "text-winner" : "text-wrong"}>
-                      {power.actorDelta >= 0 ? "+" : ""}
-                      {power.actorDelta}
-                    </span>
+                    {power.actorDelta !== 0 && (
+                      <span className={power.actorDelta > 0 ? "text-winner" : "text-wrong"}>
+                        {power.actorDelta > 0 ? "+" : ""}
+                        {power.actorDelta}
+                      </span>
+                    )}
                     {power.targetDelta !== null && power.targetDelta !== 0 && (
-                      <span className="text-wrong">
+                      <span className={power.targetDelta > 0 ? "text-winner" : "text-wrong"}>
                         {power.targetName} {power.targetDelta > 0 ? "+" : ""}
                         {power.targetDelta}
                       </span>

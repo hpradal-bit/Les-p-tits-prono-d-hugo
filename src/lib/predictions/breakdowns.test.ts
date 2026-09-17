@@ -116,7 +116,30 @@ test("un pouvoir sans cible et sans effet reste lisible", () => {
   );
   assert.equal(b.powers[0].actorDelta, 0);
   assert.equal(b.powers[0].targetDelta, null);
-  assert.equal(powerSentence(b.powers[0]), "Oracle · Hugo · +0");
+  assert.equal(powerSentence(b.powers[0]), "Oracle · Hugo");
+});
+
+test("un sabotage ne fait pas croire à un gain nul pour son auteur", () => {
+  const b = buildFixtureBreakdown(
+    "f1",
+    [],
+    [
+      {
+        usageId: "p4",
+        fixtureId: "f1",
+        actorId: "u1",
+        targetId: "u2",
+        emoji: "🎯",
+        powerName: "Sabotage",
+        deltaByUser: new Map([["u2", -3]]),
+      },
+    ],
+    NAMES,
+    TEAMS,
+    BUCKETS,
+  );
+  assert.equal(b.powers[0].actorDelta, 0);
+  assert.equal(powerSentence(b.powers[0]), "Sabotage · Hugo sur Pierre · Pierre -3");
 });
 
 test("les pouvoirs posés sur un autre match sont ignorés", () => {

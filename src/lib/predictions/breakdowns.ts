@@ -133,11 +133,19 @@ export function buildFixtureBreakdown(
   return { fixtureId, players, powers };
 }
 
-/** « 🕵️ Espion de Marc sur Pierre · +2 » — la phrase, sans la mise en forme. */
+/**
+ * « Sabotage · Hugo sur Pierre · Pierre -3 » — la phrase, sans la mise en forme.
+ *
+ * Un zéro ne s'affiche pas : le Sabotage ne rapporte rien à son auteur, et
+ * l'Espion ne déplace aucun point. Écrire « +0 » laisserait croire à un gain
+ * nul là où il n'y a tout simplement pas de points en jeu.
+ */
 export function powerSentence(power: BreakdownPower): string {
   const target = power.targetName ? ` sur ${power.targetName}` : "";
   const parts = [`${power.powerName} · ${power.actorName}${target}`];
-  parts.push(`${power.actorDelta >= 0 ? "+" : ""}${power.actorDelta}`);
+  if (power.actorDelta !== 0) {
+    parts.push(`${power.actorDelta > 0 ? "+" : ""}${power.actorDelta}`);
+  }
   if (power.targetDelta !== null && power.targetDelta !== 0) {
     parts.push(`${power.targetName} ${power.targetDelta > 0 ? "+" : ""}${power.targetDelta}`);
   }
