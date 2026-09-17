@@ -56,7 +56,7 @@ export function StandingsList({
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-ink">
-                  {row.player.firstName}
+                  {row.player.displayName}
                   {isViewer && (
                     <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-clay">
                       toi

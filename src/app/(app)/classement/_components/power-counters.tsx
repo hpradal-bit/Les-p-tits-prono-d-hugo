@@ -34,7 +34,7 @@ export function PowerCounters({
                 row.userId === viewerId ? "font-bold text-ink" : "font-semibold text-ink-muted",
               )}
             >
-              {row.firstName}
+              {row.displayName}
             </span>
             <div className="flex flex-1 flex-wrap gap-1.5">
               {row.cells.map((cell) => (

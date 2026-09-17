@@ -135,9 +135,10 @@ export default async function JourneePage({
   // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
   const standingsRows = computeStandings(standingsData, { kind: "overall", scope: "live" }).rows;
   const displayNameById = new Map(standingsRows.map((r) => [r.player.userId, r.player.displayName]));
-  // Les prénoms de la ligue, pour les réponses bonus révélées.
+  // Les surnoms de la ligue : deux joueurs s'appellent Hugo, seul le surnom
+  // les distingue.
   const namesById = Object.fromEntries(
-    standingsData.players.map((p) => [p.userId, p.firstName]),
+    standingsData.players.map((p) => [p.userId, p.displayName]),
   );
 
   // Le détail « qui avait parié quoi » des matchs déjà terminés, toutes
@@ -158,7 +159,7 @@ export default async function JourneePage({
       homeShortName: f.fixture.homeTeam.shortName,
       awayShortName: f.fixture.awayTeam.shortName,
     })),
-    new Map(standingsData.players.map((p) => [p.userId, p.firstName])),
+    new Map(standingsData.players.map((p) => [p.userId, p.displayName])),
   );
   const fallbackMax = setting<number>(
     appSettings,

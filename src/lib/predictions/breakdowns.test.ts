@@ -54,7 +54,7 @@ test("ne garde que les pronostics du match demandé", () => {
     TEAMS,
     BUCKETS,
   );
-  assert.deepEqual(b.players.map((p) => p.firstName), ["Hugo"]);
+  assert.deepEqual(b.players.map((p) => p.name), ["Hugo"]);
 });
 
 test("le meilleur en haut, les non-notés en bas", () => {
@@ -70,7 +70,7 @@ test("le meilleur en haut, les non-notés en bas", () => {
     TEAMS,
     BUCKETS,
   );
-  assert.deepEqual(b.players.map((p) => p.firstName), ["Pierre", "Hugo", "Marc"]);
+  assert.deepEqual(b.players.map((p) => p.name), ["Pierre", "Hugo", "Marc"]);
 });
 
 test("un pouvoir raconte qui, sur qui, et ce qu'il a déplacé", () => {
@@ -173,5 +173,5 @@ test("un joueur inconnu ne fait pas tomber l'écran", () => {
     TEAMS,
     BUCKETS,
   );
-  assert.equal(b.players[0].firstName, "Joueur");
+  assert.equal(b.players[0].name, "Joueur");
 });

@@ -2,10 +2,13 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  defaultEmojiFor,
+  displayEmoji,
   extensionFor,
   resolveAvatar,
   sniffImageType,
   storagePathFromPublicUrl,
+  RUGBY_FALLBACK_EMOJIS,
   type ClubAvatar,
 } from "./avatars.ts";
 
@@ -125,4 +128,34 @@ describe("resolveAvatar", () => {
   it("retombe sur l'emoji par défaut si la valeur est vide", () => {
     assert.deepEqual(resolveAvatar("emoji", "", clubs, "🏉"), { type: "emoji", emoji: "🏉" });
   });
+});
+
+describe("avatars de repli", () => {
+it("un joueur sans emoji choisi reçoit une figure stable, pas le ballon commun", () => {
+  const a = displayEmoji("11111111-1111-1111-1111-111111111111", "🏉");
+  const b = displayEmoji("11111111-1111-1111-1111-111111111111", "🏉");
+  assert.equal(a, b);
+  assert.ok(RUGBY_FALLBACK_EMOJIS.includes(a as (typeof RUGBY_FALLBACK_EMOJIS)[number]));
+});
+
+it("répartit largement, sans s'effondrer sur deux ou trois figures", () => {
+  // Le repli ne peut pas *garantir* l'unicité sur un ensemble quelconque :
+  // celle de la ligue vient des valeurs attribuées en base (migration 0047).
+  // Ce qu'on exige ici, c'est qu'il ne distingue pas rien.
+  const emojis = new Set(
+    Array.from({ length: 200 }, (_, i) => defaultEmojiFor(`joueur-${i}`)),
+  );
+  assert.ok(emojis.size >= RUGBY_FALLBACK_EMOJIS.length - 2, `${emojis.size} figures`);
+});
+
+it("un emoji choisi par le joueur n'est jamais remplacé", () => {
+  assert.equal(displayEmoji("11111111-1111-1111-1111-111111111111", "🤡"), "🤡");
+});
+
+it("une valeur vide retombe sur la figure attribuée", () => {
+  assert.equal(
+    displayEmoji("22222222-2222-2222-2222-222222222222", ""),
+    defaultEmojiFor("22222222-2222-2222-2222-222222222222"),
+  );
+});
 });

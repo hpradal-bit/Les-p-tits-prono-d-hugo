@@ -22,7 +22,8 @@ export interface RoundPoints {
 
 export interface PlayerLine {
   userId: string;
-  firstName: string;
+  /** Le surnom du joueur : deux Hugo dans la ligue, un seul « Castrolympix ». */
+  displayName: string;
   /** Total cumulé après chaque journée. `null` avant sa première apparition. */
   cumulative: (number | null)[];
 }
@@ -44,7 +45,7 @@ export interface PointsHistory {
  */
 export function accumulate(
   rounds: RoundPoints[],
-  players: Array<{ userId: string; firstName: string }>,
+  players: Array<{ userId: string; displayName: string }>,
 ): PointsHistory {
   const ordered = [...rounds].sort((a, b) => a.roundNumber - b.roundNumber);
   const running = new Map<string, number>();
@@ -52,7 +53,7 @@ export function accumulate(
 
   const lines: PlayerLine[] = players.map((p) => ({
     userId: p.userId,
-    firstName: p.firstName,
+    displayName: p.displayName,
     cumulative: [],
   }));
 
@@ -78,7 +79,7 @@ export function accumulate(
     players: lines.sort((a, b) => {
       const lastA = [...a.cumulative].reverse().find((v) => v !== null) ?? -1;
       const lastB = [...b.cumulative].reverse().find((v) => v !== null) ?? -1;
-      return lastB - lastA || a.firstName.localeCompare(b.firstName);
+      return lastB - lastA || a.displayName.localeCompare(b.displayName, "fr");
     }),
     maxPoints,
   };
@@ -93,19 +94,19 @@ export async function loadPointsHistory(
     sb.from("rounds").select("id, number, name").eq("season_id", seasonId).order("number"),
     sb
       .from("league_members")
-      .select("profiles!inner(id, first_name)")
+      .select("profiles!inner(id, display_name)")
       .eq("league_id", leagueId),
   ]);
 
   const rounds = (roundsRes.data ?? []) as Array<{ id: string; number: number; name: string }>;
   if (rounds.length === 0) return { roundLabels: [], players: [], maxPoints: 0 };
 
-  const players: Array<{ userId: string; firstName: string }> = [];
+  const players: Array<{ userId: string; displayName: string }> = [];
   for (const row of (membersRes.data ?? []) as Array<Record<string, unknown>>) {
     const p = (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles) as
-      | { id: string; first_name: string }
+      | { id: string; display_name: string }
       | undefined;
-    if (p) players.push({ userId: p.id, firstName: p.first_name });
+    if (p) players.push({ userId: p.id, displayName: p.display_name });
   }
   if (players.length === 0) return { roundLabels: [], players: [], maxPoints: 0 };
 

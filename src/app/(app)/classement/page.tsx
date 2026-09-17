@@ -274,7 +274,7 @@ export default async function ClassementPage({
         <StandingsGraph
           players={history.players.map((p) => ({
             userId: p.userId,
-            firstName: p.firstName,
+            displayName: p.displayName,
             color: "",
             positions: p.positions,
           }))}

@@ -47,11 +47,11 @@ export default async function QuestionsPage({
 
   const { data: profiles } = await admin
     .from("profiles")
-    .select("id, first_name")
+    .select("id, display_name")
     .eq("is_active", true);
   const namesById = new Map<string, string>();
-  for (const p of (profiles ?? []) as Array<{ id: string; first_name: string }>) {
-    namesById.set(p.id, p.first_name);
+  for (const p of (profiles ?? []) as Array<{ id: string; display_name: string }>) {
+    namesById.set(p.id, p.display_name);
   }
 
   const openViews = views.filter((v) => v && (v.question.status === "open"));

@@ -61,7 +61,7 @@ export function MatchBreakdown({
                     p.userId === viewerId ? "text-clay" : "text-ink",
                   )}
                 >
-                  {p.firstName}
+                  {p.name}
                 </span>{" "}
                 {p.label}
                 {p.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}

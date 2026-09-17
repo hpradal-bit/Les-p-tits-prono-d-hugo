@@ -9,12 +9,13 @@
  * écrits qu'à la clôture.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { assignPlayerColors, playerColor } from "@/lib/standings/player-colors";
 
 interface PlayerLine {
   userId: string;
-  firstName: string;
+  displayName: string;
   cumulative: (number | null)[];
 }
 
@@ -24,15 +25,6 @@ interface Props {
   maxPoints: number;
   viewerId: string | null;
 }
-
-const COLORS = [
-  "var(--color-clay)",
-  "var(--color-sage)",
-  "var(--color-winner)",
-  "var(--color-perfect)",
-  "#6366f1",
-  "#ec4899",
-];
 
 const PADDING = { top: 16, right: 18, bottom: 28, left: 30 };
 
@@ -46,6 +38,10 @@ export function gridStep(max: number): number {
 
 export function PointsGraph({ players, roundLabels, maxPoints, viewerId }: Props) {
   const [hovered, setHovered] = useState<string | null>(null);
+  const colors = useMemo(
+    () => assignPlayerColors(players.map((p) => p.userId)),
+    [players],
+  );
 
   if (roundLabels.length === 0 || players.length === 0) return null;
 
@@ -124,11 +120,13 @@ export function PointsGraph({ players, roundLabels, maxPoints, viewerId }: Props
             </text>
           ))}
 
-          {players.map((player, pi) => {
-            const isViewer = player.userId === viewerId;
-            const isActive = isViewer || hovered === player.userId;
-            const dimmed = hovered !== null && hovered !== player.userId && !isViewer;
-            const color = COLORS[pi % COLORS.length];
+          {players.map((player) => {
+            // Un prénom surligné n'allume que sa courbe : la mise en avant du
+            // joueur connecté cède le pas tant qu'il en survole un autre.
+            const isActive =
+              hovered === player.userId || (hovered === null && player.userId === viewerId);
+            const dimmed = hovered !== null && hovered !== player.userId;
+            const color = playerColor(colors, player.userId);
 
             return (
               <g
@@ -165,7 +163,7 @@ export function PointsGraph({ players, roundLabels, maxPoints, viewerId }: Props
       </div>
 
       <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
-        {players.map((player, pi) => {
+        {players.map((player) => {
           const last = [...player.cumulative].reverse().find((v) => v !== null);
           return (
             <button
@@ -181,9 +179,9 @@ export function PointsGraph({ players, roundLabels, maxPoints, viewerId }: Props
             >
               <span
                 className="inline-block size-2.5 rounded-full"
-                style={{ backgroundColor: COLORS[pi % COLORS.length] }}
+                style={{ backgroundColor: playerColor(colors, player.userId) }}
               />
-              {player.firstName}
+              <span className="max-w-[110px] truncate">{player.displayName}</span>
               {last !== undefined && last !== null && (
                 <span className="font-mono text-ink-faint">{last}</span>
               )}

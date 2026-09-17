@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { assignPlayerColors, playerColor } from "@/lib/standings/player-colors";
 
 interface PlayerLine {
   userId: string;
-  firstName: string;
+  /** Le surnom affiché dans la légende. */
+  displayName: string;
   color: string;
   positions: (number | null)[];
 }
@@ -16,19 +18,16 @@ interface Props {
   viewerId: string | null;
 }
 
-const COLORS = [
-  "var(--color-clay)",
-  "var(--color-sage)",
-  "var(--color-winner)",
-  "var(--color-perfect)",
-  "#6366f1",
-  "#ec4899",
-];
-
 const PADDING = { top: 20, right: 16, bottom: 28, left: 28 };
 
 export function StandingsGraph({ players, roundLabels, viewerId }: Props) {
   const [hoveredPlayer, setHoveredPlayer] = useState<string | null>(null);
+  // La même attribution que la courbe des points : un joueur, une couleur,
+  // d'un graphique à l'autre.
+  const colors = useMemo(
+    () => assignPlayerColors(players.map((p) => p.userId)),
+    [players],
+  );
 
   if (roundLabels.length < 2 || players.length === 0) return null;
 
@@ -109,12 +108,14 @@ export function StandingsGraph({ players, roundLabels, viewerId }: Props) {
           ))}
 
           {/* Player lines */}
-          {players.map((player, pi) => {
-            const isViewer = player.userId === viewerId;
-            const isHovered = hoveredPlayer === player.userId;
-            const isActive = isViewer || isHovered;
-            const dimmed = hoveredPlayer !== null && !isActive;
-            const color = player.color || COLORS[pi % COLORS.length];
+          {players.map((player) => {
+            // Surligner un prénom n'allume que sa ligne, y compris quand le
+            // joueur connecté est ailleurs sur le graphique.
+            const isActive =
+              hoveredPlayer === player.userId ||
+              (hoveredPlayer === null && player.userId === viewerId);
+            const dimmed = hoveredPlayer !== null && hoveredPlayer !== player.userId;
+            const color = player.color || playerColor(colors, player.userId);
 
             return (
               <g
@@ -152,8 +153,8 @@ export function StandingsGraph({ players, roundLabels, viewerId }: Props) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
-        {players.map((player, pi) => {
-          const color = player.color || COLORS[pi % COLORS.length];
+        {players.map((player) => {
+          const color = player.color || playerColor(colors, player.userId);
           const isViewer = player.userId === viewerId;
           return (
             <button
@@ -171,7 +172,7 @@ export function StandingsGraph({ players, roundLabels, viewerId }: Props) {
                 className="inline-block size-2.5 rounded-full"
                 style={{ backgroundColor: color }}
               />
-              {player.firstName}
+              <span className="max-w-[110px] truncate">{player.displayName}</span>
             </button>
           );
         })}

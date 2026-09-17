@@ -16,8 +16,8 @@ function power(id: string, name: string, max?: number): Power {
 }
 
 const PLAYERS = [
-  { userId: "a", firstName: "Anne" },
-  { userId: "b", firstName: "Bob" },
+  { userId: "a", displayName: "Anne" },
+  { userId: "b", displayName: "Bob" },
 ];
 
 test("compte les usages et ce qu'il reste", () => {
@@ -77,5 +77,5 @@ test("le plus gros consommateur apparaît en premier", () => {
     [power("spy", "Espion")],
     new Map([["b", new Map([["spy", 2]])]]),
   );
-  assert.deepEqual(rows.map((r) => r.firstName), ["Bob", "Anne"]);
+  assert.deepEqual(rows.map((r) => r.displayName), ["Bob", "Anne"]);
 });

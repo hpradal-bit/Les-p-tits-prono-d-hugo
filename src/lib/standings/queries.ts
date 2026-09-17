@@ -713,7 +713,8 @@ export async function loadMatchCenter(
 
 export interface StandingsHistoryPoint {
   userId: string;
-  firstName: string;
+  /** Le surnom du joueur, repli sur le prénom pour les vieux instantanés. */
+  displayName: string;
   positions: (number | null)[];
 }
 
@@ -736,7 +737,10 @@ export async function loadStandingsHistory(
 
   const snapshots = (data ?? []) as Array<{
     round_id: string;
-    standings: Array<{ position: number; player: { userId: string; firstName: string } }>;
+    standings: Array<{
+      position: number;
+      player: { userId: string; firstName: string; displayName?: string };
+    }>;
   }>;
 
   if (snapshots.length === 0) return { roundLabels: [], players: [] };
@@ -766,7 +770,9 @@ export async function loadStandingsHistory(
     for (const row of snap.standings) {
       allPlayerIds.add(row.player.userId);
       if (!playerNames.has(row.player.userId)) {
-        playerNames.set(row.player.userId, row.player.firstName);
+        // Le surnom d'abord : deux joueurs de la ligue s'appellent Hugo, et
+        // les instantanés d'avant ce choix ne portent que le prénom.
+        playerNames.set(row.player.userId, row.player.displayName || row.player.firstName);
       }
     }
   }
@@ -775,7 +781,7 @@ export async function loadStandingsHistory(
 
   const players: StandingsHistoryPoint[] = [...allPlayerIds].map((userId) => ({
     userId,
-    firstName: playerNames.get(userId) ?? "Joueur",
+    displayName: playerNames.get(userId) ?? "Joueur",
     positions: orderedRoundIds.map((roundId) => {
       const snap = snapshotByRound.get(roundId);
       const row = snap?.find((r) => r.player.userId === userId);

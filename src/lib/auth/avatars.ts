@@ -119,6 +119,45 @@ export type ResolvedAvatar =
  * d'affichable. Repli sur un emoji si la valeur ne correspond plus à rien
  * (club retiré de la base, fichier effacé…).
  */
+/**
+ * Les avatars de repli, sur le thème du rugby.
+ *
+ * Tout le monde démarre avec le même ballon : à six joueurs, six ballons
+ * identiques ne distinguent personne. Faute de choix explicite, chacun reçoit
+ * donc une figure stable, tirée de son identifiant — elle ne changera jamais
+ * d'un écran à l'autre ni d'une session à la suivante.
+ */
+export const RUGBY_FALLBACK_EMOJIS = [
+  "🏉", "🥇", "🐐", "🦁", "🍺", "⚡", "🛡️", "🎩", "🐓", "🦅", "🧨", "🎯",
+] as const;
+
+/**
+ * Un petit hachage stable (FNV-1a tronqué) : même entrée, même sortie, sur le
+ * serveur comme dans le navigateur. `Math.random` et l'index de liste sont
+ * exclus — l'avatar ne doit pas sauter d'un rendu à l'autre.
+ */
+export function defaultEmojiFor(userId: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < userId.length; i++) {
+    hash ^= userId.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const index = Math.abs(hash) % RUGBY_FALLBACK_EMOJIS.length;
+  return RUGBY_FALLBACK_EMOJIS[index];
+}
+
+/**
+ * L'emoji réellement affiché pour un joueur.
+ *
+ * Un joueur qui a choisi son emoji le garde. Celui qui n'a jamais touché au
+ * sien — il porte encore le ballon par défaut — reçoit sa figure attribuée,
+ * pour qu'on distingue enfin les avatars les uns des autres.
+ */
+export function displayEmoji(userId: string, stored: string): string {
+  if (!stored || stored === FALLBACK_DEFAULT_EMOJI) return defaultEmojiFor(userId);
+  return stored;
+}
+
 export function resolveAvatar(
   kind: string,
   value: string,

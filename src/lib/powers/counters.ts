@@ -24,14 +24,15 @@ export interface CounterCell {
 
 export interface CounterRow {
   userId: string;
-  firstName: string;
+  /** Le surnom : c'est lui qui distingue les joueurs, pas le prénom. */
+  displayName: string;
   cells: CounterCell[];
   totalUsed: number;
   totalRemaining: number;
 }
 
 export function buildPowerCounters(
-  players: Array<{ userId: string; firstName: string }>,
+  players: Array<{ userId: string; displayName: string }>,
   powers: Power[],
   usageByPlayer: Map<string, Map<string, number>>,
   fallbackMax = FALLBACK_MAX_USES,
@@ -60,11 +61,11 @@ export function buildPowerCounters(
       });
       return {
         userId: player.userId,
-        firstName: player.firstName,
+        displayName: player.displayName,
         cells,
         totalUsed: cells.reduce((sum, c) => sum + c.used, 0),
         totalRemaining: cells.reduce((sum, c) => sum + c.remaining, 0),
       };
     })
-    .sort((a, b) => b.totalUsed - a.totalUsed || a.firstName.localeCompare(b.firstName, "fr"));
+    .sort((a, b) => b.totalUsed - a.totalUsed || a.displayName.localeCompare(b.displayName, "fr"));
 }

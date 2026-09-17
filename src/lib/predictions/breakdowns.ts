@@ -41,7 +41,8 @@ export interface RawPowerUse {
 
 export interface BreakdownPlayer {
   userId: string;
-  firstName: string;
+  /** Le surnom, tel qu'il s'affiche au classement. */
+  name: string;
   /** « Toulouse · 24–20 » ou « Nul », déjà mis en forme. */
   label: string;
   points: number | null;
@@ -103,7 +104,7 @@ export function buildFixtureBreakdown(
     .filter((p) => p.fixtureId === fixtureId)
     .map((p) => ({
       userId: p.userId,
-      firstName: names.get(p.userId) ?? "Joueur",
+      name: names.get(p.userId) ?? "Joueur",
       label: predictionLabel(p, teams, bucketLabels),
       points: p.points,
       level: p.level,
@@ -113,7 +114,7 @@ export function buildFixtureBreakdown(
     // pronostic pas encore noté (`null`) reste en bas, il n'a rien rapporté.
     .sort(
       (a, b) =>
-        (b.points ?? -1) - (a.points ?? -1) || a.firstName.localeCompare(b.firstName, "fr"),
+        (b.points ?? -1) - (a.points ?? -1) || a.name.localeCompare(b.name, "fr"),
     );
 
   const powers: BreakdownPower[] = powerUses

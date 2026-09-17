@@ -53,14 +53,14 @@ export default async function AdminPowersPage({
   // avant de rehausser un plafond.
   const { data: memberRows } = await admin
     .from("league_members")
-    .select("profiles!inner(id, first_name)")
+    .select("profiles!inner(id, display_name)")
     .eq("league_id", leagueId);
-  const members: Array<{ userId: string; firstName: string }> = [];
+  const members: Array<{ userId: string; displayName: string }> = [];
   for (const row of (memberRows ?? []) as Array<Record<string, unknown>>) {
     const profile = (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles) as
-      | { id: string; first_name: string }
+      | { id: string; display_name: string }
       | undefined;
-    if (profile) members.push({ userId: profile.id, firstName: profile.first_name });
+    if (profile) members.push({ userId: profile.id, displayName: profile.display_name });
   }
   const usage = await loadSeasonUsageByPlayer(admin, seasonId);
   const counters = buildPowerCounters(members, powers, usage, fallbackMax);
@@ -101,7 +101,7 @@ export default async function AdminPowersPage({
             counters.map((row) => (
               <div key={row.userId} className="flex flex-wrap items-center gap-2">
                 <span className="min-w-[90px] text-[13px] font-semibold text-ink">
-                  {row.firstName}
+                  {row.displayName}
                 </span>
                 {row.cells.map((cell) => (
                   <span

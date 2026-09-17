@@ -7,8 +7,8 @@ function round(number: number, label: string, points: Record<string, number>): R
 }
 
 const PLAYERS = [
-  { userId: "a", firstName: "Anne" },
-  { userId: "b", firstName: "Bob" },
+  { userId: "a", displayName: "Anne" },
+  { userId: "b", displayName: "Bob" },
 ];
 
 test("cumule les points journée après journée", () => {
@@ -57,7 +57,7 @@ test("les points négatifs (sabotage) font redescendre la courbe", () => {
 
 test("la légende se lit comme le classement : le meilleur en premier", () => {
   const history = accumulate([round(1, "J1", { a: 3, b: 9 })], PLAYERS);
-  assert.deepEqual(history.players.map((p) => p.firstName), ["Bob", "Anne"]);
+  assert.deepEqual(history.players.map((p) => p.displayName), ["Bob", "Anne"]);
 });
 
 test("sans journée jouée, le graphique n'a rien à tracer", () => {

@@ -11,7 +11,7 @@
 
 import Image from "next/image";
 import { cn } from "@/lib/cn";
-import { resolveAvatar, type ClubAvatar } from "@/lib/auth/avatars";
+import { displayEmoji, resolveAvatar, type ClubAvatar } from "@/lib/auth/avatars";
 import type { PlayerRef } from "@/lib/standings/engine";
 
 export function PlayerAvatar({
@@ -31,12 +31,20 @@ export function PlayerAvatar({
     className,
   );
 
-  const avatar = resolveAvatar(player.avatarKind, player.avatarValue, clubs);
+  // Un joueur qui n'a jamais choisi son emoji reçoit une figure attribuée :
+  // six ballons identiques ne distinguent personne (cf. `displayEmoji`).
+  const avatar = resolveAvatar(
+    player.avatarKind,
+    player.avatarKind === "emoji"
+      ? displayEmoji(player.userId, player.avatarValue)
+      : player.avatarValue,
+    clubs,
+  );
 
   if (avatar.type === "image") {
     // Une photo perso mérite un texte alternatif nominatif plutôt que le
     // générique renvoyé par `resolveAvatar` (qui n'a pas le prénom sous la main).
-    const alt = player.avatarKind === "photo" ? player.firstName : avatar.alt;
+    const alt = player.avatarKind === "photo" ? player.displayName : avatar.alt;
     return (
       <Image
         src={avatar.src}

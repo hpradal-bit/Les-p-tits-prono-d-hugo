@@ -32,7 +32,7 @@ function Step({ row, rank, clubs }: { row: StandingsRow; rank: number; clubs: re
         "max-w-full truncate text-center font-semibold text-surface",
         isFirst ? "text-[13px] font-bold" : "text-[12px]",
       )}>
-        {row.player.firstName}
+        {row.player.displayName}
       </p>
       <div
         className={cn(
