@@ -305,3 +305,31 @@ export async function loadUsageCounts(
   }
   return counts;
 }
+
+/**
+ * Le même décompte, mais pour tous les joueurs d'un coup — la matière des
+ * compteurs affichés au bas du classement. Une seule requête : à six joueurs
+ * et cinq pouvoirs, filtrer par joueur n'apporterait rien.
+ */
+export async function loadSeasonUsageByPlayer(
+  sb: SupabaseClient,
+  seasonId: string,
+): Promise<Map<string, Map<string, number>>> {
+  const { data, error } = await sb
+    .from("power_usages")
+    .select("power_id, initiator_id, rounds!inner(season_id)")
+    .eq("rounds.season_id", seasonId)
+    .in("state", [...CONSUMING_STATES]);
+  if (error) throw error;
+
+  const byPlayer = new Map<string, Map<string, number>>();
+  for (const row of (data ?? []) as Array<{ power_id: string; initiator_id: string }>) {
+    let counts = byPlayer.get(row.initiator_id);
+    if (!counts) {
+      counts = new Map<string, number>();
+      byPlayer.set(row.initiator_id, counts);
+    }
+    counts.set(row.power_id, (counts.get(row.power_id) ?? 0) + 1);
+  }
+  return byPlayer;
+}

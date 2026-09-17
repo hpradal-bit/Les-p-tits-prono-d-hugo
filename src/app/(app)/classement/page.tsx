@@ -28,9 +28,16 @@ import {
   loadStandingsHistory,
   type RoundFixture,
 } from "@/lib/standings/queries";
+import { loadPointsHistory } from "@/lib/standings/points-history";
+import { loadActivePowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries.ts";
+import { buildPowerCounters } from "@/lib/powers/counters.ts";
+import { FALLBACK_MAX_USES } from "@/lib/powers/quota.ts";
+import { loadSettings, setting } from "@/lib/settings";
 import { Podium } from "./_components/podium";
 import { StandingsList } from "./_components/standings-list";
 import { StandingsGraph } from "./_components/standings-graph";
+import { PointsGraph } from "./_components/points-graph";
+import { PowerCounters } from "./_components/power-counters";
 import { RoundFixtures } from "./_components/round-fixtures";
 import { Segmented, RoundPicker } from "./_components/controls";
 import { LeagueSelect } from "./_components/league-select";
@@ -116,10 +123,14 @@ export default async function ClassementPage({
   const effectiveVue: View = isTop14 && query.vue === "forme" ? "general" : query.vue;
   const effectivePortee: Reach = isTop14 ? "live" : query.portee;
 
-  const [data, history, clubs] = await Promise.all([
+  const [data, history, clubs, pointsHistory, powers, powerUsage, settings] = await Promise.all([
     loadStandingsData(sb, season, leagueId),
     loadStandingsHistory(sb, season.id),
     loadClubAvatars(sb),
+    loadPointsHistory(sb, season.id, leagueId),
+    loadActivePowers(sb),
+    loadSeasonUsageByPlayer(sb, season.id),
+    loadSettings(sb),
   ]);
   const scope = SCOPE_OF[effectivePortee];
   const kind = KIND_OF[effectiveVue];
@@ -167,6 +178,13 @@ export default async function ClassementPage({
     label: l.leagueName,
     href: buildHref({ vue: effectiveVue, portee: effectivePortee, journee: null, league: l.leagueId }),
   }));
+
+  const powerCounters = buildPowerCounters(
+    data.players,
+    powers,
+    powerUsage,
+    setting<number>(settings, "powers.max_uses_per_player", FALLBACK_MAX_USES),
+  );
 
   // Les matchs de la journée affichée : la porte d'entrée du Match Center.
   let fixtures: RoundFixture[] = [];
@@ -264,6 +282,19 @@ export default async function ClassementPage({
           viewerId={viewer.id}
         />
       )}
+
+      {/* L'évolution des points, elle, se lit dès la première journée jouée :
+          elle ne dépend pas des instantanés de fin de journée. */}
+      {effectiveVue === "general" && (
+        <PointsGraph
+          players={pointsHistory.players}
+          roundLabels={pointsHistory.roundLabels}
+          maxPoints={pointsHistory.maxPoints}
+          viewerId={viewer.id}
+        />
+      )}
+
+      {effectiveVue === "general" && <PowerCounters rows={powerCounters} viewerId={viewer.id} />}
 
       {fixtures.length > 0 && (
         <section className="flex flex-col gap-2">
