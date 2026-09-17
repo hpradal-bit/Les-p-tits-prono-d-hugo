@@ -14,21 +14,37 @@ import { loadLastDebrief } from "@/lib/feed/debrief";
 import { ReactionBar } from "./_components/reaction-bar";
 import { PostForm } from "./_components/post-form";
 import { RoundDebrief } from "./_components/round-debrief";
+import { PowerHistoryView } from "./_components/power-history";
+import { loadPowerHistory } from "@/lib/powers/history";
 
 export const metadata: Metadata = { title: "Zone de chambrage" };
 export const dynamic = "force-dynamic";
 
+/**
+ * Trois onglets, pas quatre filtres : « Discussion » est le fil classique où
+ * l'on s'écrit, « Super-pouvoirs » est un écran à part entière, rangé par
+ * journée et filtrable par joueur. « Tout » garde le mélange d'origine.
+ */
+const TABS = ["tout", "discussion", "pouvoirs"] as const;
+type Tab = (typeof TABS)[number];
+
 const FilterSchema = z.object({
-  filtre: z.enum(["tout", "jeu", "pouvoirs", "messages"]).catch("tout"),
+  filtre: z.enum(TABS).catch("tout"),
+  joueur: z.string().uuid().optional(),
   league: z.string().uuid().optional(),
 });
 
-const FILTER_LABELS: { value: FeedFilter; label: string }[] = [
+const TAB_LABELS: { value: Tab; label: string }[] = [
   { value: "tout", label: "Tout" },
-  { value: "jeu", label: "Jeu" },
-  { value: "pouvoirs", label: "Pouvoirs" },
-  { value: "messages", label: "Messages" },
+  { value: "discussion", label: "Discussion" },
+  { value: "pouvoirs", label: "Super-pouvoirs" },
 ];
+
+/** L'onglet Discussion s'appuie sur le filtre « messages » déjà en place. */
+const FEED_FILTER: Record<Exclude<Tab, "pouvoirs">, FeedFilter> = {
+  tout: "tout",
+  discussion: "messages",
+};
 
 const TONE: Record<string, string> = {
   neutral: "border-line",
@@ -50,22 +66,25 @@ function ago(iso: string) {
 export default async function VestiairePage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtre?: string; league?: string }>;
+  searchParams: Promise<{ filtre?: string; joueur?: string; league?: string }>;
 }) {
   const viewer = await getViewer();
   if (!viewer) redirect("/connexion");
 
   const sb = await createClient();
-  const { filtre, league: requested } = FilterSchema.parse(await searchParams);
+  const { filtre, joueur, league: requested } = FilterSchema.parse(await searchParams);
   const resolved = await resolveLeagueId(sb, viewer.id, requested);
   if (!resolved) redirect("/accueil");
   const { leagueId, leagues: myLeagues } = resolved;
 
-  const [items, choices, debrief, clubs] = await Promise.all([
-    loadFeed(leagueId, filtre),
+  const showPowers = filtre === "pouvoirs";
+
+  const [items, choices, debrief, clubs, powerHistory] = await Promise.all([
+    showPowers ? Promise.resolve([]) : loadFeed(leagueId, FEED_FILTER[filtre]),
     loadReactionChoices(),
     loadLastDebrief(leagueId),
     loadClubAvatars(sb),
+    showPowers ? loadPowerHistory(sb, leagueId, { playerId: joueur ?? null }) : Promise.resolve(null),
   ]);
 
   const withLeague = (href: string) =>
@@ -91,22 +110,40 @@ export default async function VestiairePage({
         current={leagueId}
       />
 
-      <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4">
-        {FILTER_LABELS.map((f) => (
+      {/* Les onglets : une barre soulignée, pas des pastilles — c'est une
+          navigation entre trois écrans, pas un filtre parmi d'autres. */}
+      <nav className="scrollbar-none -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4">
+        {TAB_LABELS.map((t) => (
           <Link
-            key={f.value}
-            href={withLeague(f.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${f.value}`)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
-              filtre === f.value
-                ? "bg-clay text-surface"
-                : "border border-line bg-surface text-ink-muted hover:bg-surface-sunk"
+            key={t.value}
+            href={withLeague(t.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${t.value}`)}
+            aria-current={filtre === t.value ? "page" : undefined}
+            className={`shrink-0 border-b-2 px-3 pb-2.5 pt-1 text-[13.5px] font-semibold transition ${
+              filtre === t.value
+                ? "border-b-clay text-clay"
+                : "border-b-transparent text-ink-muted hover:text-ink"
             }`}
           >
-            {f.label}
+            {t.label}
           </Link>
         ))}
-      </div>
+      </nav>
 
+      {showPowers && powerHistory ? (
+        <PowerHistoryView
+          history={powerHistory}
+          selectedPlayer={joueur ?? null}
+          clubs={clubs}
+          hrefFor={(playerId) =>
+            withLeague(
+              playerId
+                ? `/vestiaire?filtre=pouvoirs&joueur=${playerId}`
+                : "/vestiaire?filtre=pouvoirs",
+            )
+          }
+        />
+      ) : (
+        <>
       <RoundDebrief data={debrief} />
 
       <Card className="p-4">
@@ -117,12 +154,12 @@ export default async function VestiairePage({
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <span className="text-3xl" aria-hidden>🏉</span>
           <p className="font-display text-[17px] text-ink">
-            La zone de chambrage est encore vide
+            {filtre === "discussion" ? "Personne n'a encore parlé" : "La zone de chambrage est encore vide"}
           </p>
           <p className="max-w-[36ch] text-[14px] text-ink-muted">
-            Il se remplira tout seul dès la première journée : scores exacts,
-            dépassements au classement, séries noires. En attendant, rien
-            n&apos;empêche de lancer les hostilités.
+            {filtre === "discussion"
+              ? "À toi de lancer les hostilités."
+              : "Elle se remplira toute seule au fil des journées : scores exacts, dépassements au classement, séries noires."}
           </p>
         </Card>
       ) : (
@@ -162,6 +199,8 @@ export default async function VestiairePage({
             </li>
           ))}
         </ul>
+      )}
+        </>
       )}
     </div>
   );
