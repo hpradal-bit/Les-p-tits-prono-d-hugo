@@ -37,29 +37,6 @@ export async function loadAllPowers(sb: SupabaseClient): Promise<Power[]> {
   }));
 }
 
-export async function loadUserTokens(
-  sb: SupabaseClient,
-  userId: string,
-  seasonId: string,
-): Promise<Token[]> {
-  const { data, error } = await sb
-    .from("tokens")
-    .select("id, user_id, season_id, period, status, granted_at, used_at")
-    .eq("user_id", userId)
-    .eq("season_id", seasonId)
-    .order("granted_at");
-  if (error) throw error;
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-    id: r.id as string,
-    userId: r.user_id as string,
-    seasonId: r.season_id as string,
-    period: r.period as Token["period"],
-    status: r.status as Token["status"],
-    grantedAt: r.granted_at as string,
-    usedAt: (r.used_at as string) ?? null,
-  }));
-}
-
 export async function loadRoundUsages(
   sb: SupabaseClient,
   roundId: string,

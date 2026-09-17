@@ -145,9 +145,9 @@ export function PowerHistoryView({
                             {Math.abs(e.delta)}
                           </span>
                         )}
-                        {e.creditCost !== null && (
+                        {e.usageLabel && (
                           <span className="font-mono text-[10px] text-ink-faint">
-                            {e.creditCost} cr.
+                            {e.usageLabel}
                           </span>
                         )}
                       </div>

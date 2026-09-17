@@ -8,10 +8,11 @@ import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason } from "@/lib/standings/queries";
-import { loadAllPowers } from "@/lib/powers/queries";
+import { loadAllPowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries";
 import { maxUses, FALLBACK_MAX_USES } from "@/lib/powers/quota";
 import { loadSettings, setting } from "@/lib/settings";
-import { PowerPanel, TokenGrantForm } from "./_components/power-panel";
+import { PowerPanel } from "./_components/power-panel";
+import { buildPowerCounters } from "@/lib/powers/counters.ts";
 
 export const metadata: Metadata = { title: "Pouvoirs — Admin" };
 export const dynamic = "force-dynamic";
@@ -48,15 +49,21 @@ export default async function AdminPowersPage({
     FALLBACK_MAX_USES,
   );
 
-  const { data: tokenRows } = await admin
-    .from("tokens")
-    .select("status, user_id")
-    .eq("season_id", seasonId);
-
-  const tokens = (tokenRows ?? []) as Array<{ status: string; user_id: string }>;
-  const available = tokens.filter((t) => t.status === "available").length;
-  const used = tokens.filter((t) => t.status === "used").length;
-  const uniquePlayers = new Set(tokens.map((t) => t.user_id)).size;
+  // L'etat reel des quotas, joueur par joueur : ce que l'admin doit voir
+  // avant de rehausser un plafond.
+  const { data: memberRows } = await admin
+    .from("league_members")
+    .select("profiles!inner(id, first_name)")
+    .eq("league_id", leagueId);
+  const members: Array<{ userId: string; firstName: string }> = [];
+  for (const row of (memberRows ?? []) as Array<Record<string, unknown>>) {
+    const profile = (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles) as
+      | { id: string; first_name: string }
+      | undefined;
+    if (profile) members.push({ userId: profile.id, firstName: profile.first_name });
+  }
+  const usage = await loadSeasonUsageByPlayer(admin, seasonId);
+  const counters = buildPowerCounters(members, powers, usage, fallbackMax);
 
   return (
     <div className="flex flex-col gap-6">
@@ -86,20 +93,32 @@ export default async function AdminPowersPage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <Label>Tokens</Label>
-        <Card className="p-4">
-          <div className="mb-3 flex flex-wrap gap-3 text-[13px]">
-            <span className="rounded-full bg-winner-soft px-3 py-1 font-semibold text-winner">
-              {available} disponible{available > 1 ? "s" : ""}
-            </span>
-            <span className="rounded-full bg-clay-soft px-3 py-1 font-semibold text-clay">
-              {used} utilise{used > 1 ? "s" : ""}
-            </span>
-            <span className="rounded-full bg-sage-soft px-3 py-1 font-semibold text-sage">
-              {uniquePlayers} joueur{uniquePlayers > 1 ? "s" : ""}
-            </span>
-          </div>
-          <TokenGrantForm leagueId={leagueId} />
+        <Label>Quotas consommes</Label>
+        <Card className="flex flex-col gap-2 p-4">
+          {counters.length === 0 ? (
+            <p className="text-[13px] text-ink-muted">Aucun joueur dans cette ligue.</p>
+          ) : (
+            counters.map((row) => (
+              <div key={row.userId} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-[90px] text-[13px] font-semibold text-ink">
+                  {row.firstName}
+                </span>
+                {row.cells.map((cell) => (
+                  <span
+                    key={cell.powerId}
+                    title={cell.name}
+                    className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold ${
+                      cell.exhausted
+                        ? "bg-surface-sunk text-ink-faint"
+                        : "bg-clay-soft text-clay"
+                    }`}
+                  >
+                    {cell.emoji} {cell.used}/{cell.max}
+                  </span>
+                ))}
+              </div>
+            ))
+          )}
         </Card>
       </section>
     </div>

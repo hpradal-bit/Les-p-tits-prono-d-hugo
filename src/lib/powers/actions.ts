@@ -248,65 +248,6 @@ export async function resolveRoundPowers(
   };
 }
 
-export async function grantTokens(
-  input: unknown,
-): Promise<AdminActionState> {
-  const schema = z.object({
-    leagueId: z.string().uuid(),
-    period: z.enum(["first_half", "second_half", "full_season"]),
-    count: z.number().int().min(1).max(50),
-  });
-
-  const ctx = await requireAdmin();
-  const parsed = schema.safeParse(input);
-  if (!parsed.success) return { status: "error", message: "Données invalides." };
-
-  const admin = createAdminClient();
-  const season = await loadActiveSeason(admin, parsed.data.leagueId);
-  if (!season) return { status: "error", message: "Aucune saison pour cette ligue." };
-  const seasonId = season.id;
-
-  // Les membres de LA ligue concernée, pas tout le groupe : des crédits
-  // distribués sur la Pro D2 ne doivent pas atterrir chez un joueur qui n'y
-  // a jamais mis les pieds.
-  const { data: members } = await admin
-    .from("league_members")
-    .select("user_id")
-    .eq("league_id", parsed.data.leagueId);
-
-  const rows = [];
-  for (const m of (members ?? []) as Array<{ user_id: string }>) {
-    for (let i = 0; i < parsed.data.count; i++) {
-      rows.push({
-        user_id: m.user_id,
-        season_id: seasonId,
-        period: parsed.data.period,
-        status: "available",
-      });
-    }
-  }
-
-  const { error } = await admin.from("tokens").insert(rows);
-  if (error) return { status: "error", message: error.message };
-
-  const memberCount = (members ?? []).length;
-
-  await logAdminAction(admin, {
-    adminId: ctx.userId,
-    action: "points.adjusted",
-    entityType: "season",
-    entityId: seasonId,
-    reason: `${parsed.data.count} token(s) ${parsed.data.period} distribués à ${memberCount} joueur(s)`,
-  });
-
-  revalidatePath("/admin/pouvoirs");
-  revalidatePath("/journee");
-  return {
-    status: "success",
-    message: `${parsed.data.count * memberCount} token(s) distribués à ${memberCount} joueur(s).`,
-  };
-}
-
 /**
  * Régler le nombre d'utilisations d'un pouvoir, depuis l'admin.
  *

@@ -4,7 +4,7 @@ import { spy } from "./kinds/spy.ts";
 import { mirror } from "./kinds/mirror.ts";
 import { sabotage } from "./kinds/sabotage.ts";
 import { getPower } from "./registry.ts";
-import { creditCost, powerEffect, powerRules, FALLBACK_CREDIT_COST } from "./credits.ts";
+import { powerEffect, powerRules } from "./credits.ts";
 import type { Power, PowerUsage, ResolveContext } from "./types.ts";
 
 function makePower(code: string, config: Record<string, unknown> = {}): Power {
@@ -198,28 +198,11 @@ describe("sabotage", () => {
   });
 });
 
-describe("coût en crédits", () => {
-  it("lit le coût depuis la config", () => {
-    assert.equal(creditCost(makePower("joker", { credit_cost: 5 })), 5);
-  });
-
-  it("retombe sur le défaut quand la config n'en déclare pas", () => {
-    assert.equal(creditCost(makePower("joker")), FALLBACK_CREDIT_COST);
-    assert.equal(creditCost(makePower("joker"), 7), 7);
-  });
-
-  it("ignore une valeur aberrante plutôt que de rendre un pouvoir gratuit", () => {
-    assert.equal(creditCost(makePower("joker", { credit_cost: -2 }), 4), 4);
-    assert.equal(creditCost(makePower("joker", { credit_cost: "cinq" }), 4), 4);
-  });
-
-  it("accepte un pouvoir gratuit déclaré explicitement", () => {
-    assert.equal(creditCost(makePower("joker", { credit_cost: 0 })), 0);
-  });
-
+describe("texte de présentation", () => {
   it("renvoie null pour un effet ou des règles absents", () => {
     assert.equal(powerEffect(makePower("joker")), null);
     assert.equal(powerRules(makePower("joker")), null);
     assert.equal(powerEffect(makePower("joker", { effect: "Double." })), "Double.");
   });
 });
+

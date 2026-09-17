@@ -28,7 +28,8 @@ export interface PowerHistoryEntry {
   verdict: PowerVerdict;
   detail: string;
   delta: number | null;
-  creditCost: number | null;
+  /** « 2e sur 3 » : le rang de cette utilisation dans le quota du joueur. */
+  usageLabel: string | null;
   createdAt: string;
 }
 
@@ -178,7 +179,14 @@ export async function loadPowerHistory(
 
     const initiator = profiles.get(row.initiator_id);
     const fixtureId = (row.snapshot_before?.fixtureId ?? null) as string | null;
-    const cost = row.snapshot_before?.creditCost;
+    // Les utilisations d'avant les quotas portaient un coût en crédits ; les
+    // nouvelles portent leur rang. On n'affiche que ce qui a encore un sens.
+    const useIndex = row.snapshot_before?.useIndex;
+    const maxUses = row.snapshot_before?.maxUses;
+    const usageLabel =
+      typeof useIndex === "number" && typeof maxUses === "number"
+        ? `${useIndex} sur ${maxUses}`
+        : null;
 
     const entry: PowerHistoryEntry = {
       id: row.id,
@@ -194,7 +202,7 @@ export async function loadPowerHistory(
       verdict,
       detail,
       delta,
-      creditCost: typeof cost === "number" ? cost : null,
+      usageLabel,
       createdAt: row.created_at,
     };
 

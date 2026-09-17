@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
-import { togglePower, grantTokens, setPowerMaxUses } from "@/lib/powers/actions";
+import { togglePower, setPowerMaxUses } from "@/lib/powers/actions";
 
 interface PowerRow {
   id: string;
@@ -88,55 +88,5 @@ export function PowerPanel({ powers }: { powers: PowerRow[] }) {
       ))}
       {msg && <p className="text-[12px] font-semibold text-ink-muted">{msg}</p>}
     </div>
-  );
-}
-
-export function TokenGrantForm({ leagueId }: { leagueId: string }) {
-  const [period, setPeriod] = useState<string>("full_season");
-  const [count, setCount] = useState(2);
-  const [pending, setPending] = useState(false);
-  const [msg, setMsg] = useState("");
-
-  async function handleGrant(e: React.FormEvent) {
-    e.preventDefault();
-    setPending(true);
-    setMsg("");
-    const result = await grantTokens({ leagueId, period, count });
-    setPending(false);
-    setMsg(result.message ?? "");
-  }
-
-  return (
-    <form onSubmit={handleGrant} className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-semibold text-ink-muted">Periode</label>
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
-          >
-            <option value="full_season">Saison entiere</option>
-            <option value="first_half">1ere moitie</option>
-            <option value="second_half">2e moitie</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-semibold text-ink-muted">Crédits par joueur</label>
-          <input
-            type="number"
-            value={count}
-            onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}
-            min={1}
-            max={50}
-            className="w-20 rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-ink"
-          />
-        </div>
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? "…" : "Distribuer"}
-        </Button>
-      </div>
-      {msg && <p className="text-[12px] font-semibold text-ink-muted">{msg}</p>}
-    </form>
   );
 }
