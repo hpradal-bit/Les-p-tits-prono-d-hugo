@@ -8,11 +8,13 @@ import {
   answersArePublic,
   type BonusQuestionView,
 } from "@/lib/bonus/types";
+import { BonusAnswers } from "@/components/bonus-answers";
 import { AnswerForm } from "./answer-form";
 
 interface Props {
   view: BonusQuestionView;
   namesById: Map<string, string>;
+  viewerId: string | null;
 }
 
 function DeadlineCountdown({ closesAt }: { closesAt: string }) {
@@ -44,13 +46,7 @@ function DeadlineCountdown({ closesAt }: { closesAt: string }) {
   );
 }
 
-const OUTCOME_STYLE = {
-  correct: "text-winner",
-  partial: "text-clay",
-  wrong: "text-wrong",
-};
-
-export function QuestionCard({ view, namesById }: Props) {
+export function QuestionCard({ view, namesById, viewerId }: Props) {
   const { question, myAnswer, answers, scores, result } = view;
   const kd = getKind(question.kind);
   const canAnswer = isAnswerable(question);
@@ -82,30 +78,20 @@ export function QuestionCard({ view, namesById }: Props) {
         ) : null}
 
         {showAnswers && kd && (
-          <div className="mt-3 flex flex-col gap-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Réponses
-            </p>
-            {answers.map((a) => {
-              const name = namesById.get(a.userId) ?? "?";
-              const score = scores.find((s) => s.userId === a.userId);
-              return (
-                <div key={a.userId} className="flex items-center justify-between py-1">
-                  <span className="text-[14px] text-ink">
-                    {name} — {kd.formatAnswer(a.answer, question.config)}
-                  </span>
-                  {score && (
-                    <span className={`text-[13px] font-bold ${OUTCOME_STYLE[score.breakdown.outcome] ?? ""}`}>
-                      {score.points > 0 ? `+${score.points}` : score.points}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+          <div className="mt-3">
+            <BonusAnswers
+              kind={question.kind}
+              config={question.config}
+              answers={answers}
+              scores={scores}
+              result={result}
+              namesById={Object.fromEntries(namesById)}
+              viewerId={viewerId}
+            />
           </div>
         )}
 
-        {result && kd && (
+        {result && kd && !showAnswers && (
           <div className="mt-3 rounded-lg bg-perfect-soft px-3 py-2">
             <p className="text-[13px] font-semibold text-perfect">
               Bonne réponse : {kd.formatCorrect(result.correctAnswer, question.config)}

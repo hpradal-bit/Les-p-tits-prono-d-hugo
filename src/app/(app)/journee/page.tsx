@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadClubAvatars } from "@/lib/auth/avatar-policy";
-import { listOpenQuestionsWithAnswer } from "@/lib/bonus/queries";
+import { listOpenQuestionsWithAnswer, listRevealedQuestions } from "@/lib/bonus/queries";
 import {
   loadActivePowers,
   loadUsageCounts,
@@ -92,9 +92,18 @@ export default async function JourneePage({
   const seasonId = board.seasonId;
   const currentRoundId = board.round.id;
 
-  const [allBonusItems, activePowers, roundUsages, standingsData, appSettings, powerAdjustments] =
+  const [
+    allBonusItems,
+    revealedQuestions,
+    activePowers,
+    roundUsages,
+    standingsData,
+    appSettings,
+    powerAdjustments,
+  ] =
     await Promise.all([
       listOpenQuestionsWithAnswer(admin, seasonId, viewer.id),
+      listRevealedQuestions(admin, seasonId, viewer.id, { roundId: currentRoundId }),
       loadActivePowers(admin),
       loadRoundUsages(admin, currentRoundId),
       // Les membres de CETTE ligue, pas tous les profils actifs de l'appli
@@ -124,6 +133,10 @@ export default async function JourneePage({
   // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
   const standingsRows = computeStandings(standingsData, { kind: "overall", scope: "live" }).rows;
   const displayNameById = new Map(standingsRows.map((r) => [r.player.userId, r.player.displayName]));
+  // Les prénoms de la ligue, pour les réponses bonus révélées.
+  const namesById = Object.fromEntries(
+    standingsData.players.map((p) => [p.userId, p.firstName]),
+  );
   const fallbackMax = setting<number>(
     appSettings,
     "powers.max_uses_per_player",
@@ -307,7 +320,13 @@ export default async function JourneePage({
 
       {vapidKey && <NotificationPrompt vapidPublicKey={vapidKey} />}
 
-      <BonusBanner items={bonusItems} leagueId={board.leagueId} />
+      <BonusBanner
+        items={bonusItems}
+        revealed={revealedQuestions}
+        namesById={namesById}
+        viewerId={viewer.id}
+        leagueId={board.leagueId}
+      />
 
       <PowerBanner
         powers={powerOptions}

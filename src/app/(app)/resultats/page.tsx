@@ -119,7 +119,7 @@ export default async function ResultatsPage({
         <section className="flex flex-col gap-2.5">
           <Label>Questions bonus de la saison</Label>
           {bonusSeasonWide.map((v) => (
-            <QuestionCard key={v.question.id} view={v} namesById={namesById} />
+            <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} />
           ))}
         </section>
       )}
@@ -148,7 +148,7 @@ export default async function ResultatsPage({
                 ))}
               </ul>
               {bonus.map((v) => (
-                <QuestionCard key={v.question.id} view={v} namesById={namesById} />
+                <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} />
               ))}
             </section>
           ))}

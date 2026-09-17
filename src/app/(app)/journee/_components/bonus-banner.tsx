@@ -6,7 +6,8 @@ import { Button } from "@/components/ui";
 import { answerBonusQuestion } from "@/lib/bonus/actions";
 import { getKind } from "@/lib/bonus/registry";
 import { isAnswerable } from "@/lib/bonus/types";
-import type { BonusQuestion, BonusAnswerRow } from "@/lib/bonus/types";
+import { BonusAnswers } from "@/components/bonus-answers";
+import type { BonusQuestion, BonusAnswerRow, BonusQuestionView } from "@/lib/bonus/types";
 
 interface BonusItem {
   question: BonusQuestion;
@@ -214,8 +215,21 @@ function MiniAnswerForm({ item }: { item: BonusItem }) {
   );
 }
 
-export function BonusBanner({ items, leagueId }: { items: BonusItem[]; leagueId: string }) {
-  if (items.length === 0) return null;
+export function BonusBanner({
+  items,
+  revealed = [],
+  namesById = {},
+  viewerId = null,
+  leagueId,
+}: {
+  items: BonusItem[];
+  /** Les questions terminées de la journée : repliées, cliquables. */
+  revealed?: BonusQuestionView[];
+  namesById?: Record<string, string>;
+  viewerId?: string | null;
+  leagueId: string;
+}) {
+  if (items.length === 0 && revealed.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-2">
@@ -260,6 +274,31 @@ export function BonusBanner({ items, leagueId }: { items: BonusItem[]; leagueId:
           </div>
         );
       })}
+
+      {revealed.map((view) => (
+        <div
+          key={view.question.id}
+          className="rounded-[var(--radius-card)] border border-line bg-surface p-3 shadow-[var(--shadow-card)]"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-[14px] font-semibold text-ink">{view.question.prompt}</p>
+            <span className="shrink-0 rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-bold text-ink-faint">
+              Terminée
+            </span>
+          </div>
+          <div className="mt-2">
+            <BonusAnswers
+              kind={view.question.kind}
+              config={view.question.config}
+              answers={view.answers}
+              scores={view.scores}
+              result={view.result}
+              namesById={namesById}
+              viewerId={viewerId}
+            />
+          </div>
+        </div>
+      ))}
     </section>
   );
 }

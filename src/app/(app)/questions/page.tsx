@@ -98,7 +98,7 @@ export default async function QuestionsPage({
                 En cours ({openViews.length})
               </p>
               {openViews.map((v) =>
-                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} /> : null,
+                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} /> : null,
               )}
             </section>
           )}
@@ -109,7 +109,7 @@ export default async function QuestionsPage({
                 Terminées ({closedViews.length})
               </p>
               {closedViews.map((v) =>
-                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} /> : null,
+                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} /> : null,
               )}
             </section>
           )}

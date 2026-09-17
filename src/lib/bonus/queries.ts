@@ -151,3 +151,89 @@ export async function getQuestionView(
     scores,
   };
 }
+
+/**
+ * Les questions terminées, avec toutes les réponses — de quoi afficher
+ * « qui a mis quoi » sans un aller-retour par question.
+ *
+ * Seules les questions fermées ou réglées sortent d'ici : une question encore
+ * ouverte garde ses réponses secrètes, exactement comme `answersArePublic`
+ * le décrit. Le filtre par journée laisse toujours passer les questions de
+ * saison, qui n'appartiennent à aucune journée.
+ */
+export async function listRevealedQuestions(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+  viewerId: Uuid,
+  options: { roundId?: Uuid | null; limit?: number } = {},
+): Promise<BonusQuestionView[]> {
+  const { roundId = null, limit = 6 } = options;
+
+  let query = sb
+    .from("bonus_questions")
+    .select("*, rounds(name, number)")
+    .eq("season_id", seasonId)
+    .in("status", ["closed", "settled"])
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (roundId) query = query.or(`round_id.eq.${roundId},round_id.is.null`);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const questions = (data ?? []).map(toQuestion);
+  if (questions.length === 0) return [];
+  const ids = questions.map((q) => q.id);
+
+  const [answersRes, resultsRes, scoresRes] = await Promise.all([
+    sb.from("bonus_answers").select("question_id, user_id, answer, updated_at").in("question_id", ids),
+    sb
+      .from("bonus_results")
+      .select("question_id, correct_answer, settled_at, settled_by")
+      .in("question_id", ids),
+    sb.from("bonus_scores").select("question_id, user_id, points, breakdown").in("question_id", ids),
+  ]);
+
+  const answersByQuestion = new Map<string, BonusAnswerRow[]>();
+  for (const r of (answersRes.data ?? []) as Array<Record<string, unknown>>) {
+    const list = answersByQuestion.get(r.question_id as string) ?? [];
+    list.push({
+      userId: r.user_id as string,
+      answer: r.answer,
+      updatedAt: r.updated_at as string,
+    });
+    answersByQuestion.set(r.question_id as string, list);
+  }
+
+  const resultByQuestion = new Map<string, BonusResult>();
+  for (const r of (resultsRes.data ?? []) as Array<Record<string, unknown>>) {
+    resultByQuestion.set(r.question_id as string, {
+      correctAnswer: r.correct_answer,
+      settledAt: r.settled_at as string,
+      settledBy: (r.settled_by as string) ?? null,
+    });
+  }
+
+  const scoresByQuestion = new Map<string, BonusScoreRow[]>();
+  for (const r of (scoresRes.data ?? []) as Array<Record<string, unknown>>) {
+    const list = scoresByQuestion.get(r.question_id as string) ?? [];
+    list.push({
+      userId: r.user_id as string,
+      points: r.points as number,
+      breakdown: r.breakdown as BonusScoreRow["breakdown"],
+    });
+    scoresByQuestion.set(r.question_id as string, list);
+  }
+
+  return questions.map((question) => {
+    const answers = answersByQuestion.get(question.id) ?? [];
+    return {
+      question,
+      myAnswer: answers.find((a) => a.userId === viewerId) ?? null,
+      answers,
+      answerCount: answers.length,
+      result: resultByQuestion.get(question.id) ?? null,
+      scores: scoresByQuestion.get(question.id) ?? [],
+    };
+  });
+}
