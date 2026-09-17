@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { listOpenQuestionsWithAnswer, listRevealedQuestions } from "@/lib/bonus/queries";
+import { loadFixtureBreakdowns, type FixtureBreakdown } from "@/lib/predictions/breakdowns";
 import {
   loadActivePowers,
   loadUsageCounts,
@@ -29,6 +30,7 @@ import { PlayerAvatar } from "../_components/player-avatar";
 import { NotificationPrompt } from "../_components/notification-prompt";
 import { getViewer } from "@/lib/auth/session";
 import { MatchCard } from "./_components/match-card";
+import { MatchBreakdown } from "../resultats/_components/match-breakdown";
 import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
@@ -136,6 +138,27 @@ export default async function JourneePage({
   // Les prénoms de la ligue, pour les réponses bonus révélées.
   const namesById = Object.fromEntries(
     standingsData.players.map((p) => [p.userId, p.firstName]),
+  );
+
+  // Le détail « qui avait parié quoi » des matchs déjà terminés, toutes
+  // journées confondues : chargé en une passe, replié à l'écran.
+  const finishedFixtures = [
+    // `seasonRounds` couvre toute la saison, `fixtures` la journée courante :
+    // l'écran affiche l'un ou l'autre selon le cas, on dédoublonne donc.
+    ...new Map(
+      [...board.seasonRounds.flatMap((sr) => sr.fixtures), ...board.fixtures]
+        .filter((f) => f.fixture.status === "finished" || f.fixture.status === "official")
+        .map((f) => [f.fixture.id, f] as const),
+    ).values(),
+  ];
+  const breakdowns = await loadFixtureBreakdowns(
+    admin,
+    finishedFixtures.map((f) => ({
+      id: f.fixture.id,
+      homeShortName: f.fixture.homeTeam.shortName,
+      awayShortName: f.fixture.awayTeam.shortName,
+    })),
+    new Map(standingsData.players.map((p) => [p.userId, p.firstName])),
   );
   const fallbackMax = setting<number>(
     appSettings,
@@ -354,6 +377,8 @@ export default async function JourneePage({
                 seasonId={seasonId}
                 otherAttempts={board.allAttempts.filter((a) => a.roundId !== sr.round.id)}
                 powerAdjustments={powerAdjustments}
+                breakdowns={breakdowns}
+                viewerId={viewer.id}
               />
             </RoundSection>
           ))}
@@ -371,6 +396,8 @@ export default async function JourneePage({
           seasonId={seasonId}
           otherAttempts={board.otherAttempts}
           powerAdjustments={powerAdjustments}
+          breakdowns={breakdowns}
+          viewerId={viewer.id}
         />
       )}
 
@@ -408,6 +435,8 @@ function RoundFixturesBlock({
   seasonId,
   otherAttempts,
   powerAdjustments,
+  breakdowns,
+  viewerId,
 }: {
   fixtures: JourneyFixture[];
   ruleset: Ruleset;
@@ -416,6 +445,9 @@ function RoundFixturesBlock({
   seasonId: string;
   otherAttempts: ExactAttempt[];
   powerAdjustments: Map<string, PowerAdjustment>;
+  /** Le détail du groupe, par match terminé. */
+  breakdowns: Map<string, FixtureBreakdown>;
+  viewerId: string;
 }) {
   const toPlay = fixtures.filter(
     (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
@@ -465,15 +497,20 @@ function RoundFixturesBlock({
 
       {done.length > 0 && (
         <MatchSection title="Terminés" count={done.length}>
-          {done.map((item) => (
-            <MatchCard
-              key={item.fixture.id}
-              item={item}
-              ruleset={ruleset}
-              timeZone={timeZone}
-              powerAdjustment={powerAdjustments.get(item.fixture.id)}
-            />
-          ))}
+          {done.map((item) => {
+            const breakdown = breakdowns.get(item.fixture.id);
+            return (
+              <div key={item.fixture.id}>
+                <MatchCard
+                  item={item}
+                  ruleset={ruleset}
+                  timeZone={timeZone}
+                  powerAdjustment={powerAdjustments.get(item.fixture.id)}
+                />
+                {breakdown && <MatchBreakdown breakdown={breakdown} viewerId={viewerId} />}
+              </div>
+            );
+          })}
         </MatchSection>
       )}
     </div>

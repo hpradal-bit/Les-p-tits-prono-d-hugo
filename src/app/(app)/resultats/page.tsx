@@ -6,6 +6,7 @@ import { LeagueSwitcher } from "@/components/league-switcher";
 import { RoundBanner } from "../_components/round-banner";
 import { MatchCard } from "../journee/_components/match-card";
 import { QuestionCard } from "../questions/_components/question-card";
+import { MatchBreakdown } from "./_components/match-breakdown";
 import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,6 +14,7 @@ import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { loadPowerAdjustmentsByFixture } from "@/lib/powers/queries";
 import { listQuestions, getQuestionView } from "@/lib/bonus/queries";
+import { loadFixtureBreakdowns } from "@/lib/predictions/breakdowns";
 import type { BonusQuestionView } from "@/lib/bonus/types";
 
 export const metadata: Metadata = { title: "Résultats" };
@@ -101,6 +103,19 @@ export default async function ResultatsPage({
     .filter((r) => r.doneFixtures.length > 0 || r.bonus.length > 0)
     .reverse();
 
+  // Le détail « qui avait parié quoi » de tous les matchs terminés, en une
+  // passe : sept matchs ne doivent pas coûter sept séries de requêtes.
+  const doneFixturesAll = roundsWithResults.flatMap((r) => r.doneFixtures);
+  const breakdowns = await loadFixtureBreakdowns(
+    admin,
+    doneFixturesAll.map((item) => ({
+      id: item.fixture.id,
+      homeShortName: item.fixture.homeTeam.shortName,
+      awayShortName: item.fixture.awayTeam.shortName,
+    })),
+    namesById,
+  );
+
   return (
     <div className="flex flex-col gap-3.5">
       <LeagueSwitcher options={ligueOptions} current={leagueId} />
@@ -144,6 +159,12 @@ export default async function ResultatsPage({
                       timeZone={board.timeZone}
                       powerAdjustment={powerAdjustments.get(item.fixture.id)}
                     />
+                    {breakdowns.get(item.fixture.id) && (
+                      <MatchBreakdown
+                        breakdown={breakdowns.get(item.fixture.id)!}
+                        viewerId={viewer.id}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
