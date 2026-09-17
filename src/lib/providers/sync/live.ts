@@ -33,6 +33,7 @@ function paceNextCheck(
 // pour les imports de valeur, et ce module est désormais couvert.
 import { setting } from "../../settings/index.ts";
 import { recomputeFixtures } from "../../scoring/persist.ts";
+import { sweepOrphanedPowers } from "../../powers/resolve.ts";
 import {
   evaluateWindow,
   findStaleFixtures,
@@ -338,6 +339,18 @@ export async function syncLive(
     fixturesUpdated += promoted.updated;
     changes.push(...promoted.changes);
     warnings.push(...promoted.warnings);
+  }
+
+  // Un pouvoir posé sur un match désormais terminé ne doit pas rester en
+  // attente : le joueur a dépensé ses crédits. Trois l'étaient depuis le
+  // 27 août, avant que la résolution match par match n'existe.
+  try {
+    const swept = await sweepOrphanedPowers(sb, ctx.season.id);
+    if (swept.resolved > 0) {
+      changes.push(`${swept.resolved} pouvoir(s) en attente résolu(s)`);
+    }
+  } catch (error) {
+    warnings.push(`pouvoirs en attente non résolus : ${describeError(error)}`);
   }
 
   // Ce qui reste bloqué après le rattrapage doit se voir : un match encore

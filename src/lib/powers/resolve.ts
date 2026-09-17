@@ -132,3 +132,70 @@ export async function resolveFixturePowers(
 
   return { resolved };
 }
+
+/**
+ * Rattrape les pouvoirs restés « déclarés » alors que leur match est terminé
+ * depuis longtemps.
+ *
+ * Trois cas l'imposaient au 17 septembre : deux pouvoirs posés sur des matchs
+ * du 27 août, soit avant que la résolution match par match n'existe, et un
+ * Duel en attente d'une clôture de journée qui n'est jamais venue. Dans les
+ * trois cas le joueur avait dépensé ses crédits pour rien, sans que rien nulle
+ * part ne le signale.
+ *
+ * Ne touche que les pouvoirs configurés `fixture_finished` : ceux qui attendent
+ * la clôture de la journée doivent continuer à l'attendre, c'est leur règle.
+ */
+export async function sweepOrphanedPowers(
+  admin: SupabaseClient,
+  seasonId: Uuid,
+): Promise<{ resolved: number; pending: string[] }> {
+  const { data: rows, error } = await admin
+    .from("power_usages")
+    .select("id, round_id, snapshot_before, state, powers!inner(config)")
+    .in("state", ["declared", "accepted"]);
+  if (error) throw error;
+
+  const pending: string[] = [];
+  const toResolve: Array<{ fixtureId: string; roundId: string }> = [];
+
+  for (const row of (rows ?? []) as Array<Record<string, unknown>>) {
+    const snapshot = (row.snapshot_before ?? {}) as Record<string, unknown>;
+    const fixtureId = snapshot.fixtureId as string | undefined;
+    const power = (Array.isArray(row.powers) ? row.powers[0] : row.powers) as
+      | { config: Record<string, unknown> }
+      | undefined;
+
+    // Sans match, le pouvoir attend la clôture de la journée : ce n'est pas un
+    // orphelin, c'est son fonctionnement normal.
+    if (!fixtureId || power?.config?.resolves_at !== "fixture_finished") {
+      pending.push(row.id as string);
+      continue;
+    }
+    toResolve.push({ fixtureId, roundId: row.round_id as string });
+  }
+
+  if (toResolve.length === 0) return { resolved: 0, pending };
+
+  // Le match est-il réellement terminé ? On ne résout jamais sur un match en
+  // cours : le score n'est pas définitif.
+  const { data: fixtures } = await admin
+    .from("fixtures")
+    .select("id, status")
+    .in("id", toResolve.map((t) => t.fixtureId));
+
+  const final = new Set(
+    ((fixtures ?? []) as Array<{ id: string; status: string }>)
+      .filter((f) => f.status === "finished" || f.status === "official")
+      .map((f) => f.id),
+  );
+
+  let resolved = 0;
+  for (const { fixtureId, roundId } of toResolve) {
+    if (!final.has(fixtureId)) continue;
+    const outcome = await resolveFixturePowers(admin, fixtureId, roundId, seasonId);
+    resolved += outcome.resolved;
+  }
+
+  return { resolved, pending };
+}

@@ -13,6 +13,10 @@ export interface FeedEvent {
   targetName: string | null;
   payload: Record<string, unknown>;
   createdAt: string;
+  /** Le match concerné, résolu par l'appelant depuis `outcome.fixtureId`. */
+  fixtureLabel?: string | null;
+  /** Duel : celui qui a activé le pouvoir est-il le gagnant ? */
+  actorIsWinner?: boolean | null;
 }
 
 export interface RenderedEvent {
@@ -159,35 +163,104 @@ const RENDERERS: Record<string, Renderer> = {
     const emoji = str(e.payload, "power_emoji") ?? "⚡";
     const name = str(e.payload, "power_name") ?? "un pouvoir";
     const target = e.targetName ? ` contre ${e.targetName}` : "";
+    const match = e.fixtureLabel ? ` sur ${e.fixtureLabel}` : "";
+    const cost = num(e.payload, "credit_cost");
+    const price = cost ? ` (${cost} cr.)` : "";
     return {
       emoji,
       tone: "neutral",
-      text: `${e.actorName ?? "Quelqu'un"} active ${name}${target} !`,
+      text: `${e.actorName ?? "Quelqu'un"} active ${name}${target}${match}${price} !`,
     };
   },
 
+  /**
+   * Le verdict d'un pouvoir, en clair : qui, quel pouvoir, sur quel match, et
+   * gagné ou perdu. C'est la ligne que les joueurs relisent le lundi pour se
+   * chambrer — elle doit se suffire à elle-même, sans aller consulter ailleurs.
+   *
+   * `delta` (points réellement gagnés ou perdus par celui qui a activé) est
+   * posé à l'émission. Les événements antérieurs ne l'ont pas : on retombe
+   * alors sur l'issue propre à chaque pouvoir plutôt que d'afficher un verdict
+   * faux.
+   */
   power_resolved: (e) => {
     const emoji = str(e.payload, "power_emoji") ?? "⚡";
     const name = str(e.payload, "power_name") ?? "un pouvoir";
-    const outcome = e.payload.outcome as Record<string, unknown> | null;
-    const winner = outcome?.winnerId as string | null;
-    const transferred = num(outcome ?? {}, "transferred");
-    if (winner && transferred) {
+    const code = str(e.payload, "power_code") ?? "";
+    const who = e.actorName ?? "Quelqu'un";
+    const outcome = (e.payload.outcome as Record<string, unknown> | null) ?? {};
+    const match = e.fixtureLabel ? ` sur ${e.fixtureLabel}` : "";
+
+    const pts = (n: number) => `${n} point${Math.abs(n) > 1 ? "s" : ""}`;
+
+    // Duel : il y a un gagnant et un perdant nommés.
+    const transferred = num(outcome, "transferred");
+    if (outcome.winnerId && transferred) {
+      const won = e.actorIsWinner;
       return {
         emoji,
-        tone: "gold",
-        text: `${name} résolu : ${transferred} point${transferred > 1 ? "s" : ""} transférés !`,
+        tone: won === false ? "bad" : "gold",
+        text:
+          won === false
+            ? `${who} perd son ${name} : ${pts(transferred)} cédés à ${e.targetName ?? "son adversaire"}.`
+            : `${who} gagne son ${name} contre ${e.targetName ?? "son adversaire"} : ${pts(transferred)} raflés !`,
       };
     }
-    const bonus = num(outcome ?? {}, "bonus");
+    if (outcome.winner === null && "initiatorPoints" in outcome) {
+      return { emoji, tone: "neutral", text: `${name} de ${who} : égalité, aucun transfert.` };
+    }
+
+    // Espion : aucun point ne bouge, mais l'usage doit se voir.
+    if (code === "spy" || outcome.revealed === true) {
+      return {
+        emoji,
+        tone: "neutral",
+        text: `${who} a espionné ${e.targetName ?? "un joueur"}${match}.`,
+      };
+    }
+
+    // Sabotage : le verdict se lit sur la cible.
+    const penalty = num(outcome, "penalty");
+    if (code === "sabotage" || "penalty" in outcome) {
+      return penalty && penalty > 0
+        ? {
+            emoji,
+            tone: "gold",
+            text: `${who} sabote ${e.targetName ?? "un joueur"}${match} : ${pts(penalty)} en moins !`,
+          }
+        : {
+            emoji,
+            tone: "bad",
+            text: `${name} de ${who} dans le vide${match} : la cible n'avait rien marqué.`,
+          };
+    }
+
+    // Joker et Oracle : un bonus, ou rien.
+    const bonus = num(outcome, "bonus");
     if (bonus && bonus > 0) {
       return {
         emoji,
         tone: "good",
-        text: `${e.actorName ?? "Quelqu'un"} empoche ${bonus} point${bonus > 1 ? "s" : ""} bonus grâce à ${name}.`,
+        text: `${who} empoche ${pts(bonus)} bonus avec ${name}${match}.`,
       };
     }
-    return { emoji, tone: "neutral", text: `${name} résolu.` };
+    if (outcome.bonus === 0 || bonus === 0) {
+      return {
+        emoji,
+        tone: "bad",
+        text: `${name} de ${who} perdu${match} : aucun point marqué sur ce match.`,
+      };
+    }
+
+    const delta = num(e.payload, "delta");
+    if (delta) {
+      return {
+        emoji,
+        tone: delta > 0 ? "good" : "bad",
+        text: `${name} de ${who}${match} : ${delta > 0 ? "+" : ""}${pts(delta)}.`,
+      };
+    }
+    return { emoji, tone: "neutral", text: `${name} de ${who} résolu${match}.` };
   },
 
   badge_earned: (e) => {

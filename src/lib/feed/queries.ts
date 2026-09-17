@@ -44,13 +44,20 @@ export interface FeedItem {
 async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void> {
   const admin = createAdminClient();
 
-  const { data: events } = await admin
+  const settings = await loadSettings(admin);
+  // Assez large pour rattraper tout l'historique d'une saison à six joueurs.
+  // Sans ça, les événements les plus anciens ne seraient jamais projetés : la
+  // requête prend les N plus récents, et le reste tombe définitivement.
+  const batch = setting<number>(settings, "feed.projection_batch", 1000);
+
+  const { data: events, error: readError } = await admin
     .from("events")
     .select("id, seasons:season_id!inner(competition_id)")
     .in("kind", RENDERED_KINDS)
     .eq("seasons.competition_id", competitionId)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(batch);
+  if (readError) throw readError;
   if (!events || events.length === 0) return;
 
   const { data: existing } = await admin
@@ -63,12 +70,18 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
   const missing = events.filter((e) => !already.has(e.id as string));
   if (missing.length === 0) return;
 
-  await admin
+  // Insertion simple, pas d'`upsert` : l'index d'unicité est **partiel**
+  // (`where event_id is not null`), et PostgreSQL refuse un `ON CONFLICT` sur un
+  // index partiel quand la requête ne reprend pas son prédicat — ce que PostgREST
+  // ne sait pas envoyer. L'`upsert` échouait donc à chaque passage, et l'erreur
+  // n'était pas lue : aucun événement n'a jamais atteint le fil depuis le
+  // cloisonnement par ligue.
+  const { error } = await admin
     .from("feed_posts")
-    .upsert(
-      missing.map((e) => ({ league_id: leagueId, event_id: e.id as string })),
-      { onConflict: "league_id,event_id", ignoreDuplicates: true },
-    );
+    .insert(missing.map((e) => ({ league_id: leagueId, event_id: e.id as string })));
+
+  // 23505 = doublon : deux chargements simultanés du fil, sans conséquence.
+  if (error && error.code !== "23505") throw error;
 }
 
 /** Le fil d'une ligue, du plus récent au plus ancien. */
@@ -91,7 +104,7 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
     .from("feed_posts")
     .select(`id, body, created_at, event_id,
              author:author_id (display_name, first_name, avatar_kind, avatar_value),
-             event:event_id (id, kind, payload, created_at,
+             event:event_id (id, kind, payload, created_at, actor_id,
                              actor:actor_id (display_name),
                              target:target_id (display_name))`)
     .eq("league_id", leagueId)
@@ -127,21 +140,54 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
 
   const one = <T,>(v: unknown): T | null => (Array.isArray(v) ? v[0] : v) as T | null;
 
+  // Les pouvoirs portent un identifiant de match dans leur issue, pas son nom.
+  // On le résout ici, en une requête, pour que le fil puisse dire « sur
+  // Toulouse - Bordeaux » plutôt qu'un UUID — y compris sur les événements
+  // déjà enregistrés, dont le contenu ne sera jamais réécrit.
+  const fixtureIds = new Set<string>();
+  for (const p of posts ?? []) {
+    const raw = one<{ payload: unknown }>(p.event);
+    const payload = (raw?.payload ?? {}) as Record<string, unknown>;
+    const outcome = (payload.outcome ?? {}) as Record<string, unknown>;
+    const id = (outcome.fixtureId ?? payload.fixtureId) as string | undefined;
+    if (typeof id === "string") fixtureIds.add(id);
+  }
+
+  const fixtureLabels = new Map<string, string>();
+  if (fixtureIds.size > 0) {
+    const { data: fx } = await sb
+      .from("fixtures")
+      .select("id, home:home_team_id (short_name), away:away_team_id (short_name)")
+      .in("id", [...fixtureIds]);
+    for (const f of fx ?? []) {
+      const h = one<{ short_name: string }>(f.home)?.short_name;
+      const a = one<{ short_name: string }>(f.away)?.short_name;
+      if (h && a) fixtureLabels.set(f.id as string, `${h} - ${a}`);
+    }
+  }
+
   return (posts ?? []).map((p) => {
     const raw = one<{
       id: string; kind: string; payload: unknown; created_at: string;
-      actor: unknown; target: unknown;
+      actor_id: string | null; actor: unknown; target: unknown;
     }>(p.event);
 
     let rendered: RenderedEvent | null = null;
     if (raw) {
+      const payload = (raw.payload ?? {}) as Record<string, unknown>;
+      const outcome = (payload.outcome ?? {}) as Record<string, unknown>;
+      const fixtureId = (outcome.fixtureId ?? payload.fixtureId) as string | undefined;
+      const winnerId = outcome.winnerId as string | undefined;
+
       const event: FeedEvent = {
         id: raw.id,
         kind: raw.kind,
         actorName: one<{ display_name: string }>(raw.actor)?.display_name ?? null,
         targetName: one<{ display_name: string }>(raw.target)?.display_name ?? null,
-        payload: (raw.payload ?? {}) as Record<string, unknown>,
+        payload,
         createdAt: raw.created_at,
+        fixtureLabel: fixtureId ? fixtureLabels.get(fixtureId) ?? null : null,
+        actorIsWinner: winnerId && raw.actor_id ? winnerId === raw.actor_id : null,
       };
       rendered = renderEvent(event);
     }
