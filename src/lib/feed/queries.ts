@@ -107,12 +107,16 @@ async function withoutUnstartedPowers(
   const powerEvents = events.filter((e) => e.kind === "power_declared");
   if (powerEvents.length === 0) return events;
 
+  const fixtureOf = (e: Record<string, unknown>): string | null => {
+    const payload = (e.payload as Record<string, unknown> | null) ?? {};
+    // Les premiers événements écrivaient `fixtureId`, les suivants
+    // `fixture_id` : on accepte les deux plutôt que de réécrire le passé.
+    const raw = payload.fixture_id ?? payload.fixtureId;
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  };
+
   const fixtureIds = [
-    ...new Set(
-      powerEvents
-        .map((e) => ((e.payload as Record<string, unknown> | null) ?? {}).fixture_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0),
-    ),
+    ...new Set(powerEvents.map(fixtureOf).filter((id): id is string => id !== null)),
   ];
   // Un pouvoir qui ne vise pas un match (le Duel vise un joueur) se révèle au
   // premier coup d'envoi de sa journée : avant, il renseignerait tout autant.
@@ -145,11 +149,71 @@ async function withoutUnstartedPowers(
   const now = new Date();
   return events.filter((e) => {
     if (e.kind !== "power_declared") return true;
-    const fixtureId = ((e.payload as Record<string, unknown> | null) ?? {}).fixture_id;
+    const fixtureId = fixtureOf(e);
+    const kickoff = fixtureId
+      ? kickoffs.get(fixtureId) ?? null
+      : roundStarts.get(e.round_id as string) ?? null;
+    return isPowerPublic(kickoff, now);
+  });
+}
+
+/**
+ * Retire du fil les pouvoirs déclarés dont le match n'a pas encore commencé.
+ *
+ * Jumelle de `withoutUnstartedPowers`, mais côté lecture : elle regarde des
+ * publications déjà créées, là où l'autre regarde des événements à créer.
+ */
+async function keepStartedPowerPosts(
+  sb: Awaited<ReturnType<typeof createClient>>,
+  posts: Array<Record<string, unknown>>,
+  one: <T>(v: unknown) => T | null,
+): Promise<Array<Record<string, unknown>>> {
+  type EventShape = { kind?: string; payload?: unknown; round_id?: string };
+
+  const powerPosts = posts.filter(
+    (p) => one<EventShape>(p.event)?.kind === "power_declared",
+  );
+  if (powerPosts.length === 0) return posts;
+
+  const fixtureIds = new Set<string>();
+  const roundIds = new Set<string>();
+  for (const p of powerPosts) {
+    const event = one<EventShape>(p.event);
+    const payload = (event?.payload ?? {}) as Record<string, unknown>;
+    const fixtureId = payload.fixture_id ?? payload.fixtureId;
+    if (typeof fixtureId === "string" && fixtureId !== "") fixtureIds.add(fixtureId);
+    else if (event?.round_id) roundIds.add(event.round_id);
+  }
+
+  const [fixturesRes, roundsRes] = await Promise.all([
+    fixtureIds.size > 0
+      ? sb.from("fixtures").select("id, kickoff_at").in("id", [...fixtureIds])
+      : Promise.resolve({ data: [] as unknown[] }),
+    roundIds.size > 0
+      ? sb.from("fixtures").select("round_id, kickoff_at").in("round_id", [...roundIds])
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
+
+  const kickoffs = new Map<string, string>();
+  for (const f of (fixturesRes.data ?? []) as Array<{ id: string; kickoff_at: string }>) {
+    kickoffs.set(f.id, f.kickoff_at);
+  }
+  const roundStarts = new Map<string, string>();
+  for (const f of (roundsRes.data ?? []) as Array<{ round_id: string; kickoff_at: string }>) {
+    const current = roundStarts.get(f.round_id);
+    if (!current || f.kickoff_at < current) roundStarts.set(f.round_id, f.kickoff_at);
+  }
+
+  const now = new Date();
+  return posts.filter((p) => {
+    const event = one<EventShape>(p.event);
+    if (event?.kind !== "power_declared") return true;
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    const fixtureId = payload.fixture_id ?? payload.fixtureId;
     const kickoff =
       typeof fixtureId === "string" && fixtureId !== ""
         ? kickoffs.get(fixtureId) ?? null
-        : roundStarts.get(e.round_id as string) ?? null;
+        : roundStarts.get(event.round_id ?? "") ?? null;
     return isPowerPublic(kickoff, now);
   });
 }
@@ -174,7 +238,7 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
     .from("feed_posts")
     .select(`id, body, created_at, event_id,
              author:author_id (display_name, first_name, avatar_kind, avatar_value),
-             event:event_id (id, kind, payload, created_at, actor_id,
+             event:event_id (id, kind, payload, created_at, actor_id, round_id,
                              actor:actor_id (display_name),
                              target:target_id (display_name))`)
     .eq("league_id", leagueId)
@@ -236,7 +300,16 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
     }
   }
 
-  return (posts ?? []).map((p) => {
+  // Seconde barrière, à la lecture cette fois.
+  //
+  // La première, à la projection, empêche la publication d'exister avant le
+  // coup d'envoi. Mais une publication créée AVANT que cette règle existe
+  // resterait visible pour toujours : rien ne la relisait. Ce filtre-ci
+  // rattrape ces cas, et couvre aussi une ligne qu'un déploiement plus ancien
+  // aurait laissé passer.
+  const visiblePosts = await keepStartedPowerPosts(sb, posts ?? [], one);
+
+  return visiblePosts.map((p) => {
     const raw = one<{
       id: string; kind: string; payload: unknown; created_at: string;
       actor_id: string | null; actor: unknown; target: unknown;
