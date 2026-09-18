@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyNewPost } from "./notify.ts";
+import { markFeedRead } from "./unread.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/session";
 import { failure, success, type ActionState } from "@/lib/auth/action-state";
@@ -128,4 +129,28 @@ export async function publishPost(
 
   revalidatePath("/vestiaire");
   return success("Publié.");
+}
+
+/**
+ * Marque le Vestiaire d'une ligue comme lu, pour le joueur connecté.
+ *
+ * Appelée à l'ouverture de l'écran. Strictement personnelle : RLS n'autorise
+ * l'écriture que de sa propre ligne, et lire le fil n'éteint la pastille que
+ * pour soi — les autres gardent la leur tant qu'ils n'ont pas ouvert.
+ */
+export async function markVestiaireRead(leagueId: string): Promise<void> {
+  const viewer = await getViewer();
+  if (!viewer) return;
+
+  const parsed = z.string().uuid().safeParse(leagueId);
+  if (!parsed.success) return;
+
+  const sb = await createClient();
+  // Un échec ici n'a aucune conséquence visible : la pastille restera
+  // allumée, ce qui est le comportement sûr. On ne dérange pas le joueur.
+  try {
+    await markFeedRead(sb, viewer.id, parsed.data);
+  } catch (cause) {
+    console.error("[vestiaire] impossible de marquer le fil comme lu", cause);
+  }
 }

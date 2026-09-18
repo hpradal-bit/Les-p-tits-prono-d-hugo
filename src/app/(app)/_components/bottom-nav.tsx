@@ -9,9 +9,11 @@
  * réelle est côté serveur et dans les politiques RLS.
  */
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { FEED_READ_EVENT } from "../vestiaire/_components/mark-read";
 
 interface Tab {
   href: string;
@@ -19,6 +21,53 @@ interface Tab {
   /** Préfixes d'URL qui allument cet onglet. */
   matches: string[];
   icon: (props: { className?: string }) => React.ReactElement;
+  /** Cet onglet peut porter la pastille « non lu ». */
+  badge?: "feed";
+}
+
+/** Rythme du sondage : assez lent pour être invisible, assez vif pour animer. */
+const UNREAD_POLL_MS = 60_000;
+
+/**
+ * La pastille des messages non lus.
+ *
+ * Sondage plutôt qu'état rendu par le serveur : un layout partagé n'est pas
+ * rechargé à chaque navigation, la pastille serait restée figée dans l'état du
+ * premier chargement. Ici elle se remet à jour à chaque changement d'écran, à
+ * l'ouverture du Vestiaire, et une fois par minute.
+ */
+function useUnreadFeed(): boolean {
+  const [unread, setUnread] = useState(false);
+  const pathname = usePathname() ?? "";
+
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch("/api/feed/unread", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { unread?: boolean };
+      setUnread(Boolean(data.unread));
+    } catch {
+      // Hors ligne : on garde la dernière réponse connue plutôt que de faire
+      // clignoter la pastille au gré du réseau.
+    }
+  }, []);
+
+  useEffect(() => {
+    // Le premier sondage est renvoyé au tour de boucle suivant : déclenché
+    // dans le corps de l'effet, il pousserait un état au beau milieu du rendu
+    // et enchaînerait un second rendu complet de la barre.
+    const first = setTimeout(refresh, 0);
+    const id = setInterval(refresh, UNREAD_POLL_MS);
+    const onRead = () => setUnread(false);
+    window.addEventListener(FEED_READ_EVENT, onRead);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+      window.removeEventListener(FEED_READ_EVENT, onRead);
+    };
+  }, [refresh, pathname]);
+
+  return unread;
 }
 
 function IconBall({ className }: { className?: string }) {
@@ -118,7 +167,7 @@ const PLAYER_TABS: Tab[] = [
   { href: "/journee", label: "Mes pronos", matches: ["/journee"], icon: IconBall },
   { href: "/resultats", label: "Résultats", matches: ["/resultats", "/match"], icon: IconResults },
   { href: "/classement", label: "Classement", matches: ["/classement"], icon: IconTrophy },
-  { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat },
+  { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat, badge: "feed" },
   { href: "/profil", label: "Profil", matches: ["/profil", "/reglages", "/questions"], icon: IconUser },
 ];
 
@@ -135,6 +184,7 @@ function isActive(pathname: string, tab: Tab) {
 
 export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname() ?? "";
+  const unreadFeed = useUnreadFeed();
   const tabs = isAdmin ? [...PLAYER_TABS, ADMIN_TAB] : PLAYER_TABS;
 
   return (
@@ -166,11 +216,17 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
               >
                 <span
                   className={cn(
-                    "flex h-7 w-12 items-center justify-center rounded-full transition",
+                    "relative flex h-7 w-12 items-center justify-center rounded-full transition",
                     active && "bg-clay-soft",
                   )}
                 >
                   <Icon className="size-[22px]" />
+                  {tab.badge === "feed" && unreadFeed && (
+                    <span
+                      aria-hidden
+                      className="absolute right-2.5 top-0 size-2.5 rounded-full border-2 border-surface bg-wrong"
+                    />
+                  )}
                 </span>
                 <span
                   className={cn(
@@ -180,6 +236,9 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
                 >
                   {tab.label}
                 </span>
+                {tab.badge === "feed" && unreadFeed && (
+                  <span className="sr-only">Messages non lus</span>
+                )}
               </Link>
             </li>
           );

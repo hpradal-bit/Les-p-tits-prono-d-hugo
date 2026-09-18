@@ -13,6 +13,7 @@ import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queri
 import { loadLastDebrief } from "@/lib/feed/debrief";
 import { ReactionBar } from "./_components/reaction-bar";
 import { PostForm } from "./_components/post-form";
+import { MarkFeedRead } from "./_components/mark-read";
 import { RoundDebrief } from "./_components/round-debrief";
 import { PowerHistoryView } from "./_components/power-history";
 import { loadPowerHistory } from "@/lib/powers/history";
@@ -92,6 +93,9 @@ export default async function VestiairePage({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Ouvrir l'écran vaut lecture : la pastille s'éteint, pour moi seul. */}
+      <MarkFeedRead leagueId={leagueId} />
+
       <div>
         <h1 className="font-display text-2xl tracking-tight text-ink">
           Zone de chambrage
