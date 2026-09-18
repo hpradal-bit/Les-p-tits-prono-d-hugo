@@ -36,7 +36,7 @@ Code couleur du jeu : 🔴 raté · 🟢 bon vainqueur · 👌 score exact. Util
 
 | Chantier | Périmètre exclusif | Migration |
 |---|---|---|
-| **A · Comptes & profils** | `src/app/(auth)/**`, `src/lib/auth/**`, `src/middleware.ts` | `0010` |
+| **A · Comptes & profils** | `src/app/(auth)/**`, `src/lib/auth/**`, `src/proxy.ts` | `0010` |
 | **B · Pronostics & verrouillage** | `src/app/(app)/journee/**`, `src/lib/predictions/**` | `0011` |
 | **C · Données sportives** | `src/lib/providers/**`, `src/app/api/sync/**`, `worker/**` | `0012` |
 | **D · Classements & Match Center** | `src/app/(app)/classement/**`, `src/app/(app)/match/**`, `src/lib/standings/**` | `0013` |

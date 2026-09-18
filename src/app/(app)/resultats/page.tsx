@@ -13,7 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { loadPowerAdjustmentsByFixture } from "@/lib/powers/queries";
-import { listQuestions, getQuestionView } from "@/lib/bonus/queries";
+import { listQuestionViews } from "@/lib/bonus/queries";
 import { loadFixtureBreakdowns } from "@/lib/predictions/breakdowns";
 import type { BonusQuestionView } from "@/lib/bonus/types";
 
@@ -60,18 +60,12 @@ export default async function ResultatsPage({
   // Les questions bonus réglées, avec le même luxe de détail que /questions
   // (qui a répondu quoi, la bonne réponse, les points) — réutilisées telles
   // quelles plutôt que reconstruites : QuestionCard fait déjà exactement ça.
-  const powerAdjustments = await loadPowerAdjustmentsByFixture(admin, viewer.id, board.seasonId);
-
-  const allQuestions = await listQuestions(admin, board.seasonId);
-  const settled = allQuestions.filter((q) => q.status === "settled");
-  const settledViews = (
-    await Promise.all(settled.map((q) => getQuestionView(admin, q.id, viewer.id)))
-  ).filter((v): v is NonNullable<typeof v> => v !== null);
-
-  const { data: profiles } = await admin
-    .from("profiles")
-    .select("id, display_name")
-    .eq("is_active", true);
+  // Trois lectures indépendantes : elles partent ensemble plutôt qu'à la file.
+  const [powerAdjustments, settledViews, { data: profiles }] = await Promise.all([
+    loadPowerAdjustmentsByFixture(admin, viewer.id, board.seasonId),
+    listQuestionViews(admin, board.seasonId, viewer.id, { statuses: ["settled"] }),
+    admin.from("profiles").select("id, display_name").eq("is_active", true),
+  ]);
   const namesById = new Map<string, string>();
   for (const p of (profiles ?? []) as Array<{ id: string; display_name: string }>) {
     namesById.set(p.id, p.display_name);

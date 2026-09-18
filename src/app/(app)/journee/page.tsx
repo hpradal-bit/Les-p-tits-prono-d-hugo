@@ -65,9 +65,13 @@ export default async function JourneePage({
   if (!resolved) redirect("/accueil");
   const { leagueId, leagues: myLeagues } = resolved;
 
-  const board = await loadJourneyBoard({ userId: viewer.id, roundNumber: j, leagueId });
+  // Le tableau de la journée et les logos des clubs ne dépendent pas l'un de
+  // l'autre : ils partent ensemble plutôt qu'à la file.
   const admin = createAdminClient();
-  const clubs = await loadClubAvatars(sb);
+  const [board, clubs] = await Promise.all([
+    loadJourneyBoard({ userId: viewer.id, roundNumber: j, leagueId }),
+    loadClubAvatars(sb),
+  ]);
 
   // La vue « toute la saison » (bandeaux, journée mise en évidence) est un
   // chantier Top 14 uniquement pour le moment : la Pro D2 garde l'écran
@@ -152,28 +156,26 @@ export default async function JourneePage({
         .map((f) => [f.fixture.id, f] as const),
     ).values(),
   ];
-  const breakdowns = await loadFixtureBreakdowns(
-    admin,
-    finishedFixtures.map((f) => ({
-      id: f.fixture.id,
-      homeShortName: f.fixture.homeTeam.shortName,
-      awayShortName: f.fixture.awayTeam.shortName,
-    })),
-    new Map(standingsData.players.map((p) => [p.userId, p.displayName])),
-  );
   const fallbackMax = setting<number>(
     appSettings,
     "powers.max_uses_per_player",
     FALLBACK_MAX_USES,
   );
 
-  // Le quota restant de chaque pouvoir pour ce joueur, sur cette saison.
-  const usageCounts = await loadUsageCounts(
-    admin,
-    viewer.id,
-    seasonId,
-    quotaResetAt(appSettings),
-  );
+  // Le détail des matchs et le quota restant : deux lectures indépendantes,
+  // menées de front — l'écran n'attend pas deux fois.
+  const [breakdowns, usageCounts] = await Promise.all([
+    loadFixtureBreakdowns(
+      admin,
+      finishedFixtures.map((f) => ({
+        id: f.fixture.id,
+        homeShortName: f.fixture.homeTeam.shortName,
+        awayShortName: f.fixture.awayTeam.shortName,
+      })),
+      new Map(standingsData.players.map((p) => [p.userId, p.displayName])),
+    ),
+    loadUsageCounts(admin, viewer.id, seasonId, quotaResetAt(appSettings)),
+  ]);
   const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
   const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
 

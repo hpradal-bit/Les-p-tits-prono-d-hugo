@@ -193,7 +193,7 @@ export async function signUp(_prev: ActionState, formData: FormData): Promise<Ac
    ========================================================================== */
 
 /**
- * Destination après connexion. Le middleware mémorise l'écran demandé dans
+ * Destination après connexion. Le proxy mémorise l'écran demandé dans
  * `?suite=` ; on ne suit qu'un chemin interne, jamais une URL absolue qu'un
  * lien piégé aurait pu glisser dans la barre d'adresse.
  */

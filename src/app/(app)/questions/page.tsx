@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadActiveSeason } from "@/lib/standings/queries";
-import { listQuestions, getQuestionView } from "@/lib/bonus/queries";
+import { listQuestionViews } from "@/lib/bonus/queries";
 import { QuestionCard } from "./_components/question-card";
 
 export const metadata: Metadata = { title: "Questions bonus" };
@@ -38,24 +38,20 @@ export default async function QuestionsPage({
   }
   const seasonId = season.id;
 
-  const all = await listQuestions(admin, seasonId);
-  const visible = all.filter((q) => q.status !== "draft");
-
-  const views = await Promise.all(
-    visible.map((q) => getQuestionView(admin, q.id, viewer.id)),
-  );
-
-  const { data: profiles } = await admin
-    .from("profiles")
-    .select("id, display_name")
-    .eq("is_active", true);
+  // Les questions et les profils en parallèle : ni l'un ni l'autre n'attend.
+  const [views, { data: profiles }] = await Promise.all([
+    listQuestionViews(admin, seasonId, viewer.id),
+    admin.from("profiles").select("id, display_name").eq("is_active", true),
+  ]);
   const namesById = new Map<string, string>();
   for (const p of (profiles ?? []) as Array<{ id: string; display_name: string }>) {
     namesById.set(p.id, p.display_name);
   }
 
-  const openViews = views.filter((v) => v && (v.question.status === "open"));
-  const closedViews = views.filter((v) => v && (v.question.status === "closed" || v.question.status === "settled"));
+  const openViews = views.filter((v) => v.question.status === "open");
+  const closedViews = views.filter(
+    (v) => v.question.status === "closed" || v.question.status === "settled",
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -97,9 +93,14 @@ export default async function QuestionsPage({
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
                 En cours ({openViews.length})
               </p>
-              {openViews.map((v) =>
-                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} /> : null,
-              )}
+              {openViews.map((v) => (
+                <QuestionCard
+                  key={v.question.id}
+                  view={v}
+                  namesById={namesById}
+                  viewerId={viewer.id}
+                />
+              ))}
             </section>
           )}
 
@@ -108,9 +109,14 @@ export default async function QuestionsPage({
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
                 Terminées ({closedViews.length})
               </p>
-              {closedViews.map((v) =>
-                v ? <QuestionCard key={v.question.id} view={v} namesById={namesById} viewerId={viewer.id} /> : null,
-              )}
+              {closedViews.map((v) => (
+                <QuestionCard
+                  key={v.question.id}
+                  view={v}
+                  namesById={namesById}
+                  viewerId={viewer.id}
+                />
+              ))}
             </section>
           )}
         </>

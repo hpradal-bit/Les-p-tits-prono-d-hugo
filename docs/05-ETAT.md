@@ -160,14 +160,14 @@ vers le serveur d'authentification — négligeable sur un poste de travail,
 très sensible sur un réseau mobile (la latence, pas le débit, est le facteur
 dominant).
 
-- `src/middleware.ts` — le SEUL endroit qui revalide encore le jeton
+- `src/proxy.ts` — le SEUL endroit qui revalide encore le jeton
   (`auth.getUser()`), une fois par requête. L'identité qui en ressort est
   transmise aux composants et actions serveur par un en-tête
   (`x-viewer-id`/`x-viewer-email`), écrasé à chaque requête donc infalsifiable
   par le client.
 - `getViewer()` (`src/lib/auth/session.ts`) lit cet en-tête au lieu de
   revalider elle-même ; elle ne retombe sur un appel réseau que si l'en-tête
-  est absent (garde-fou, chemin non couvert par le middleware).
+  est absent (garde-fou, chemin non couvert par le proxy).
 - `(app)/layout.tsx` — sa propre vérification d'admin (un deuxième
   `auth.getUser()` + une deuxième requête `group_members`, sur **chaque**
   écran de l'application) a disparu au profit de `getViewer()`, déjà

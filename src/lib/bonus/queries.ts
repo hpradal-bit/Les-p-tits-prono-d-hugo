@@ -181,7 +181,42 @@ export async function listRevealedQuestions(
   const { data, error } = await query;
   if (error) throw error;
 
-  const questions = (data ?? []).map(toQuestion);
+  return hydrateQuestions(sb, (data ?? []).map(toQuestion), viewerId);
+}
+
+/**
+ * Les vues complètes de plusieurs questions, en quatre requêtes au total.
+ *
+ * `getQuestionView` en coûte quatre **par question** : sur un écran qui en
+ * affiche huit, cela faisait trente-deux allers-retours vers la base, tous à
+ * attendre avant le premier pixel. Ici, le nombre de requêtes ne dépend plus
+ * du nombre de questions.
+ */
+export async function listQuestionViews(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+  viewerId: Uuid,
+  options: { statuses?: BonusQuestion["status"][] } = {},
+): Promise<BonusQuestionView[]> {
+  const statuses = options.statuses ?? ["open", "closed", "settled"];
+
+  const { data, error } = await sb
+    .from("bonus_questions")
+    .select("*, rounds(name, number)")
+    .eq("season_id", seasonId)
+    .in("status", statuses)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return hydrateQuestions(sb, (data ?? []).map(toQuestion), viewerId);
+}
+
+/** Réponses, résultats et notes de tout un lot de questions, d'un seul coup. */
+async function hydrateQuestions(
+  sb: SupabaseClient,
+  questions: BonusQuestion[],
+  viewerId: Uuid,
+): Promise<BonusQuestionView[]> {
   if (questions.length === 0) return [];
   const ids = questions.map((q) => q.id);
 

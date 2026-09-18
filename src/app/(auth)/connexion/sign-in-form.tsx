@@ -11,7 +11,7 @@ export function SignInForm({ suite }: { suite?: string }) {
 
   return (
     <form action={action} className="flex flex-col gap-4" noValidate>
-      {/* Écran demandé avant d'être renvoyé ici par le middleware. */}
+      {/* Écran demandé avant d'être renvoyé ici par le proxy. */}
       {suite ? <input type="hidden" name="suite" value={suite} /> : null}
 
       <Alert state={state} />

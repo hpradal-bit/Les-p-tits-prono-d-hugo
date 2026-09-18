@@ -3,7 +3,7 @@
  *
  * Tous les écrans de jeu vivent sous ce groupe de routes : ils héritent de la
  * navigation principale sans avoir à la connaître. La protection des routes
- * est assurée par le middleware (chantier A) et par RLS ; ici, on se contente
+ * est assurée par le proxy (chantier A) et par RLS ; ici, on se contente
  * de savoir s'il faut afficher l'onglet Admin.
  */
 

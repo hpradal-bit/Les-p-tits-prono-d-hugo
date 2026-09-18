@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -94,25 +95,36 @@ export async function publishPost(
   if (error || !inserted) return failure("La publication a échoué. Réessaie dans un instant.");
 
   // Prévenir le groupe fait partie de la publication, mais pas au point de la
-  // faire échouer : le message est écrit, il est en ligne. Une notification
-  // qui ne part pas ne doit pas faire croire à l'auteur qu'il a perdu son mot.
-  try {
-    const { data: author } = await sb
-      .from("profiles")
-      .select("display_name")
-      .eq("id", viewer.id)
-      .maybeSingle();
+  // retarder : prévenir cinq joueurs, c'est cinq envois Web Push, et l'auteur
+  // regarderait son bouton tourner pendant ce temps. `after()` diffère tout ça
+  // au-delà de la réponse — le message s'affiche tout de suite, les
+  // notifications partent juste après.
+  //
+  // Et une notification qui échoue ne doit jamais faire croire à l'auteur
+  // qu'il a perdu son mot : il est écrit, il est en ligne.
+  const postId = inserted.id as string;
+  const { leagueId } = parsed.data;
+  const body = parsed.data.body;
+  after(async () => {
+    try {
+      const admin = createAdminClient();
+      const { data: author } = await admin
+        .from("profiles")
+        .select("display_name")
+        .eq("id", viewer.id)
+        .maybeSingle();
 
-    await notifyNewPost(createAdminClient(), {
-      postId: inserted.id as string,
-      leagueId: parsed.data.leagueId,
-      authorId: viewer.id,
-      authorName: (author?.display_name as string) ?? "Quelqu'un",
-      body: parsed.data.body,
-    });
-  } catch (cause) {
-    console.error("[vestiaire] notification du message impossible", cause);
-  }
+      await notifyNewPost(admin, {
+        postId,
+        leagueId,
+        authorId: viewer.id,
+        authorName: (author?.display_name as string) ?? "Quelqu'un",
+        body,
+      });
+    } catch (cause) {
+      console.error("[vestiaire] notification du message impossible", cause);
+    }
+  });
 
   revalidatePath("/vestiaire");
   return success("Publié.");

@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Chantier A — rafraîchissement de session et protection des routes.
  *
+ * Fichier `proxy.ts` : depuis Next.js 16, la convention `middleware` est
+ * dépréciée au profit de `proxy`. Même rôle, même exécution avant le rendu.
+ *
  * Deux rôles, dans cet ordre :
  *
  *   1. **Rafraîchir la session.** Les jetons Supabase expirent au bout d'une
@@ -33,7 +36,7 @@ const GUEST_ONLY_ROUTES = ["/connexion", "/inscription", "/mot-de-passe-oublie"]
 const isWithin = (pathname: string, routes: string[]) =>
   routes.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
   // Sans configuration Supabase (construction, aperçu local), on laisse passer

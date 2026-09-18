@@ -13,10 +13,10 @@ import type { Uuid } from "@/lib/types";
  *
  * Les autres chantiers sont invités à s'en servir plutôt que de refaire
  * l'appel : elle est mémorisée pour la durée du rendu (`react.cache`), et elle
- * ne revalide plus le jeton elle-même — le middleware l'a déjà fait pour
+ * ne revalide plus le jeton elle-même — le proxy l'a déjà fait pour
  * cette requête, une seule fois, et transmet l'identité vérifiée par un
  * en-tête. Sans ce partage, chaque écran payait son propre aller-retour
- * réseau vers Supabase Auth par-dessus celui du middleware — plusieurs
+ * réseau vers Supabase Auth par-dessus celui du proxy — plusieurs
  * centaines de millisecondes perdues à chaque navigation, surtout sensible
  * sur mobile.
  */
@@ -39,10 +39,10 @@ export interface Viewer {
 export const getViewer = cache(async (): Promise<Viewer | null> => {
   const sb = await createClient();
 
-  // Le middleware a déjà revalidé le jeton auprès de Supabase pour cette
+  // Le proxy a déjà revalidé le jeton auprès de Supabase pour cette
   // requête précise et transmet l'identité qui en ressort par un en-tête —
-  // voir `src/middleware.ts`. On ne refait l'aller-retour nous-mêmes que si
-  // cet en-tête est absent (chemin non couvert par le middleware), jamais
+  // voir `src/proxy.ts`. On ne refait l'aller-retour nous-mêmes que si
+  // cet en-tête est absent (chemin non couvert par le proxy), jamais
   // par défaut.
   const h = await headers();
   const headerUserId = h.get("x-viewer-id");
