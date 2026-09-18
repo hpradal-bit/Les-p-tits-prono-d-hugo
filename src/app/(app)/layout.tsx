@@ -27,9 +27,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const isAdmin = viewer?.role === "admin";
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
-      {/* pb-24 : la barre de navigation ne doit jamais masquer le contenu. */}
-      <main className="flex-1 px-4 pb-28 pt-6 sm:px-6">{children}</main>
+    <div className="mx-auto flex flex-1 w-full max-w-2xl flex-col">
+      {/* La barre de navigation ne doit jamais masquer le contenu : on réserve
+          sa hauteur ET la marge de sécurité qu'elle porte elle-même. */}
+      <main
+        className="flex-1 px-4 pt-6 sm:px-6"
+        style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}
+      >
+        {children}
+      </main>
       <ServiceWorkerRegistrar />
       <BottomNav isAdmin={isAdmin} />
     </div>

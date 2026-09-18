@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Installer l'app" };
 
 export default function InstallerPage() {
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-8">
+    <div className="mx-auto flex flex-1 max-w-md flex-col gap-4 px-4 py-8">
       <header className="flex flex-col gap-1">
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-clay">
           Trois étapes

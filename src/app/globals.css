@@ -197,8 +197,26 @@ body {
   color: var(--ink);
   font-family: var(--font-sans-body), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+
+  /*
+   * La hauteur de la page vit ici, et les marges de sécurité de l'iPhone sont
+   * COMPRISES dedans (`border-box`).
+   *
+   * Avant : le corps ajoutait les encoches en padding, et l'écran en dessous
+   * demandait `min-h-dvh` — soit 100 % de la fenêtre EN PLUS des encoches. Sur
+   * un iPhone à barre d'accueil, chaque page dépassait donc d'environ 80 px,
+   * même vide. Ce dépassement se faisait défiler en élastique, et la barre de
+   * navigation fixe semblait « remonter » pendant le geste : elle ne bougeait
+   * pas, c'est la page qui glissait sous elle.
+   *
+   * La marge du bas n'est plus posée ici : la barre de navigation porte la
+   * sienne, sinon elle serait comptée deux fois.
+   */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Caprasimo n'a qu'une graisse : on ne lui demande pas de gras synthétique. */

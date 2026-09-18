@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadSettings, setting } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/session";
 import { renderEvent, RENDERED_KINDS, type FeedEvent, type RenderedEvent } from "./render";
+import { isPowerPublic } from "@/lib/powers/visibility";
 import type { Uuid } from "@/lib/types";
 
 export type FeedFilter = "tout" | "jeu" | "pouvoirs" | "messages";
@@ -52,7 +53,7 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
 
   const { data: events, error: readError } = await admin
     .from("events")
-    .select("id, seasons:season_id!inner(competition_id)")
+    .select("id, kind, payload, round_id, seasons:season_id!inner(competition_id)")
     .in("kind", RENDERED_KINDS)
     .eq("seasons.competition_id", competitionId)
     .order("created_at", { ascending: false })
@@ -67,7 +68,15 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
     .not("event_id", "is", null);
 
   const already = new Set((existing ?? []).map((p) => p.event_id as string));
-  const missing = events.filter((e) => !already.has(e.id as string));
+  const pending = events.filter((e) => !already.has(e.id as string));
+  if (pending.length === 0) return;
+
+  // Un pouvoir déclaré n'entre dans le fil qu'une fois son match commencé.
+  // Le filtre est ici, à la projection, et pas à l'affichage : tant que la
+  // publication n'existe pas, aucun client ne peut la lire, quoi qu'il
+  // demande. Elle sera créée au prochain chargement du fil, après le coup
+  // d'envoi.
+  const missing = await withoutUnstartedPowers(admin, pending);
   if (missing.length === 0) return;
 
   // Insertion simple, pas d'`upsert` : l'index d'unicité est **partiel**
@@ -82,6 +91,67 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
 
   // 23505 = doublon : deux chargements simultanés du fil, sans conséquence.
   if (error && error.code !== "23505") throw error;
+}
+
+/**
+ * Écarte les `power_declared` dont le match n'a pas encore commencé.
+ *
+ * Savoir qu'un joueur a posé un Sabotage sur un match avant que celui-ci se
+ * joue renseignerait les autres au moment de pronostiquer : le fil deviendrait
+ * un canal de renseignement. Les autres événements passent sans condition.
+ */
+async function withoutUnstartedPowers(
+  admin: ReturnType<typeof createAdminClient>,
+  events: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  const powerEvents = events.filter((e) => e.kind === "power_declared");
+  if (powerEvents.length === 0) return events;
+
+  const fixtureIds = [
+    ...new Set(
+      powerEvents
+        .map((e) => ((e.payload as Record<string, unknown> | null) ?? {}).fixture_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+  // Un pouvoir qui ne vise pas un match (le Duel vise un joueur) se révèle au
+  // premier coup d'envoi de sa journée : avant, il renseignerait tout autant.
+  const roundIds = [
+    ...new Set(
+      powerEvents
+        .map((e) => e.round_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+
+  const kickoffs = new Map<string, string>();
+  const roundStarts = new Map<string, string>();
+  const [byFixture, byRound] = await Promise.all([
+    fixtureIds.length > 0
+      ? admin.from("fixtures").select("id, kickoff_at").in("id", fixtureIds)
+      : Promise.resolve({ data: [] }),
+    roundIds.length > 0
+      ? admin.from("fixtures").select("round_id, kickoff_at").in("round_id", roundIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  for (const f of (byFixture.data ?? []) as Array<{ id: string; kickoff_at: string }>) {
+    kickoffs.set(f.id, f.kickoff_at);
+  }
+  for (const f of (byRound.data ?? []) as Array<{ round_id: string; kickoff_at: string }>) {
+    const current = roundStarts.get(f.round_id);
+    if (!current || f.kickoff_at < current) roundStarts.set(f.round_id, f.kickoff_at);
+  }
+
+  const now = new Date();
+  return events.filter((e) => {
+    if (e.kind !== "power_declared") return true;
+    const fixtureId = ((e.payload as Record<string, unknown> | null) ?? {}).fixture_id;
+    const kickoff =
+      typeof fixtureId === "string" && fixtureId !== ""
+        ? kickoffs.get(fixtureId) ?? null
+        : roundStarts.get(e.round_id as string) ?? null;
+    return isPowerPublic(kickoff, now);
+  });
 }
 
 /** Le fil d'une ligue, du plus récent au plus ancien. */

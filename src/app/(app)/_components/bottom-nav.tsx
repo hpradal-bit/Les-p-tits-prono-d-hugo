@@ -141,7 +141,14 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
     <nav
       aria-label="Navigation principale"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom)",
+        // Barre fixe + flou d'arrière-plan : sur iOS, Safari la repeint à
+        // chaque image du défilement et elle décroche visiblement. La promouvoir
+        // sur sa propre couche graphique la fige pour de bon.
+        transform: "translateZ(0)",
+        willChange: "transform",
+      }}
     >
       <ul className="mx-auto flex w-full max-w-2xl items-stretch">
         {tabs.map((tab) => {

@@ -12,6 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Uuid } from "@/lib/types";
 import { powerVerdict, type PowerVerdict } from "./verdict.ts";
+import { isPowerPublic } from "./visibility.ts";
 
 export interface PowerHistoryEntry {
   id: Uuid;
@@ -106,14 +107,16 @@ export async function loadPowerHistory(
   // Les noms : joueurs concernés et matchs cités, en deux requêtes.
   const profileIds = new Set<string>();
   const fixtureIds = new Set<string>();
+  const roundIds = new Set<string>();
   for (const r of kept) {
     profileIds.add(r.initiator_id);
     if (r.target_id) profileIds.add(r.target_id);
     const fixtureId = (r.snapshot_before?.fixtureId ?? null) as string | null;
     if (fixtureId) fixtureIds.add(fixtureId);
+    else if (r.round_id) roundIds.add(r.round_id as string);
   }
 
-  const [profilesRes, fixturesRes] = await Promise.all([
+  const [profilesRes, fixturesRes, roundFixturesRes] = await Promise.all([
     sb
       .from("profiles")
       .select("id, display_name, first_name, avatar_kind, avatar_value")
@@ -121,8 +124,15 @@ export async function loadPowerHistory(
     fixtureIds.size > 0
       ? sb
           .from("fixtures")
-          .select("id, home:home_team_id (short_name), away:away_team_id (short_name)")
+          .select(
+            "id, kickoff_at, home:home_team_id (short_name), away:away_team_id (short_name)",
+          )
           .in("id", [...fixtureIds])
+      : Promise.resolve({ data: [] as unknown[] }),
+    // Le premier coup d'envoi de chaque journée citée, pour les pouvoirs qui
+    // ne visent aucun match en particulier.
+    roundIds.size > 0
+      ? sb.from("fixtures").select("round_id, kickoff_at").in("round_id", [...roundIds])
       : Promise.resolve({ data: [] as unknown[] }),
   ]);
 
@@ -142,24 +152,47 @@ export async function loadPowerHistory(
   }
 
   const matches = new Map<string, string>();
+  const kickoffs = new Map<string, string>();
   for (const f of (fixturesRes.data ?? []) as Array<Record<string, unknown>>) {
     const home = one<{ short_name: string }>(f.home)?.short_name;
     const away = one<{ short_name: string }>(f.away)?.short_name;
     if (home && away) matches.set(f.id as string, `${home} - ${away}`);
+    kickoffs.set(f.id as string, f.kickoff_at as string);
   }
 
-  // Le décompte par joueur se fait avant le filtre : la liste déroulante doit
-  // rester stable quand on sélectionne quelqu'un.
+  // Un pouvoir dont le match n'a pas commencé reste secret, ici comme dans le
+  // fil : l'écran Super-pouvoirs ne doit pas être le trou de serrure que le
+  // Vestiaire n'est plus.
+  const roundStarts = new Map<string, string>();
+  for (const f of (roundFixturesRes.data ?? []) as Array<Record<string, unknown>>) {
+    const roundId = f.round_id as string;
+    const kickoff = f.kickoff_at as string;
+    const current = roundStarts.get(roundId);
+    if (!current || kickoff < current) roundStarts.set(roundId, kickoff);
+  }
+
+  const now = new Date();
+  const revealed = kept.filter((r) => {
+    const fixtureId = (r.snapshot_before?.fixtureId ?? null) as string | null;
+    const kickoff = fixtureId
+      ? kickoffs.get(fixtureId) ?? null
+      : roundStarts.get(r.round_id as string) ?? null;
+    return isPowerPublic(kickoff, now);
+  });
+  if (revealed.length === 0) return { rounds: [], players: [] };
+
+  // Le décompte par joueur se fait avant le filtre par joueur : la liste
+  // déroulante doit rester stable quand on sélectionne quelqu'un.
   const counts = new Map<string, number>();
-  for (const r of kept) counts.set(r.initiator_id, (counts.get(r.initiator_id) ?? 0) + 1);
+  for (const r of revealed) counts.set(r.initiator_id, (counts.get(r.initiator_id) ?? 0) + 1);
 
   const players: PowerHistoryPlayer[] = [...counts.entries()]
     .map(([id, count]) => ({ id, name: profiles.get(id)?.display_name ?? "Un joueur", count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
   const visible = options.playerId
-    ? kept.filter((r) => r.initiator_id === options.playerId)
-    : kept;
+    ? revealed.filter((r) => r.initiator_id === options.playerId)
+    : revealed;
 
   const byRound = new Map<string, PowerHistoryRound>();
 

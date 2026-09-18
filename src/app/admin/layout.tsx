@@ -11,7 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!ctx.isAdmin) redirect("/journee");
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-4 pb-8 pt-6">
+    <div className="mx-auto flex flex-1 max-w-2xl flex-col gap-6 px-4 pb-8 pt-6">
       <header className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-sage">

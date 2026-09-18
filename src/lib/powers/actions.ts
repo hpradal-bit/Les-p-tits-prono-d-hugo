@@ -168,6 +168,9 @@ export async function declarePower(
       power_name: power.name,
       use_index: (quota?.used ?? 0) + 1,
       max_uses: quota?.max ?? fallbackMax,
+      // Le match visé voyage avec l'événement : c'est lui qui décide du moment
+      // où le fil a le droit de raconter ce pouvoir (cf. `visibility.ts`).
+      fixture_id: parsed.data.fixtureId ?? null,
     },
   });
 

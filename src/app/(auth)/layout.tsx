@@ -6,7 +6,7 @@ import Link from "next/link";
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-8 px-6 py-12">
+    <div className="mx-auto flex flex-1 max-w-md flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
         <Link
           href="/"
