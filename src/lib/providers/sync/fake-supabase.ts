@@ -61,7 +61,6 @@ function matches(row: Row, filters: Filter[]): boolean {
 // Plusieurs paramètres ne servent qu'à épouser la signature de Supabase :
 // le code appelant les passe, ce faux les ignore. Les nommer reste plus
 // lisible qu'un `...args` qui masquerait ce que l'appelant croit transmettre.
-/* eslint-disable @typescript-eslint/no-unused-vars */
 class Query implements PromiseLike<{ data: unknown; error: null }> {
   private filters: Filter[] = [];
   private orderBy: { column: string; ascending: boolean } | null = null;
@@ -109,7 +108,6 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
   update(patch: Row) { this.mode = "update"; this.patch = patch; return this; }
   delete() { this.mode = "delete"; return this; }
 
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   private rows(): Row[] {
     const table = this.db[this.table] ?? [];

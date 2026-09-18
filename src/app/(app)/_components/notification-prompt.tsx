@@ -5,18 +5,35 @@ import { readState, enable, type PushState } from "@/lib/push/client";
 
 export function NotificationPrompt({ vapidPublicKey }: { vapidPublicKey: string }) {
   const [state, setState] = useState<PushState | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  // Lu à l'initialisation, pas dans un effet : écrire cet état depuis un effet
+  // relançait un rendu complet juste après le premier, sur l'écran le plus
+  // lourd de l'application. L'initialiseur paresseux ne s'exécute qu'au
+  // montage, et jamais côté serveur puisque le composant est « use client ».
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("notif-prompt-dismissed") !== null;
+    } catch {
+      return false;
+    }
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    try {
-      if (localStorage.getItem("notif-prompt-dismissed")) {
-        setDismissed(true);
-        return;
-      }
-    } catch { /* noop */ }
-    readState(vapidPublicKey).then(setState).catch(() => setState("unsupported"));
-  }, [vapidPublicKey]);
+    if (dismissed) return;
+    let cancelled = false;
+    readState(vapidPublicKey)
+      .then((next) => {
+        if (!cancelled) setState(next);
+      })
+      .catch(() => {
+        if (!cancelled) setState("unsupported");
+      });
+    // Le composant peut disparaître avant la réponse du navigateur : on ne
+    // pose pas d'état sur un composant démonté.
+    return () => {
+      cancelled = true;
+    };
+  }, [vapidPublicKey, dismissed]);
 
   if (dismissed || !state || state === "on" || state === "unsupported" || state === "denied") {
     return null;

@@ -9,7 +9,7 @@
  * refuse, React rétablit tout seul l'état réel.
  */
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic } from "react";
 import { toggleReaction } from "@/lib/feed/actions";
 import { applyToggle, type Reaction } from "@/lib/feed/reactions";
 import { cn } from "@/lib/cn";
@@ -29,36 +29,39 @@ export function ReactionBar({
   });
 
   const [shown, addOptimistic] = useOptimistic(base, applyToggle);
-  const [, startTransition] = useTransition();
 
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
       {shown.map((r) => (
-        <button
+        // Le formulaire reste : avant l'hydratation, un tap doit partir en
+        // soumission native plutôt que d'être avalé par un gestionnaire de
+        // clic qui n'existe pas encore. React l'intercepte ensuite et joue
+        // l'affichage optimiste.
+        <form
           key={r.emoji}
-          type="button"
-          aria-label={`Réagir ${r.emoji}`}
-          aria-pressed={r.mine}
-          onClick={() => {
-            startTransition(async () => {
-              addOptimistic(r.emoji);
-              const data = new FormData();
-              data.set("postId", postId);
-              data.set("emoji", r.emoji);
-              await toggleReaction(data);
-            });
+          action={async (data: FormData) => {
+            addOptimistic(r.emoji);
+            await toggleReaction(data);
           }}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] transition active:scale-95",
-            r.mine
-              ? "border-clay bg-clay-soft text-clay"
-              : "border-line bg-surface text-ink-muted hover:bg-surface-sunk",
-            r.count === 0 && !r.mine && "opacity-45 hover:opacity-100",
-          )}
         >
-          <span aria-hidden>{r.emoji}</span>
-          {r.count > 0 && <span className="tabular font-mono text-[11px]">{r.count}</span>}
-        </button>
+          <input type="hidden" name="postId" value={postId} />
+          <input type="hidden" name="emoji" value={r.emoji} />
+          <button
+            type="submit"
+            aria-label={`Réagir ${r.emoji}`}
+            aria-pressed={r.mine}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] transition active:scale-95",
+              r.mine
+                ? "border-clay bg-clay-soft text-clay"
+                : "border-line bg-surface text-ink-muted hover:bg-surface-sunk",
+              r.count === 0 && !r.mine && "opacity-45 hover:opacity-100",
+            )}
+          >
+            <span aria-hidden>{r.emoji}</span>
+            {r.count > 0 && <span className="tabular font-mono text-[11px]">{r.count}</span>}
+          </button>
+        </form>
       ))}
     </div>
   );

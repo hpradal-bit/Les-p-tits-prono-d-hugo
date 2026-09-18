@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Power, Token, PowerUsage } from "./types.ts";
+import type { Power, PowerUsage } from "./types.ts";
 import { CONSUMING_STATES } from "./quota.ts";
 
 export async function loadActivePowers(sb: SupabaseClient): Promise<Power[]> {

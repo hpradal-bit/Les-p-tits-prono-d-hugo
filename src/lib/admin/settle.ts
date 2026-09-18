@@ -138,7 +138,7 @@ async function generateRoundSummary(
     roundId,
   });
 
-  const fixtures = await buildSummaryFixtures(admin, roundId, data);
+  const fixtures = await buildSummaryFixtures(admin, roundId);
 
   const values = computeSummaryValues({
     roundName,
@@ -157,7 +157,6 @@ async function generateRoundSummary(
 async function buildSummaryFixtures(
   admin: ReturnType<typeof createAdminClient>,
   roundId: string,
-  data: Awaited<ReturnType<typeof loadStandingsData>>,
 ): Promise<SummaryFixture[]> {
   const { data: fixtures } = await admin
     .from("fixtures")

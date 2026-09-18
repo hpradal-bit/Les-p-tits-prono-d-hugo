@@ -21,10 +21,15 @@ function formatRemaining(target: Date): string | null {
 }
 
 export function Countdown({ targetIso }: { targetIso: string }) {
-  const target = new Date(targetIso);
-  const [remaining, setRemaining] = useState<string | null>(() => formatRemaining(target));
+  const [remaining, setRemaining] = useState<string | null>(() =>
+    formatRemaining(new Date(targetIso)),
+  );
 
   useEffect(() => {
+    // La date se reconstruit dans l'effet : un `new Date()` calculé au rendu
+    // serait un objet neuf à chaque fois, et le déclarer en dépendance
+    // relancerait l'intervalle à chaque seconde qui passe.
+    const target = new Date(targetIso);
     const id = setInterval(() => {
       setRemaining(formatRemaining(target));
     }, 1000);

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { loadRuleset, loadSettings, setting } from "@/lib/settings";
-import type { Fixture, Round, Ruleset, Team, Uuid } from "@/lib/types";
+import type { Fixture, Round, Team, Uuid } from "@/lib/types";
 import {
   exactScoreBudget,
   exactScoreVerdict,

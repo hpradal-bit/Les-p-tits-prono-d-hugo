@@ -465,7 +465,8 @@ export async function answerBonusQuestion(
 export async function settleBonusFromStandings(
   questionId: string,
 ): Promise<AdminActionState> {
-  const ctx = await requireAdmin();
+  // Le contrôle d'accès, pour son effet : seul un administrateur va plus loin.
+  await requireAdmin();
   const admin = createAdminClient();
 
   const { data: q } = await admin

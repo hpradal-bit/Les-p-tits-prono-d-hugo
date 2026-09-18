@@ -16,6 +16,18 @@ const eslintConfig = defineConfig([
     // le code du projet, et elles embarquent leurs propres dépendances.
     ".claude/**",
   ]),
+  {
+    rules: {
+      // Le soulignement est la convention du projet pour « ce paramètre
+      // existe parce que la signature l'impose, mais on ne s'en sert pas » —
+      // typiquement le `_prev` d'une action de formulaire. La règle doit la
+      // reconnaître, sinon elle réclame de supprimer un argument obligatoire.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

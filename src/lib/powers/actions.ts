@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/log";
-import { loadActiveSeason, loadStandingsData } from "@/lib/standings/queries";
+import { loadStandingsData } from "@/lib/standings/queries";
 import { computeStandings } from "@/lib/standings/engine";
 import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { getPower, requirePower } from "./registry.ts";

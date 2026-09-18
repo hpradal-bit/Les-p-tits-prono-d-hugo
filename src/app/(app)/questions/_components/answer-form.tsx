@@ -12,7 +12,6 @@ interface Props {
 }
 
 function PodiumForm({ question, existingAnswer, onResult }: Props & { onResult: (r: { ok: boolean; text: string }) => void }) {
-  const kd = getKind(question.kind)!;
   const config = question.config as { options: { value: string; label: string }[]; count: number; labels?: string[] };
   const count = config.count ?? 3;
 
@@ -75,7 +74,7 @@ function PodiumForm({ question, existingAnswer, onResult }: Props & { onResult: 
 
       {hasDuplicates && (
         <p className="text-[13px] font-semibold text-wrong">
-          Chaque equipe ne peut etre choisie qu'une fois.
+          Chaque équipe ne peut être choisie qu&apos;une fois.
         </p>
       )}
 

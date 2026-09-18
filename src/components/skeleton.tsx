@@ -13,30 +13,29 @@
 
 import { cn } from "@/lib/cn";
 
+/**
+ * `cn()` concatène sans fusionner : une classe posée ici l'emporte sur celle
+ * de l'appelant par simple ordre des règles CSS. Shimmer ne fixe donc ni
+ * rayon ni hauteur — chaque squelette donne les siens, sinon ils seraient
+ * silencieusement ignorés.
+ */
 export function Shimmer({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("block animate-pulse rounded-md bg-surface-sunk", className)}
-    />
-  );
+  return <span aria-hidden className={cn("block animate-pulse bg-surface-sunk", className)} />;
 }
 
 /** L'en-tête d'un écran : sur-titre, titre. */
 export function HeaderSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <Shimmer className="h-2.5 w-28" />
-      <Shimmer className="h-8 w-52" />
+      <Shimmer className="h-2.5 w-28 rounded-md" />
+      <Shimmer className="h-8 w-52 rounded-md" />
     </div>
   );
 }
 
-/** Une carte pleine, hauteur réglable. */
+/** Une carte pleine. La hauteur vient de l'appelant, jamais d'ici. */
 export function CardSkeleton({ className }: { className?: string }) {
-  return (
-    <Shimmer className={cn("h-24 rounded-[var(--radius-card)]", className)} />
-  );
+  return <Shimmer className={cn("rounded-[var(--radius-card)]", className)} />;
 }
 
 /** Une liste de cartes — matchs, messages, joueurs. */
@@ -45,6 +44,7 @@ export function ListSkeleton({
   height = "h-24",
 }: {
   rows?: number;
+  /** Une hauteur Tailwind, appliquée telle quelle à chaque carte. */
   height?: string;
 }) {
   return (
@@ -60,8 +60,8 @@ export function ListSkeleton({
 export function BannerSkeleton() {
   return (
     <div className="-mx-4 flex flex-col gap-3 bg-sage px-6 pb-5 pt-4">
-      <Shimmer className="h-2.5 w-24 bg-surface/30" />
-      <Shimmer className="h-7 w-44 bg-surface/30" />
+      <Shimmer className="h-2.5 w-24 rounded-md bg-surface/30" />
+      <Shimmer className="h-7 w-44 rounded-md bg-surface/30" />
       <Shimmer className="h-20 w-full rounded-2xl bg-surface/20" />
     </div>
   );

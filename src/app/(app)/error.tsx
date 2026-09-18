@@ -14,10 +14,15 @@ import { Button, Card } from "@/components/ui";
 
 export default function AppError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  /**
+   * `retry()` refait la requête et rejoue le rendu. `reset()`, lui, ne fait
+   * que vider l'état local : sur un écran dont le rendu serveur a échoué,
+   * l'erreur repartait aussitôt et le bouton ne servait à rien.
+   */
+  retry: () => void;
 }) {
   useEffect(() => {
     // Le détail part dans les journaux du serveur, pas à l'écran : il ne
@@ -35,7 +40,7 @@ export default function AppError({
         L&apos;écran n&apos;a pas pu se charger. Rien n&apos;est perdu : tes pronostics et tes
         points sont intacts.
       </p>
-      <Button size="sm" onClick={reset}>
+      <Button size="sm" onClick={() => retry()}>
         Réessayer
       </Button>
       {error.digest && (

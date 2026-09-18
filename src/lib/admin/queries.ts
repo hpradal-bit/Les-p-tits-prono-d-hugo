@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadRuleset } from "@/lib/settings";
 import type { Ruleset, Uuid } from "@/lib/types";
