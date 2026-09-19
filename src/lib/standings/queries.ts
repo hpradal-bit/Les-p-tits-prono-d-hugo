@@ -29,6 +29,7 @@ import {
   type ComputedStandingRow,
   type PlayedFixture,
 } from "./competition-table";
+import { loadPowerUses } from "@/lib/predictions/breakdowns";
 
 export interface SeasonRef {
   id: Uuid;
@@ -508,6 +509,14 @@ export interface MatchPrediction {
    * silencieusement — même raison qu'au tableau des résultats.
    */
   missing: boolean;
+  /**
+   * Ce qu'un pouvoir a changé pour ce joueur sur ce match précis (Sabotage
+   * reçu, Joker...). `score.points` reste le pronostic brut, jamais retouché :
+   * c'est ce que le barème a rendu. L'écran barre le brut et affiche le net
+   * (`score.points + pointAdjustment`) à côté, plutôt que de laisser croire
+   * que le pouvoir n'a rien changé.
+   */
+  pointAdjustment: number;
 }
 
 export interface MatchCenterData {
@@ -641,7 +650,7 @@ export async function loadMatchCenter(
   const userIds = [...new Set(predictionRows.map((p) => p.user_id))];
   const predictionIds = predictionRows.map((p) => p.id);
 
-  const [bucketsRes, profilesRes, scoresRes, roster] = await Promise.all([
+  const [bucketsRes, profilesRes, scoresRes, roster, powerUses] = await Promise.all([
     bucketIds.length === 0
       ? Promise.resolve({ data: [], error: null })
       : sb.from("margin_buckets").select("id, label").in("id", bucketIds),
@@ -659,6 +668,7 @@ export async function loadMatchCenter(
     // avec de vrais pronostics automatiques) n'y a pas sa place — il en
     // disparaît complètement plutôt que d'y traîner sous un nom générique.
     leagueId ? loadLeagueRoster(sb, leagueId) : Promise.resolve<PlayerRef[]>([]),
+    loadPowerUses(sb, new Set([fixtureId])),
   ]);
 
   if (bucketsRes.error) throw bucketsRes.error;
@@ -673,6 +683,15 @@ export async function loadMatchCenter(
   const profiles = new Map<string, PlayerRef>();
   for (const p of (profilesRes.data ?? []) as RawProfileRow[]) {
     profiles.set(p.id, toPlayer(p));
+  }
+
+  // Ce qu'un pouvoir a changé pour chaque joueur sur CE match (Sabotage reçu,
+  // Joker...) — voir `MatchPrediction.pointAdjustment`.
+  const adjustmentByUser = new Map<string, number>();
+  for (const use of powerUses) {
+    for (const [userId, delta] of use.deltaByUser) {
+      adjustmentByUser.set(userId, (adjustmentByUser.get(userId) ?? 0) + delta);
+    }
   }
 
   const scores = new Map<string, { points: number; breakdown: unknown }>();
@@ -710,6 +729,7 @@ export async function loadMatchCenter(
             }
           : null,
       missing: false,
+      pointAdjustment: adjustmentByUser.get(p.user_id) ?? 0,
     };
   });
 
@@ -734,12 +754,13 @@ export async function loadMatchCenter(
       isAuto: false,
       score: null,
       missing: true,
+      pointAdjustment: 0,
     }));
 
   const allPredictions = [...scoped, ...missing];
   allPredictions.sort((a, b) => {
-    const pa = a.score?.points ?? -1;
-    const pb = b.score?.points ?? -1;
+    const pa = a.score === null ? -1 : a.score.points + a.pointAdjustment;
+    const pb = b.score === null ? -1 : b.score.points + b.pointAdjustment;
     if (pa !== pb) return pb - pa;
     return a.player.firstName.localeCompare(b.player.firstName, "fr");
   });

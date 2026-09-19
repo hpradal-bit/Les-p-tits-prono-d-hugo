@@ -316,7 +316,7 @@ export async function loadFixtureBreakdowns(
  * de clé étrangère déclarée (colonne polymorphe). Les deux jointures se font
  * donc ici, à la main.
  */
-async function loadPowerUses(sb: SupabaseClient, fixtureIds: Set<string>): Promise<RawPowerUse[]> {
+export async function loadPowerUses(sb: SupabaseClient, fixtureIds: Set<string>): Promise<RawPowerUse[]> {
   const { data: usages, error } = await sb
     .from("power_usages")
     .select("id, initiator_id, target_id, state, snapshot_before, powers!inner(name, emoji)")

@@ -79,6 +79,9 @@ export default async function PointsPage({
     : "Nul";
 
   const positive = score.level !== "wrong";
+  // Le total affiché en gros doit être le vrai total : la cascade ci-dessous
+  // explique le pronostic brut, un pouvoir peut ensuite l'avoir changé.
+  const netPoints = score.points + mine.pointAdjustment;
 
   return (
     <div className="flex min-h-[70dvh] flex-col gap-3.5">
@@ -113,9 +116,9 @@ export default async function PointsPage({
             positive ? "bg-winner" : "bg-wrong"
           } text-surface`}
         >
-          <span className="tabular text-[30px] font-extrabold leading-none">{score.points}</span>
+          <span className="tabular text-[30px] font-extrabold leading-none">{netPoints}</span>
           <span className="font-mono text-[10px] tracking-[0.1em]">
-            {score.points > 1 ? "POINTS" : "POINT"}
+            {netPoints > 1 || netPoints < -1 ? "POINTS" : "POINT"}
           </span>
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
@@ -131,6 +134,13 @@ export default async function PointsPage({
                 : ""}
             {mine.isAuto && " 😴 joué automatiquement"}
           </span>
+          {mine.pointAdjustment !== 0 && (
+            <span className="text-[12px] leading-snug text-ink">
+              ⚡ Un pouvoir est passé par là : {score.points} pt{Math.abs(score.points) > 1 ? "s" : ""}{" "}
+              du barème {mine.pointAdjustment > 0 ? "+" : ""}
+              {mine.pointAdjustment} = {netPoints} au net.
+            </span>
+          )}
         </div>
       </section>
 
@@ -229,12 +239,12 @@ export default async function PointsPage({
                   className={`tabular text-[12px] font-bold ${
                     p.missing
                       ? "text-ink-faint"
-                      : (p.score?.points ?? 0) > 0
+                      : (p.score ? p.score.points + p.pointAdjustment : 0) > 0
                         ? "text-winner"
                         : "text-ink-faint"
                   }`}
                 >
-                  {p.missing ? 0 : (p.score?.points ?? "—")}
+                  {p.missing ? 0 : p.score ? p.score.points + p.pointAdjustment : "—"}
                 </span>
               </Link>
             ))}

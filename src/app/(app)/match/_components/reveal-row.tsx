@@ -80,7 +80,17 @@ export function RevealRow({
           +0
         </span>
       ) : score ? (
-        <ScorePill level={score.level} points={score.points} />
+        <span className="flex shrink-0 items-center gap-1.5">
+          {prediction.pointAdjustment !== 0 && (
+            <span
+              className="font-mono text-[11px] text-ink-faint line-through"
+              title="Point brut, avant le pouvoir"
+            >
+              {score.points > 0 ? `+${score.points}` : score.points}
+            </span>
+          )}
+          <ScorePill level={score.level} points={score.points + prediction.pointAdjustment} />
+        </span>
       ) : prediction.exactHomeScore !== null ? (
         <span className="shrink-0 rounded-full bg-clay-soft px-2.5 py-1 text-[11px] font-bold text-clay">
           exact
