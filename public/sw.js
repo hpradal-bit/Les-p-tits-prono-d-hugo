@@ -27,9 +27,13 @@
  * d'import. Du JavaScript de navigateur, lisible à l'œil nu.
  */
 
-const VERSION = "v2";
+// v3 : purge les pages et bundles mis en cache avant les correctifs de
+// débordement horizontal (admin/journal, garde-fous CSS globaux) — sans ce
+// changement de version, un appareil resterait sur l'ancienne page tant que
+// le réseau ne répondrait pas dans les 4 secondes du réseau-d'abord.
+const VERSION = "v3";
 const SHELL_CACHE = `pronos-shell-${VERSION}`; // cache-first
-const PAGES_CACHE = `pronos-pages-${VERSION}`; // stale-while-revalidate
+const PAGES_CACHE = `pronos-pages-${VERSION}`; // réseau d'abord, repli sur le cache
 const CURRENT_CACHES = [SHELL_CACHE, PAGES_CACHE];
 
 /** Nombre de pages conservées hors-ligne. Au-delà, on jette les plus vieilles. */
