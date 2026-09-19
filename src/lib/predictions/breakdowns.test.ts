@@ -4,6 +4,7 @@ import {
   buildFixtureBreakdown,
   predictionLabel,
   powerSentence,
+  netPoints,
   type RawPrediction,
   type RawPowerUse,
 } from "./breakdowns.ts";
@@ -200,6 +201,39 @@ test("les pouvoirs posés sur un autre match sont ignorés", () => {
     BUCKETS,
   );
   assert.deepEqual(b.powers, []);
+});
+
+test("un Sabotage reçu se lit sur la ligne du joueur : le brut ne bouge pas, le net oui", () => {
+  // Marc (u3) a gagné 1 point sur ce match, mais s'est fait saboter -1 :
+  // son point brut (ce qu'il a pronostiqué) reste 1, son point net tombe à 0.
+  const use: RawPowerUse = {
+    usageId: "p5",
+    fixtureId: "f1",
+    actorId: "u1",
+    targetId: "u3",
+    emoji: "💣",
+    powerName: "Sabotage",
+    deltaByUser: new Map([["u3", -1]]),
+  };
+  const b = buildFixtureBreakdown(
+    "f1",
+    [prediction({ userId: "u3", points: 1, level: "winner" })],
+    [use],
+    NAMES,
+    TEAMS,
+    BUCKETS,
+  );
+  const marc = b.players.find((p) => p.name === "Marc")!;
+  assert.equal(marc.points, 1);
+  assert.equal(marc.pointAdjustment, -1);
+  assert.equal(netPoints(marc), 0);
+});
+
+test("sans pouvoir sur ce match, le net vaut le brut", () => {
+  const b = buildFixtureBreakdown("f1", [prediction({ userId: "u1", points: 10 })], [], NAMES, TEAMS, BUCKETS);
+  const hugo = b.players.find((p) => p.name === "Hugo")!;
+  assert.equal(hugo.pointAdjustment, 0);
+  assert.equal(netPoints(hugo), 10);
 });
 
 test("un pronostic hors ligue (compte de test) disparaît plutôt que de s'afficher sous un nom générique", () => {

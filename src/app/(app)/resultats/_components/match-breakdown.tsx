@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
-import type { FixtureBreakdown } from "@/lib/predictions/breakdowns";
+import { netPoints, type FixtureBreakdown } from "@/lib/predictions/breakdowns";
 import type { ScoreLevel } from "@/lib/types";
 
 const LEVEL_STYLE: Record<ScoreLevel, string> = {
@@ -73,13 +73,19 @@ export function MatchBreakdown({
                 <span className={cn(p.missing && "italic")}>{p.label}</span>
                 {p.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
               </span>
-              <span
-                className={cn(
-                  "shrink-0 font-mono text-[12px] font-bold",
-                  p.level ? LEVEL_STYLE[p.level] : "text-ink-faint",
+              <span className="flex shrink-0 items-baseline gap-1 font-mono text-[12px] font-bold">
+                {p.points !== null && p.pointAdjustment !== 0 && (
+                  <span className="text-ink-faint line-through" title="Point brut, avant le pouvoir">
+                    +{p.points}
+                  </span>
                 )}
-              >
-                {p.points === null ? "—" : `+${p.points}`}
+                <span className={p.level ? LEVEL_STYLE[p.level] : "text-ink-faint"}>
+                  {(() => {
+                    const net = netPoints(p);
+                    if (net === null) return "—";
+                    return net < 0 ? net : `+${net}`;
+                  })()}
+                </span>
               </span>
             </div>
           ))}

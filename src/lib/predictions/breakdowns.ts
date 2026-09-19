@@ -57,6 +57,14 @@ export interface BreakdownPlayer {
    * zéro point, comme n'importe quel autre score.
    */
   missing: boolean;
+  /**
+   * Ce qu'un pouvoir a changé pour CE joueur sur CE match (Sabotage reçu,
+   * Duel gagné...). `points` reste le pronostic brut, non touché : c'est ce
+   * qui a été joué. `pointAdjustment` est ce qui s'y ajoute une fois le
+   * pouvoir résolu — l'écran barre le brut et affiche le net à côté plutôt
+   * que de les confondre en un seul nombre.
+   */
+  pointAdjustment: number;
 }
 
 export interface BreakdownPower {
@@ -101,6 +109,11 @@ export function predictionLabel(
   return bucket ? `${side} · écart ${bucket}` : side;
 }
 
+/** Le point brut, ajusté par les pouvoirs — `null` tant qu'il n'y a rien à noter. */
+export function netPoints(player: BreakdownPlayer): number | null {
+  return player.points === null ? null : player.points + player.pointAdjustment;
+}
+
 export function buildFixtureBreakdown(
   fixtureId: string,
   predictions: RawPrediction[],
@@ -116,6 +129,17 @@ export function buildFixtureBreakdown(
   const predicted = predictions.filter((p) => p.fixtureId === fixtureId && names.has(p.userId));
   const predictedIds = new Set(predicted.map((p) => p.userId));
 
+  // Ce que les pouvoirs posés sur CE match ont changé, par joueur touché —
+  // qu'il en soit l'auteur (Duel gagné) ou la cible (Sabotage reçu). Calculé
+  // une fois, avant les lignes, pour que chacune porte son propre écart.
+  const adjustmentByUser = new Map<string, number>();
+  for (const use of powerUses) {
+    if (use.fixtureId !== fixtureId) continue;
+    for (const [userId, delta] of use.deltaByUser) {
+      adjustmentByUser.set(userId, (adjustmentByUser.get(userId) ?? 0) + delta);
+    }
+  }
+
   const scored: BreakdownPlayer[] = predicted.map((p) => ({
     userId: p.userId,
     name: names.get(p.userId) ?? "Joueur",
@@ -124,6 +148,7 @@ export function buildFixtureBreakdown(
     level: p.level,
     isAuto: p.isAuto,
     missing: false,
+    pointAdjustment: adjustmentByUser.get(p.userId) ?? 0,
   }));
 
   // `names` porte tous les joueurs de la ligue (c'est ce que l'appelant y
@@ -140,14 +165,16 @@ export function buildFixtureBreakdown(
       level: null,
       isAuto: false,
       missing: true,
+      pointAdjustment: 0,
     }));
 
   const players: BreakdownPlayer[] = [...scored, ...missing]
-    // Le meilleur en haut : on lit le match comme un mini-classement. Un
-    // pronostic pas encore noté (`null`) reste en bas, il n'a rien rapporté.
+    // Le meilleur en haut : on lit le match comme un mini-classement, au net
+    // une fois les pouvoirs pris en compte. Un pronostic pas encore noté
+    // (`null`) reste en bas, il n'a rien rapporté.
     .sort(
       (a, b) =>
-        (b.points ?? -1) - (a.points ?? -1) || a.name.localeCompare(b.name, "fr"),
+        (netPoints(b) ?? -1) - (netPoints(a) ?? -1) || a.name.localeCompare(b.name, "fr"),
     );
 
   const powers: BreakdownPower[] = powerUses

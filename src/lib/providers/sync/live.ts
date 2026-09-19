@@ -341,6 +341,29 @@ export async function syncLive(
     warnings.push(...promoted.warnings);
   }
 
+  // Un score écrit ne vaut rien tant que les points ne suivent pas. C'était le
+  // maillon manquant : le relevé constatait la fin d'un match, émettait
+  // l'événement, et laissait le classement à zéro — la panne ne se serait vue
+  // qu'un samedi soir de septembre, une fois les matchs joués.
+  //
+  // Le calcul est une fonction pure et rejouable : le relancer sur un match
+  // déjà noté redonne le même résultat, donc un doublon ne coûte rien.
+  //
+  // Avant tout pouvoir : un Sabotage résolu ici lit les points du match visé
+  // (`fixtureScores`) pour savoir combien il en retire. Résoudre les pouvoirs
+  // avant que ce calcul n'ait tourné leur faisait lire un score encore à zéro —
+  // un Sabotage sur un pronostic gagnant n'enlevait alors rien du tout.
+  let predictionsScored = 0;
+  if (finished.length > 0) {
+    try {
+      const summary = await (options.recompute ?? recomputeFixtures)(sb, finished);
+      predictionsScored = summary.predictions;
+      changes.push(`${summary.predictions} pronostic(s) noté(s) sur ${summary.fixtures} match(s)`);
+    } catch (error) {
+      warnings.push(`points non calculés : ${describeError(error)} — relancer depuis l'espace admin`);
+    }
+  }
+
   // Un pouvoir posé sur un match désormais terminé ne doit pas rester en
   // attente : le joueur a dépensé ses crédits. Trois l'étaient depuis le
   // 27 août, avant que la résolution match par match n'existe.
@@ -364,24 +387,6 @@ export async function syncLive(
   }
 
   await resolver.flush(sb);
-
-  // Un score écrit ne vaut rien tant que les points ne suivent pas. C'était le
-  // maillon manquant : le relevé constatait la fin d'un match, émettait
-  // l'événement, et laissait le classement à zéro — la panne ne se serait vue
-  // qu'un samedi soir de septembre, une fois les matchs joués.
-  //
-  // Le calcul est une fonction pure et rejouable : le relancer sur un match
-  // déjà noté redonne le même résultat, donc un doublon ne coûte rien.
-  let predictionsScored = 0;
-  if (finished.length > 0) {
-    try {
-      const summary = await (options.recompute ?? recomputeFixtures)(sb, finished);
-      predictionsScored = summary.predictions;
-      changes.push(`${summary.predictions} pronostic(s) noté(s) sur ${summary.fixtures} match(s)`);
-    } catch (error) {
-      warnings.push(`points non calculés : ${describeError(error)} — relancer depuis l'espace admin`);
-    }
-  }
 
   const status: SyncRunResult["status"] = unmatched.length > 0 ? "partial" : "success";
   await closeRun(sb, run, {
