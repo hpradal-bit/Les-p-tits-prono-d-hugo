@@ -109,7 +109,11 @@ export function buildFixtureBreakdown(
   teams: TeamLabels,
   bucketLabels: Map<string, string>,
 ): FixtureBreakdown {
-  const predicted = predictions.filter((p) => p.fixtureId === fixtureId);
+  // `names` porte le trousseau de LA ligue concernée (voir plus bas) : un
+  // pronostic d'un compte hors ligue (un compte de test, par exemple) n'a
+  // rien à faire ici et en disparaît complètement plutôt que de s'afficher
+  // sous un nom générique.
+  const predicted = predictions.filter((p) => p.fixtureId === fixtureId && names.has(p.userId));
   const predictedIds = new Set(predicted.map((p) => p.userId));
 
   const scored: BreakdownPlayer[] = predicted.map((p) => ({

@@ -174,6 +174,25 @@ interface RawMemberRow {
 }
 
 /**
+ * Les membres actifs d'UNE ligue — jamais tous les profils actifs de
+ * l'application. Un compte de test qui traîne (actif, mais hors de toute
+ * ligue) ne doit apparaître dans aucun écran qui se veut scopé à un groupe :
+ * classement, Match Center, détail d'un match.
+ */
+export async function loadLeagueRoster(sb: SupabaseClient, leagueId: Uuid): Promise<PlayerRef[]> {
+  const { data, error } = await sb
+    .from("league_members")
+    .select(`profiles!inner(${PROFILE_COLUMNS}, is_active)`)
+    .eq("league_id", leagueId);
+  if (error) throw error;
+  return ((data ?? []) as unknown as RawMemberRow[])
+    .map((row) => (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles))
+    .filter((p): p is RawProfileRow & { is_active: boolean } => p != null && p.is_active)
+    .map(toPlayer)
+    .sort((a, b) => a.firstName.localeCompare(b.firstName, "fr"));
+}
+
+/**
  * Tout ce dont le moteur a besoin, pour UNE ligue. Le filtrage live/officiel
  * n'a pas lieu ici : on charge une fois, le moteur applique la portée
  * demandée. Les joueurs viennent de `league_members`, pas de tous les profils
@@ -185,13 +204,13 @@ export async function loadStandingsData(
   season: SeasonRef,
   leagueId: Uuid,
 ): Promise<StandingsData> {
-  const [roundsRes, membersRes, adjustmentsRes] = await Promise.all([
+  const [roundsRes, players, adjustmentsRes] = await Promise.all([
     sb
       .from("rounds")
       .select("id, number, name, status")
       .eq("season_id", season.id)
       .order("number"),
-    sb.from("league_members").select(`profiles!inner(${PROFILE_COLUMNS}, is_active)`).eq("league_id", leagueId),
+    loadLeagueRoster(sb, leagueId),
     sb
       .from("point_adjustments")
       .select("user_id, round_id, delta")
@@ -199,7 +218,6 @@ export async function loadStandingsData(
   ]);
 
   if (roundsRes.error) throw roundsRes.error;
-  if (membersRes.error) throw membersRes.error;
   if (adjustmentsRes.error) throw adjustmentsRes.error;
 
   const roundsDetail: RoundInfo[] = (
@@ -212,11 +230,6 @@ export async function loadStandingsData(
   ).map((r) => ({ id: r.id, number: r.number, name: r.name, status: r.status }));
 
   const roundIds = roundsDetail.map((r) => r.id);
-  const players: PlayerRef[] = ((membersRes.data ?? []) as unknown as RawMemberRow[])
-    .map((row) => (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles))
-    .filter((p): p is RawProfileRow & { is_active: boolean } => p != null && p.is_active)
-    .map(toPlayer)
-    .sort((a, b) => a.firstName.localeCompare(b.firstName, "fr"));
 
   const [fixturesRes, scoresRes, bonusRes] = await Promise.all([
     roundIds.length === 0
@@ -488,6 +501,13 @@ export interface MatchPrediction {
   isAuto: boolean;
   /** `null` tant que le pronostic n'a pas été noté. */
   score: { points: number; level: ScoreLevel; reason: string } | null;
+  /**
+   * Vrai pour un membre de la ligue qui n'a rien pronostiqué sur ce match.
+   * `outcome` vaut alors une valeur arbitraire (jamais lue) : ce champ est ce
+   * qui compte. Il reste dans la liste plutôt que d'en disparaître
+   * silencieusement — même raison qu'au tableau des résultats.
+   */
+  missing: boolean;
 }
 
 export interface MatchCenterData {
@@ -621,7 +641,7 @@ export async function loadMatchCenter(
   const userIds = [...new Set(predictionRows.map((p) => p.user_id))];
   const predictionIds = predictionRows.map((p) => p.id);
 
-  const [bucketsRes, profilesRes, scoresRes] = await Promise.all([
+  const [bucketsRes, profilesRes, scoresRes, roster] = await Promise.all([
     bucketIds.length === 0
       ? Promise.resolve({ data: [], error: null })
       : sb.from("margin_buckets").select("id, label").in("id", bucketIds),
@@ -634,6 +654,11 @@ export async function loadMatchCenter(
           .from("prediction_scores")
           .select("prediction_id, points, breakdown")
           .in("prediction_id", predictionIds),
+    // Le détail d'un match est un écran de groupe : n'y voient leur trace que
+    // les membres de CETTE ligue. Un compte de test hors ligue (mais actif,
+    // avec de vrais pronostics automatiques) n'y a pas sa place — il en
+    // disparaît complètement plutôt que d'y traîner sous un nom générique.
+    leagueId ? loadLeagueRoster(sb, leagueId) : Promise.resolve<PlayerRef[]>([]),
   ]);
 
   if (bucketsRes.error) throw bucketsRes.error;
@@ -684,10 +709,35 @@ export async function loadMatchCenter(
               reason: explainScore(breakdown),
             }
           : null,
+      missing: false,
     };
   });
 
-  predictions.sort((a, b) => {
+  // « Le mien » se lit dans les pronostics bruts : un spectateur hors ligue
+  // (aucun `leagueId` résolu) ne devrait jamais en arriver là, mais autant ne
+  // pas dépendre du filtrage par ligue pour retrouver son propre pronostic.
+  const mine = viewerId ? (predictions.find((p) => p.player.userId === viewerId) ?? null) : null;
+
+  const rosterIds = new Set(roster.map((p) => p.userId));
+  const scoped = leagueId ? predictions.filter((p) => rosterIds.has(p.player.userId)) : predictions;
+
+  const predictedIds = new Set(scoped.map((p) => p.player.userId));
+  const missing: MatchPrediction[] = roster
+    .filter((p) => !predictedIds.has(p.userId))
+    .map((p) => ({
+      player: p,
+      outcome: "home",
+      marginBucketLabel: null,
+      marginValue: null,
+      exactHomeScore: null,
+      exactAwayScore: null,
+      isAuto: false,
+      score: null,
+      missing: true,
+    }));
+
+  const allPredictions = [...scoped, ...missing];
+  allPredictions.sort((a, b) => {
     const pa = a.score?.points ?? -1;
     const pb = b.score?.points ?? -1;
     if (pa !== pb) return pb - pa;
@@ -700,8 +750,10 @@ export async function loadMatchCenter(
     fixture,
     // Avant le verrouillage, RLS ne renvoie que le pronostic du joueur connecté.
     // On ne l'affiche pas dans la liste du groupe : ce serait mentir sur le secret.
-    predictions: isLocked ? predictions : [],
-    mine: viewerId ? (predictions.find((p) => p.player.userId === viewerId) ?? null) : null,
+    // « Non parié » n'a pas plus sa place ici : lui aussi est un fait acquis
+    // seulement une fois le match verrouillé.
+    predictions: isLocked ? allPredictions : [],
+    mine,
     isLocked,
     leagueId,
   };

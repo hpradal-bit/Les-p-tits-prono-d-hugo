@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { requireViewer } from "@/lib/auth/session";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
-import { loadActiveSeason } from "@/lib/standings/queries";
+import { loadActiveSeason, loadLeagueRoster } from "@/lib/standings/queries";
 import { listQuestionViews } from "@/lib/bonus/queries";
 import { QuestionCard } from "./_components/question-card";
 
@@ -38,15 +38,15 @@ export default async function QuestionsPage({
   }
   const seasonId = season.id;
 
-  // Les questions et les profils en parallèle : ni l'un ni l'autre n'attend.
-  const [views, { data: profiles }] = await Promise.all([
+  // Les questions et le trousseau de la ligue en parallèle : ni l'un ni
+  // l'autre n'attend. Les membres de CETTE ligue, pas tous les profils actifs
+  // de l'appli — un compte de test resté actif hors ligue n'a rien à faire
+  // dans les réponses du groupe.
+  const [views, roster] = await Promise.all([
     listQuestionViews(admin, seasonId, viewer.id),
-    admin.from("profiles").select("id, display_name").eq("is_active", true),
+    loadLeagueRoster(admin, resolved.leagueId),
   ]);
-  const namesById = new Map<string, string>();
-  for (const p of (profiles ?? []) as Array<{ id: string; display_name: string }>) {
-    namesById.set(p.id, p.display_name);
-  }
+  const namesById = new Map(roster.map((p) => [p.userId, p.displayName]));
 
   const openViews = views.filter((v) => v.question.status === "open");
   const closedViews = views.filter(

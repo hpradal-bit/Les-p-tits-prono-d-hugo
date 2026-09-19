@@ -16,6 +16,7 @@ const idSchema = z.string().uuid();
 
 /** Ce qu'un joueur a joué, en une ligne lisible. */
 function label(p: MatchPrediction, home: string, away: string): string {
+  if (p.missing) return "Non parié";
   const side = p.outcome === "home" ? home : p.outcome === "away" ? away : "Nul";
   if (p.exactHomeScore !== null && p.exactAwayScore !== null) {
     return `${side} · ${p.exactHomeScore}–${p.exactAwayScore}`;
@@ -45,13 +46,15 @@ export default async function MatchPage({
   const home = fixture.homeTeam.shortName;
   const away = fixture.awayTeam.shortName;
 
-  const onHome = predictions.filter((p) => p.outcome === "home").length;
-  const onAway = predictions.filter((p) => p.outcome === "away").length;
+  // Les entrées « Non parié » ne sont pas des pronostics : elles ne comptent
+  // ni dans la répartition des camps, ni dans le calcul du solitaire.
+  const onHome = predictions.filter((p) => !p.missing && p.outcome === "home").length;
+  const onAway = predictions.filter((p) => !p.missing && p.outcome === "away").length;
   const hasScore = fixture.homeScore !== null && fixture.awayScore !== null;
 
   // Un joueur seul de son camp mérite d'être signalé : c'est le sel du groupe.
   const loner = (p: MatchPrediction) =>
-    (p.outcome === "home" && onHome === 1) || (p.outcome === "away" && onAway === 1);
+    !p.missing && ((p.outcome === "home" && onHome === 1) || (p.outcome === "away" && onAway === 1));
 
   return (
     <div className="-mx-4 flex flex-col">
@@ -124,7 +127,8 @@ export default async function MatchPage({
                 Ce que les autres ont joué
               </span>
               <span className="text-[11px] text-ink-muted">
-                {predictions.length} pronostic{predictions.length > 1 ? "s" : ""}
+                {predictions.filter((p) => !p.missing).length} pronostic
+                {predictions.filter((p) => !p.missing).length > 1 ? "s" : ""}
               </span>
             </div>
 
@@ -140,8 +144,9 @@ export default async function MatchPage({
                   label={label(p, home, away)}
                   isMine={p.player.userId === viewer.id}
                   isAlone={loner(p)}
-                  // Le sien est déjà connu : inutile de le faire retourner.
-                  startRevealed={p.player.userId === viewer.id || hasScore}
+                  // Le sien est déjà connu, et « Non parié » n'a rien à
+                  // cacher : inutile de les faire retourner.
+                  startRevealed={p.player.userId === viewer.id || hasScore || p.missing}
                   clubs={clubs}
                 />
               ))

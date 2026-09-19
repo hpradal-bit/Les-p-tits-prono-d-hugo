@@ -15,6 +15,7 @@ import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { loadPowerAdjustmentsByFixture } from "@/lib/powers/queries";
 import { listQuestionViews } from "@/lib/bonus/queries";
 import { loadFixtureBreakdowns } from "@/lib/predictions/breakdowns";
+import { loadLeagueRoster } from "@/lib/standings/queries";
 import type { BonusQuestionView } from "@/lib/bonus/types";
 
 export const metadata: Metadata = { title: "Résultats" };
@@ -61,15 +62,15 @@ export default async function ResultatsPage({
   // (qui a répondu quoi, la bonne réponse, les points) — réutilisées telles
   // quelles plutôt que reconstruites : QuestionCard fait déjà exactement ça.
   // Trois lectures indépendantes : elles partent ensemble plutôt qu'à la file.
-  const [powerAdjustments, settledViews, { data: profiles }] = await Promise.all([
+  const [powerAdjustments, settledViews, roster] = await Promise.all([
     loadPowerAdjustmentsByFixture(admin, viewer.id, board.seasonId),
     listQuestionViews(admin, board.seasonId, viewer.id, { statuses: ["settled"] }),
-    admin.from("profiles").select("id, display_name").eq("is_active", true),
+    // Les membres de CETTE ligue, pas tous les profils actifs de l'appli :
+    // un compte de test resté actif hors ligue n'a rien à faire dans « Les
+    // pronos du groupe ».
+    loadLeagueRoster(admin, leagueId),
   ]);
-  const namesById = new Map<string, string>();
-  for (const p of (profiles ?? []) as Array<{ id: string; display_name: string }>) {
-    namesById.set(p.id, p.display_name);
-  }
+  const namesById = new Map(roster.map((p) => [p.userId, p.displayName]));
 
   const bonusByRound = new Map<string, BonusQuestionView[]>();
   const bonusSeasonWide: BonusQuestionView[] = [];

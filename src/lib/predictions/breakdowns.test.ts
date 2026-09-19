@@ -202,14 +202,21 @@ test("les pouvoirs posés sur un autre match sont ignorés", () => {
   assert.deepEqual(b.powers, []);
 });
 
-test("un joueur inconnu ne fait pas tomber l'écran", () => {
+test("un pronostic hors ligue (compte de test) disparaît plutôt que de s'afficher sous un nom générique", () => {
+  // `names` porte le trousseau de LA ligue : un pronostic dont l'auteur n'y
+  // figure pas (compte de test resté actif hors de toute ligue, par exemple)
+  // n'a rien à faire à l'écran — ni sous son vrai nom, ni sous un nom générique.
   const b = buildFixtureBreakdown(
     "f1",
-    [prediction({ userId: "inconnu" })],
+    [prediction({ userId: "inconnu" }), prediction({ userId: "u1" })],
     [],
     NAMES,
     TEAMS,
     BUCKETS,
   );
-  assert.equal(b.players[0].name, "Joueur");
+  assert.equal(
+    b.players.some((p) => p.userId === "inconnu"),
+    false,
+  );
+  assert.equal(b.players.some((p) => p.userId === "u1"), true);
 });

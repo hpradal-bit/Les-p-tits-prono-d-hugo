@@ -39,6 +39,7 @@ export function RevealRow({
         "flex items-center gap-3 rounded-[28px] p-2.5 px-4 shadow-[var(--shadow-card)]",
         isMine ? "border border-clay/50 bg-surface" : "bg-surface",
         !revealed && "border border-dashed border-line-strong bg-surface-sunk shadow-none",
+        prediction.missing && "opacity-60",
       )}
     >
       {revealed ? (
@@ -58,6 +59,7 @@ export function RevealRow({
           className={cn(
             "truncate text-[12px] text-ink-muted",
             !revealed && "select-none blur-[4px]",
+            prediction.missing && "italic",
           )}
           aria-hidden={!revealed}
         >
@@ -73,6 +75,10 @@ export function RevealRow({
         >
           Retourner
         </button>
+      ) : prediction.missing ? (
+        <span className="shrink-0 rounded-full bg-surface-sunk px-2.5 py-1 text-[11px] font-bold text-ink-faint">
+          +0
+        </span>
       ) : score ? (
         <ScorePill level={score.level} points={score.points} />
       ) : prediction.exactHomeScore !== null ? (

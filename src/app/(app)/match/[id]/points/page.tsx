@@ -227,10 +227,14 @@ export default async function PointsPage({
                 <PlayerAvatar player={p.player} clubs={clubs} size={34} />
                 <span
                   className={`tabular text-[12px] font-bold ${
-                    (p.score?.points ?? 0) > 0 ? "text-winner" : "text-ink-faint"
+                    p.missing
+                      ? "text-ink-faint"
+                      : (p.score?.points ?? 0) > 0
+                        ? "text-winner"
+                        : "text-ink-faint"
                   }`}
                 >
-                  {p.score?.points ?? "—"}
+                  {p.missing ? 0 : (p.score?.points ?? "—")}
                 </span>
               </Link>
             ))}
