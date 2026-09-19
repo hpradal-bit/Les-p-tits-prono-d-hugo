@@ -4,8 +4,7 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui";
 import { updateLockReminderSlots } from "@/lib/admin/actions";
 import { ADMIN_IDLE } from "@/lib/admin/types";
-import { TITLE_SAFE, type ReminderSlot } from "@/lib/push/lock-reminder-settings";
-import { cn } from "@/lib/cn";
+import type { ReminderSlot } from "@/lib/push/lock-reminder-settings";
 
 const field =
   "w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-ink placeholder:text-ink-faint";
@@ -25,8 +24,6 @@ function SlotFields({
 }) {
   const [enabled, setEnabled] = useState(slot.enabled);
   const [mode, setMode] = useState(slot.mode);
-  const [title, setTitle] = useState(slot.title);
-  const overLength = title.length > TITLE_SAFE;
   const prefix = `slot${index}`;
   const radioName = `${prefix}Mode`;
 
@@ -126,34 +123,18 @@ function SlotFields({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-baseline justify-between">
-            <label htmlFor={`${prefix}Title`} className="text-[12.5px] font-semibold text-ink">
-              Titre
-            </label>
-            <span
-              className={cn(
-                "font-mono text-[11px]",
-                overLength ? "font-semibold text-wrong" : "text-ink-faint",
-              )}
-            >
-              {title.length}/{TITLE_SAFE}
-            </span>
-          </div>
+          <label htmlFor={`${prefix}Title`} className="text-[12.5px] font-semibold text-ink">
+            Titre
+          </label>
           <input
             id={`${prefix}Title`}
             name={`${prefix}Title`}
             type="text"
             required={enabled}
             maxLength={100}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className={cn(field, overLength && "border-wrong")}
+            defaultValue={slot.title}
+            className={field}
           />
-          {overLength && (
-            <p className="text-[11px] font-semibold text-wrong">
-              Risque d&apos;être coupé sur l&apos;écran verrouillé d&apos;un iPhone.
-            </p>
-          )}
         </div>
 
         <div className="flex flex-col gap-1.5">

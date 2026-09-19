@@ -190,9 +190,21 @@
 html {
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
+  /*
+   * Filet de sécurité : un texte imposé sans espace (un JSON sérialisé dans
+   * le journal d'administration, une longue URL) peut pousser un élément plus
+   * large que l'écran. Sans cette ligne, c'est TOUTE la page qui devient
+   * défilable horizontalement plutôt que le seul élément fautif — repéré sur
+   * /admin/journal, mais la règle vaut pour n'importe quel écran de
+   * l'application. Elle ne gêne aucun défilement horizontal volontaire (les
+   * onglets, par exemple) : ceux-ci posent leur propre `overflow-x-auto` sur
+   * un conteneur dédié, indépendant de celui-ci.
+   */
+  overflow-x: hidden;
 }
 
 body {
+  overflow-x: hidden;
   background: var(--ground);
   color: var(--ink);
   font-family: var(--font-sans-body), system-ui, -apple-system, sans-serif;

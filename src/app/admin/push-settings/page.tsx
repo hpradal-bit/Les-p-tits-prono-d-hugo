@@ -143,8 +143,7 @@ export default async function PushSettingsPage() {
             Deux créneaux, chacun réglable par délai (« 24 h avant ») ou par heure précise
             (« vendredi 16 h »), avec un titre et un texte fixes — enregistrés une fois, appliqués
             automatiquement à chaque match ensuite. Envoyé à tous les joueurs de la ligue concernée,
-            qu&apos;ils aient déjà pronostiqué ou non. Au-delà de 22 caractères (emoji compris), le
-            titre risque d&apos;être coupé sur l&apos;écran verrouillé d&apos;un iPhone.
+            qu&apos;ils aient déjà pronostiqué ou non.
           </p>
         </div>
         <ReminderSlotsForm slots={reminderSlots} />

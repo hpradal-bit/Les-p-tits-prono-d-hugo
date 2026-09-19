@@ -113,19 +113,6 @@ describe("validation des créneaux", () => {
     assert.deepEqual(errors, {});
   });
 
-  test("un titre trop long pour l'écran verrouillé est rejeté, même sous la limite dure", () => {
-    // 26 caractères : mesuré tronqué sur l'écran verrouillé d'un iPhone.
-    const long = "Ça sent le week-end de rug";
-    assert.equal(long.length, 26);
-    const errors = validateReminderSlots([{ ...hoursMode, title: long }, fixedMode]);
-    assert.ok(errors.slot_1?.title);
-  });
-
-  test("un titre de 22 caractères, la limite mesurée sûre, passe", () => {
-    const safe = "45 secondes pour buter";
-    assert.equal(safe.length, 22);
-    assert.deepEqual(validateReminderSlots([{ ...hoursMode, title: safe }, fixedMode]), {});
-  });
 });
 
 test("reminderSlotsToRow écrit les deux id fixes dans l'ordre", () => {

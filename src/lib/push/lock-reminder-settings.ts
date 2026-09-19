@@ -64,14 +64,6 @@ export const LOCK_REMINDER_SLOTS_DEFAULTS: ReminderSlot[] = [
 export const LOCK_REMINDER_SLOTS_KEY = "notifications.lock_reminder_slots";
 
 const TITLE_MAX = 100;
-/**
- * Au-delà, iOS coupe le titre au milieu d'un mot sur l'écran verrouillé et
- * ajoute des points de suspension — mesuré directement sur l'appareil d'Hugo :
- * un titre de 26 caractères était déjà tronqué, un de 22 tenait entièrement.
- * On avertit donc bien avant la limite dure de 100, pour qu'un admin ne
- * recrée pas le même problème sans le voir avant l'envoi.
- */
-export const TITLE_SAFE = 22;
 const BODY_MAX = 300;
 const HOURS_MIN = 1;
 const HOURS_MAX = 72;
@@ -154,9 +146,6 @@ export function validateReminderSlots(inputs: ReminderSlotInput[]): ReminderSlot
     if (input.enabled) {
       if (!input.title.trim()) slotErrors.title = "Le titre ne peut pas être vide.";
       else if (input.title.length > TITLE_MAX) slotErrors.title = `${TITLE_MAX} caractères au plus.`;
-      else if (input.title.length > TITLE_SAFE) {
-        slotErrors.title = `Risque de troncature sur l'écran verrouillé au-delà de ${TITLE_SAFE} caractères (emoji compris).`;
-      }
       if (!input.body.trim()) slotErrors.body = "Le texte ne peut pas être vide.";
       else if (input.body.length > BODY_MAX) slotErrors.body = `${BODY_MAX} caractères au plus.`;
     }

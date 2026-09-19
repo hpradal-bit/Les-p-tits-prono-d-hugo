@@ -24,10 +24,14 @@ function Diff({ before, after }: { before: unknown; after: unknown }) {
   return (
     <ul className="mt-2 flex flex-col gap-0.5">
       {changed.map((k) => (
-        <li key={k} className="font-mono text-[11.5px] text-ink-muted">
-          {k} : <span className="text-wrong">{JSON.stringify(b[k]) ?? "—"}</span>
+        // `break-words` : un objet ou un tableau sérialisé (les créneaux de
+        // rappel, par exemple) donne une chaîne JSON sans espaces sur cent
+        // caractères et plus. Sans ça, rien ne peut la couper et elle pousse
+        // toute la page plus large que l'écran d'un téléphone.
+        <li key={k} className="break-words font-mono text-[11.5px] text-ink-muted">
+          {k} : <span className="break-words text-wrong">{JSON.stringify(b[k]) ?? "—"}</span>
           {" → "}
-          <span className="text-winner">{JSON.stringify(a[k]) ?? "—"}</span>
+          <span className="break-words text-winner">{JSON.stringify(a[k]) ?? "—"}</span>
         </li>
       ))}
     </ul>
