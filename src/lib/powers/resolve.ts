@@ -5,17 +5,20 @@ import type { Power, PowerUsage, ResolveContext } from "./types.ts";
 import type { Uuid } from "../types.ts";
 
 /**
- * Écrit le résultat d'un pouvoir déjà résolu : ajustements de points, passage
- * à l'état "resolved", événement pour le Vestiaire.
+ * Écrit le résultat d'un pouvoir : ajustements de points, passage à l'état
+ * "resolved", événement pour le Vestiaire.
  *
  * Extrait de `resolveRoundPowers` pour être partagé avec `resolveFixturePowers`
  * (résolution match par match) — un seul endroit écrit un résultat de pouvoir,
  * qu'il soit déclenché à la fin d'un match ou à la clôture de la journée.
  *
- * Idempotent par construction : n'est jamais appelé deux fois pour la même
- * utilisation, puisque les deux appelants ne lisent que les utilisations encore
- * à l'état "declared"/"accepted" (cf. `loadRoundUsages`) — une fois passée à
- * "resolved" ici, elle ne réapparaît plus dans aucune des deux requêtes.
+ * Rejouable, comme le calcul des points (règle n° 2) : un pouvoir déjà
+ * "resolved" peut être repassé ici si le score du match a changé depuis (score
+ * corrigé depuis l'admin, recoupement tardif qui officialise un résultat) —
+ * c'est la dernière lecture du score qui fait foi, jamais celle qui avait
+ * cours au premier passage. Les ajustements précédents de cette utilisation
+ * sont alors remplacés plutôt qu'accumulés, et rien n'est réécrit si le
+ * nouveau calcul retombe exactement sur le même résultat.
  */
 export async function applyResolution(
   admin: SupabaseClient,
@@ -24,9 +27,9 @@ export async function applyResolution(
   usage: PowerUsage,
   power: Power,
   adminId: string | null,
-): Promise<{ delta: number }> {
+): Promise<{ delta: number; changed: boolean }> {
   const pk = getPower(power.code);
-  if (!pk) return { delta: 0 };
+  if (!pk) return { delta: 0, changed: false };
 
   // Chargées ici plutôt que passées par l'appelant : un seul match résolu tout
   // de suite après la fin d'un autre n'a pas besoin de refaire tout le calcul
@@ -36,18 +39,42 @@ export async function applyResolution(
   const ctx: ResolveContext = { usage, power, fixtureScores, roundTotals };
   const result = pk.resolve(ctx);
 
-  for (const adj of result.adjustments) {
-    if (adj.delta === 0) continue;
-    await admin.from("point_adjustments").insert({
-      user_id: adj.userId,
-      season_id: seasonId,
-      round_id: roundId,
-      delta: adj.delta,
-      reason: adj.reason,
-      source: `power:${power.code}`,
-      source_id: usage.id,
-      created_by: adminId,
-    });
+  const source = `power:${power.code}`;
+  const { data: previousRows } = await admin
+    .from("point_adjustments")
+    .select("id, user_id, delta")
+    .eq("source", source)
+    .eq("source_id", usage.id);
+  const previous = (previousRows ?? []) as Array<{ id: string; user_id: string; delta: number }>;
+  const previousByUser = new Map(previous.map((p) => [p.user_id, p.delta]));
+
+  const nextAdjustments = result.adjustments.filter((adj) => adj.delta !== 0);
+  const nextByUser = new Map(nextAdjustments.map((adj) => [adj.userId, adj.delta]));
+
+  const changed =
+    usage.state !== "resolved" ||
+    previousByUser.size !== nextByUser.size ||
+    [...previousByUser].some(([userId, delta]) => nextByUser.get(userId) !== delta);
+
+  if (changed) {
+    if (previous.length > 0) {
+      await admin
+        .from("point_adjustments")
+        .delete()
+        .in("id", previous.map((p) => p.id));
+    }
+    for (const adj of nextAdjustments) {
+      await admin.from("point_adjustments").insert({
+        user_id: adj.userId,
+        season_id: seasonId,
+        round_id: roundId,
+        delta: adj.delta,
+        reason: adj.reason,
+        source,
+        source_id: usage.id,
+        created_by: adminId,
+      });
+    }
   }
 
   await admin
@@ -59,30 +86,33 @@ export async function applyResolution(
     })
     .eq("id", usage.id);
 
+  const actorDelta = result.adjustments
+    .filter((a) => a.userId === usage.initiatorId)
+    .reduce((sum, a) => sum + a.delta, 0);
+
   // L'événement est émis même sans ajustement de points : l'Espion ne déplace
   // aucun point mais le Vestiaire doit quand même raconter qu'il a été utilisé.
-  await admin.from("events").insert({
-    kind: "power_resolved",
-    season_id: seasonId,
-    round_id: roundId,
-    actor_id: usage.initiatorId,
-    target_id: usage.targetId,
-    payload: {
-      power_code: power.code,
-      power_emoji: power.emoji,
-      power_name: power.name,
-      outcome: result.outcome,
-      delta: result.adjustments
-        .filter((a) => a.userId === usage.initiatorId)
-        .reduce((sum, a) => sum + a.delta, 0),
-    },
-  });
+  // Un recalcul qui ne change rien n'émet rien de plus : rejouer un match déjà
+  // noté ne doit pas inonder le fil d'un doublon.
+  if (changed) {
+    await admin.from("events").insert({
+      kind: "power_resolved",
+      season_id: seasonId,
+      round_id: roundId,
+      actor_id: usage.initiatorId,
+      target_id: usage.targetId,
+      payload: {
+        usage_id: usage.id,
+        power_code: power.code,
+        power_emoji: power.emoji,
+        power_name: power.name,
+        outcome: result.outcome,
+        delta: actorDelta,
+      },
+    });
+  }
 
-  return {
-    delta: result.adjustments
-      .filter((a) => a.userId === usage.initiatorId)
-      .reduce((sum, a) => sum + a.delta, 0),
-  };
+  return { delta: actorDelta, changed };
 }
 
 /**
@@ -99,6 +129,12 @@ export async function applyResolution(
  *
  * Les pouvoirs dont `resolves_at` vaut "round_settled" (Duel : a besoin du total
  * de la journée entière) restent réservés à `resolveRoundPowers`.
+ *
+ * Appelée à chaque fois que `recomputeFixtures` retraite ce match — donc
+ * aussi bien à sa toute première fin qu'à une correction de score ultérieure
+ * depuis l'admin. Un pouvoir déjà "resolved" sur ce match est donc repris ici
+ * lui aussi : `applyResolution` ne le réécrit que si le nouveau calcul diffère
+ * du précédent, jamais en double.
  */
 export async function resolveFixturePowers(
   admin: SupabaseClient,
@@ -107,18 +143,18 @@ export async function resolveFixturePowers(
   seasonId: Uuid,
 ): Promise<{ resolved: number }> {
   const usages = await loadRoundUsages(admin, roundId);
-  const active = usages.filter(
+  const relevant = usages.filter(
     (u) =>
-      (u.state === "declared" || u.state === "accepted") &&
+      (u.state === "declared" || u.state === "accepted" || u.state === "resolved") &&
       u.snapshotBefore.fixtureId === fixtureId,
   );
-  if (active.length === 0) return { resolved: 0 };
+  if (relevant.length === 0) return { resolved: 0 };
 
   const powers = await loadActivePowers(admin);
   const powerMap = new Map(powers.map((p) => [p.id, p]));
 
   let resolved = 0;
-  for (const usage of active) {
+  for (const usage of relevant) {
     const power = powerMap.get(usage.powerId);
     if (!power) continue;
     // Seuls les pouvoirs explicitement configurés "fixture_finished" se
@@ -126,8 +162,8 @@ export async function resolveFixturePowers(
     // journée (cf. commentaire ci-dessus).
     if (power.config.resolves_at !== "fixture_finished") continue;
 
-    await applyResolution(admin, seasonId, roundId, usage, power, null);
-    resolved++;
+    const outcome = await applyResolution(admin, seasonId, roundId, usage, power, null);
+    if (outcome.changed) resolved++;
   }
 
   return { resolved };

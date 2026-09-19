@@ -105,6 +105,57 @@ describe("resolveFixturePowers", () => {
     assert.equal(db.point_adjustments.length, 1, "un seul ajustement, jamais deux");
   });
 
+  it("un score corrigé après coup recalcule le pouvoir déjà résolu — le dernier score fait foi", async () => {
+    const { client, db } = fakeSupabase(seedDb());
+    await resolveFixturePowers(client, "fx1", "r1", "s1");
+    assert.equal(db.point_adjustments[0].delta, 3);
+
+    // L'admin corrige le score du match : le pronostic d'alice vaut maintenant
+    // 5 points au lieu de 3 (comme le ferait `recomputeFixtures` avant de
+    // rappeler `resolveFixturePowers`).
+    const scoreRow = db.prediction_scores.find(
+      (s: Record<string, unknown>) => (s.predictions as { user_id: string }).user_id === "alice",
+    )!;
+    scoreRow.points = 5;
+
+    const second = await resolveFixturePowers(client, "fx1", "r1", "s1");
+
+    assert.equal(second.resolved, 1, "le nouveau calcul diffère : ça compte comme une résolution");
+    const aliceAdjustments = db.point_adjustments.filter(
+      (a: Record<string, unknown>) => a.source_id === "u1",
+    );
+    assert.equal(aliceAdjustments.length, 1, "l'ancien ajustement est remplacé, pas cumulé");
+    assert.equal(aliceAdjustments[0].delta, 5); // 5 pts de base x2 = +5 (et non plus +3)
+  });
+
+  it("un score corrigé à zéro efface l'ajustement d'un pouvoir déjà résolu", async () => {
+    const { client, db } = fakeSupabase(seedDb());
+    await resolveFixturePowers(client, "fx1", "r1", "s1");
+
+    const scoreRow = db.prediction_scores.find(
+      (s: Record<string, unknown>) => (s.predictions as { user_id: string }).user_id === "alice",
+    )!;
+    scoreRow.points = 0;
+
+    const second = await resolveFixturePowers(client, "fx1", "r1", "s1");
+
+    assert.equal(second.resolved, 1);
+    assert.equal(
+      db.point_adjustments.some((a: Record<string, unknown>) => a.source_id === "u1"),
+      false,
+      "plus de base, plus de bonus à doubler : l'ajustement disparaît",
+    );
+  });
+
+  it("un second passage sans rien de changé n'ajoute pas d'événement en double", async () => {
+    const { client, db } = fakeSupabase(seedDb());
+    await resolveFixturePowers(client, "fx1", "r1", "s1");
+    const firstCount = db.events.length;
+    await resolveFixturePowers(client, "fx1", "r1", "s1");
+
+    assert.equal(db.events.length, firstCount, "rejouer un match déjà noté ne doit pas inonder le fil");
+  });
+
   it("laisse en attente un pouvoir configuré pour la clôture de journée", async () => {
     const { client, db } = fakeSupabase(seedDb());
     await resolveFixturePowers(client, "fx1", "r1", "s1");
