@@ -46,8 +46,8 @@ export const LOCK_REMINDER_SLOTS_DEFAULTS: ReminderSlot[] = [
     hoursBefore: 24,
     daysBefore: 1,
     clockTime: "16:00",
-    title: "⏰ Encore {heures} h avant la fermeture",
-    body: "N'oublie pas de faire tes pronos pour {journee} !",
+    title: "🏉 Pense à tes pronos",
+    body: "Encore {heures} h pour jouer tes pronos de {journee}.",
   },
   {
     id: "slot_2",
@@ -56,14 +56,22 @@ export const LOCK_REMINDER_SLOTS_DEFAULTS: ReminderSlot[] = [
     hoursBefore: 10,
     daysBefore: 0,
     clockTime: "16:00",
-    title: "⏰ Dernière ligne droite",
-    body: "Il te reste {restant} prono(s) à jouer avant la fermeture de {journee}.",
+    title: "🚨 Dernier appel",
+    body: "Il te reste {restant} prono(s) avant la fermeture.",
   },
 ];
 
 export const LOCK_REMINDER_SLOTS_KEY = "notifications.lock_reminder_slots";
 
 const TITLE_MAX = 100;
+/**
+ * Au-delà, iOS coupe le titre au milieu d'un mot sur l'écran verrouillé et
+ * ajoute des points de suspension — mesuré directement sur l'appareil d'Hugo :
+ * un titre de 26 caractères était déjà tronqué, un de 22 tenait entièrement.
+ * On avertit donc bien avant la limite dure de 100, pour qu'un admin ne
+ * recrée pas le même problème sans le voir avant l'envoi.
+ */
+export const TITLE_SAFE = 22;
 const BODY_MAX = 300;
 const HOURS_MIN = 1;
 const HOURS_MAX = 72;
@@ -146,6 +154,9 @@ export function validateReminderSlots(inputs: ReminderSlotInput[]): ReminderSlot
     if (input.enabled) {
       if (!input.title.trim()) slotErrors.title = "Le titre ne peut pas être vide.";
       else if (input.title.length > TITLE_MAX) slotErrors.title = `${TITLE_MAX} caractères au plus.`;
+      else if (input.title.length > TITLE_SAFE) {
+        slotErrors.title = `Risque de troncature sur l'écran verrouillé au-delà de ${TITLE_SAFE} caractères (emoji compris).`;
+      }
       if (!input.body.trim()) slotErrors.body = "Le texte ne peut pas être vide.";
       else if (input.body.length > BODY_MAX) slotErrors.body = `${BODY_MAX} caractères au plus.`;
     }
@@ -183,92 +194,6 @@ export function renderReminderText(template: string, vars: ReminderTextVars): st
     .replaceAll("{journee}", vars.journee)
     .replaceAll("{heures}", String(vars.heures))
     .replaceAll("{restant}", String(vars.restant));
-}
-
-export interface ReminderMessage {
-  id: string;
-  title: string;
-  body: string;
-}
-
-export const LOCK_REMINDER_MESSAGES_KEY = "notifications.lock_reminder_messages";
-const MESSAGES_MAX = 50;
-
-/**
- * Le pot commun de messages — demande explicite d'Hugo : une vingtaine de
- * titres/textes différents, pour qu'un rappel ne dise pas toujours la même
- * chose d'une journée à l'autre. Choisi au hasard à chaque envoi (cf.
- * `pickReminderMessage`) ; vide, chaque créneau retombe sur son propre
- * titre/texte fixe (comportement d'avant ce pot commun).
- */
-export function readLockReminderMessages(settings: Settings): ReminderMessage[] {
-  const raw = setting<unknown>(settings, LOCK_REMINDER_MESSAGES_KEY, []);
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(isPlainSlotShape)
-    .filter((m): m is Record<string, unknown> & { id: string; title: string; body: string } =>
-      typeof m.id === "string" && typeof m.title === "string" && typeof m.body === "string",
-    )
-    .map((m) => ({ id: m.id, title: m.title, body: m.body }));
-}
-
-export interface ReminderMessageInput {
-  title: string;
-  body: string;
-}
-
-export interface ReminderMessagesErrors {
-  general?: string;
-  items?: Record<number, { title?: string; body?: string }>;
-}
-
-/** Valide la liste de messages saisie à l'écran. */
-export function validateReminderMessages(inputs: ReminderMessageInput[]): ReminderMessagesErrors {
-  const errors: ReminderMessagesErrors = {};
-  if (inputs.length > MESSAGES_MAX) {
-    errors.general = `${MESSAGES_MAX} messages au plus.`;
-  }
-
-  const items: Record<number, { title?: string; body?: string }> = {};
-  inputs.forEach((m, i) => {
-    const item: { title?: string; body?: string } = {};
-    if (!m.title.trim()) item.title = "Le titre ne peut pas être vide.";
-    else if (m.title.length > TITLE_MAX) item.title = `${TITLE_MAX} caractères au plus.`;
-    if (!m.body.trim()) item.body = "Le texte ne peut pas être vide.";
-    else if (m.body.length > BODY_MAX) item.body = `${BODY_MAX} caractères au plus.`;
-    if (Object.keys(item).length > 0) items[i] = item;
-  });
-  if (Object.keys(items).length > 0) errors.items = items;
-
-  return errors;
-}
-
-/** La ligne à écrire dans `app_settings`. */
-export function reminderMessagesToRow(inputs: ReminderMessageInput[]): { key: string; value: ReminderMessage[] } {
-  return {
-    key: LOCK_REMINDER_MESSAGES_KEY,
-    value: inputs.map((m, i) => ({ id: `msg_${i + 1}`, title: m.title, body: m.body })),
-  };
-}
-
-/**
- * Choisit un message au hasard dans le pot commun — chaque envoi tire sa
- * propre variante, indépendamment des envois précédents (pas de tirage sans
- * remise : rien n'empêche deux journées de suite de retomber sur le même
- * message, comme un vrai tirage aléatoire). Pot vide → replie sur le
- * titre/texte fixe du créneau, pour ne jamais rester sans rien à envoyer.
- *
- * `random` est injectable pour les tests ; en production c'est `Math.random`.
- */
-export function pickReminderMessage(
-  messages: ReminderMessage[],
-  fallback: { title: string; body: string },
-  random: () => number = Math.random,
-): { title: string; body: string } {
-  if (messages.length === 0) return fallback;
-  const index = Math.min(Math.floor(random() * messages.length), messages.length - 1);
-  const picked = messages[index];
-  return { title: picked.title, body: picked.body };
 }
 
 /**
