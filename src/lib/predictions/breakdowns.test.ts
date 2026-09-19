@@ -54,7 +54,45 @@ test("ne garde que les pronostics du match demandé", () => {
     TEAMS,
     BUCKETS,
   );
-  assert.deepEqual(b.players.map((p) => p.name), ["Hugo"]);
+  // u2 a bien parié, mais sur l'AUTRE match : sur f1, il n'a rien joué, comme
+  // u3 — les deux apparaissent donc « Non parié », pas absents.
+  assert.deepEqual(
+    b.players.map((p) => [p.name, p.missing]),
+    [["Hugo", false], ["Marc", true], ["Pierre", true]],
+  );
+});
+
+test("un joueur qui n'a rien pronostiqué reste visible, à zéro", () => {
+  const b = buildFixtureBreakdown(
+    "f1",
+    [prediction({ userId: "u1" })],
+    [],
+    NAMES,
+    TEAMS,
+    BUCKETS,
+  );
+  const marc = b.players.find((p) => p.name === "Marc")!;
+  assert.equal(marc.missing, true);
+  assert.equal(marc.label, "Non parié");
+  assert.equal(marc.points, 0);
+  assert.equal(marc.level, null);
+  assert.equal(marc.isAuto, false);
+});
+
+test("tout le monde a parié : personne n'est marqué manquant", () => {
+  const b = buildFixtureBreakdown(
+    "f1",
+    [
+      prediction({ userId: "u1" }),
+      prediction({ userId: "u2" }),
+      prediction({ userId: "u3" }),
+    ],
+    [],
+    NAMES,
+    TEAMS,
+    BUCKETS,
+  );
+  assert.deepEqual(b.players.map((p) => p.missing), [false, false, false]);
 });
 
 test("le meilleur en haut, les non-notés en bas", () => {

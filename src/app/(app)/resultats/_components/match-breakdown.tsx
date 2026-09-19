@@ -53,7 +53,13 @@ export function MatchBreakdown({
       {open && (
         <div className="flex flex-col gap-1 rounded-2xl bg-surface-sunk/60 px-2.5 py-2">
           {players.map((p) => (
-            <div key={p.userId} className="flex items-baseline justify-between gap-2">
+            <div
+              key={p.userId}
+              className={cn(
+                "flex items-baseline justify-between gap-2",
+                p.missing && "opacity-60",
+              )}
+            >
               <span className="min-w-0 truncate text-[12px] leading-tight text-ink-muted">
                 <span
                   className={cn(
@@ -63,7 +69,8 @@ export function MatchBreakdown({
                 >
                   {p.name}
                 </span>{" "}
-                {p.label}
+                {/* En italique : un état (« il n'a pas joué »), pas un pari. */}
+                <span className={cn(p.missing && "italic")}>{p.label}</span>
                 {p.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
               </span>
               <span

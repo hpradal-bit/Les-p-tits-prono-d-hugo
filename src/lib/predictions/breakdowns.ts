@@ -43,11 +43,20 @@ export interface BreakdownPlayer {
   userId: string;
   /** Le surnom, tel qu'il s'affiche au classement. */
   name: string;
-  /** « Toulouse · 24–20 » ou « Nul », déjà mis en forme. */
+  /** « Toulouse · 24–20 », « Nul », ou « Non parié », déjà mis en forme. */
   label: string;
   points: number | null;
   level: ScoreLevel | null;
   isAuto: boolean;
+  /**
+   * Vrai pour un joueur de la ligue qui n'a rien pronostiqué sur ce match.
+   *
+   * Il reste dans la liste plutôt que d'en disparaître silencieusement :
+   * sans lui, un joueur qui ne joue pas semble n'avoir jamais existé sur ce
+   * match, alors qu'il a bien un historique — celui de n'avoir rien joué, à
+   * zéro point, comme n'importe quel autre score.
+   */
+  missing: boolean;
 }
 
 export interface BreakdownPower {
@@ -100,16 +109,36 @@ export function buildFixtureBreakdown(
   teams: TeamLabels,
   bucketLabels: Map<string, string>,
 ): FixtureBreakdown {
-  const players: BreakdownPlayer[] = predictions
-    .filter((p) => p.fixtureId === fixtureId)
-    .map((p) => ({
-      userId: p.userId,
-      name: names.get(p.userId) ?? "Joueur",
-      label: predictionLabel(p, teams, bucketLabels),
-      points: p.points,
-      level: p.level,
-      isAuto: p.isAuto,
-    }))
+  const predicted = predictions.filter((p) => p.fixtureId === fixtureId);
+  const predictedIds = new Set(predicted.map((p) => p.userId));
+
+  const scored: BreakdownPlayer[] = predicted.map((p) => ({
+    userId: p.userId,
+    name: names.get(p.userId) ?? "Joueur",
+    label: predictionLabel(p, teams, bucketLabels),
+    points: p.points,
+    level: p.level,
+    isAuto: p.isAuto,
+    missing: false,
+  }));
+
+  // `names` porte tous les joueurs de la ligue (c'est ce que l'appelant y
+  // met) : quiconque n'a pas prédit ce match apparaît quand même, à zéro
+  // point — pas de disparition silencieuse qui laisserait croire à un oubli
+  // d'affichage plutôt qu'à un choix de ne pas jouer.
+  const missing: BreakdownPlayer[] = [...names.entries()]
+    .filter(([userId]) => !predictedIds.has(userId))
+    .map(([userId, name]) => ({
+      userId,
+      name,
+      label: "Non parié",
+      points: 0,
+      level: null,
+      isAuto: false,
+      missing: true,
+    }));
+
+  const players: BreakdownPlayer[] = [...scored, ...missing]
     // Le meilleur en haut : on lit le match comme un mini-classement. Un
     // pronostic pas encore noté (`null`) reste en bas, il n'a rien rapporté.
     .sort(
