@@ -11,6 +11,7 @@ export type { StandingsSnapshot } from "./standings-detect.ts";
 export async function emitAndNotifyStandingsChanges(
   admin: SupabaseClient,
   seasonId: string,
+  leagueId: string,
   before: StandingsSnapshot[],
   after: StandingsSnapshot[],
   namesById: Map<string, string>,
@@ -32,9 +33,14 @@ export async function emitAndNotifyStandingsChanges(
       payload: { previous_leader_id: leaderChange.previousLeaderId },
     });
 
+    // Les membres de CETTE ligue, jamais `group_members` (table historique,
+    // globale à l'appli) : un compte de test ou le membre d'une autre ligue
+    // n'a pas à recevoir une notification sur un classement qui n'est pas
+    // le sien.
     const { data: members } = await admin
-      .from("group_members")
-      .select("user_id");
+      .from("league_members")
+      .select("user_id")
+      .eq("league_id", leagueId);
 
     for (const member of members ?? []) {
       const userId = member.user_id as string;
