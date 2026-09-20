@@ -19,7 +19,7 @@ import { loadLeagueRoster } from "../standings/queries.ts";
 import { CHAMBRAGE_MEDIA_BUCKET, ALLOWED_IMAGE_MIME, MAX_IMAGE_BYTES } from "./media.ts";
 import { notifyNewMessage, notifyReaction } from "./notify.ts";
 import { loadMessageById } from "./queries.ts";
-import { parseMentions, type RawMessage } from "./model.ts";
+import { parseMentions, type RawMessage, type RawPollOption } from "./model.ts";
 
 export type ChambrageResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -41,11 +41,12 @@ function toMessage(row: Record<string, unknown>): RawMessage {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     deletedAt: (row.deleted_at as string | null) ?? null,
+    pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
   };
 }
 
 const MESSAGE_COLUMNS =
-  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at";
+  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple";
 
 /**
  * Après l'écriture : prévenir la ligue, sans jamais retarder l'envoi lui-même
@@ -205,6 +206,153 @@ export async function sendImageMessage(formData: FormData): Promise<ChambrageRes
 
   revalidatePath("/vestiaire");
   return ok(message);
+}
+
+const pollSchema = z.object({
+  leagueId: z.string().uuid(),
+  question: z.string().trim().min(1),
+  options: z.array(z.string().trim().min(1)).min(2).max(10),
+  allowsMultiple: z.boolean(),
+  replyToId: z.string().uuid().nullable(),
+});
+
+export interface SentPoll {
+  message: RawMessage;
+  options: RawPollOption[];
+}
+
+/** Un sondage, comme sur WhatsApp : une question, 2 à 10 réponses, réponses multiples en option. */
+export async function sendPollMessage(input: {
+  leagueId: string;
+  question: string;
+  options: string[];
+  allowsMultiple: boolean;
+  replyToId?: string | null;
+}): Promise<ChambrageResult<SentPoll>> {
+  const viewer = await getViewer();
+  if (!viewer) return fail("Connexion requise.");
+
+  const parsed = pollSchema.safeParse({
+    leagueId: input.leagueId,
+    question: input.question,
+    options: input.options,
+    allowsMultiple: input.allowsMultiple,
+    replyToId: input.replyToId ?? null,
+  });
+  if (!parsed.success) return fail("Sondage invalide : 2 à 10 réponses, une question non vide.");
+
+  const sb = await createClient();
+
+  const { data, error } = await sb
+    .from("messages")
+    .insert({
+      league_id: parsed.data.leagueId,
+      sender_id: viewer.id,
+      message_type: "poll",
+      body: parsed.data.question,
+      poll_allows_multiple: parsed.data.allowsMultiple,
+      reply_to_id: parsed.data.replyToId,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+  if (error || !data) return fail("L'envoi a échoué. Réessaie dans un instant.");
+
+  const message = toMessage(data);
+
+  const { data: optionRows, error: optionsError } = await sb
+    .from("poll_options")
+    .insert(
+      parsed.data.options.map((label, position) => ({
+        message_id: message.id,
+        position,
+        label,
+      })),
+    )
+    .select("id, message_id, position, label");
+  if (optionsError || !optionRows) {
+    // Le message est écrit mais sans ses réponses : on le supprime plutôt que
+    // de laisser un sondage muet dans la conversation.
+    await sb.from("messages").delete().eq("id", message.id);
+    return fail("L'envoi a échoué. Réessaie dans un instant.");
+  }
+
+  const options: RawPollOption[] = (
+    optionRows as Array<{ id: string; message_id: string; position: number; label: string }>
+  ).map((o) => ({ id: o.id, messageId: o.message_id, position: o.position, label: o.label }));
+
+  scheduleMessageNotification({
+    message,
+    leagueId: parsed.data.leagueId,
+    senderName: viewer.displayName,
+    preview: `📊 ${parsed.data.question}`,
+  });
+
+  revalidatePath("/vestiaire");
+  return ok({ message, options });
+}
+
+const voteSchema = z.object({ optionId: z.string().uuid(), allowsMultiple: z.boolean() });
+
+/**
+ * Vote pour une option — la retire si elle y était déjà (on change d'avis).
+ * Si le sondage n'accepte qu'une réponse, les autres votes du même joueur
+ * sur ce sondage sont retirés d'abord : une seule case cochée à la fois.
+ */
+export async function votePoll(input: {
+  optionId: string;
+  allowsMultiple: boolean;
+}): Promise<ChambrageResult<{ removed: boolean }>> {
+  const viewer = await getViewer();
+  if (!viewer) return fail("Connexion requise.");
+
+  const parsed = voteSchema.safeParse(input);
+  if (!parsed.success) return fail("Vote invalide.");
+
+  const sb = await createClient();
+
+  const { data: existing } = await sb
+    .from("poll_votes")
+    .select("option_id")
+    .eq("option_id", parsed.data.optionId)
+    .eq("user_id", viewer.id)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await sb
+      .from("poll_votes")
+      .delete()
+      .eq("option_id", parsed.data.optionId)
+      .eq("user_id", viewer.id);
+    if (error) return fail("Le retrait a échoué.");
+    revalidatePath("/vestiaire");
+    return ok({ removed: true });
+  }
+
+  if (!parsed.data.allowsMultiple) {
+    const { data: option } = await sb
+      .from("poll_options")
+      .select("message_id")
+      .eq("id", parsed.data.optionId)
+      .maybeSingle();
+    if (option) {
+      const { data: siblings } = await sb
+        .from("poll_options")
+        .select("id")
+        .eq("message_id", option.message_id);
+      const siblingIds = ((siblings ?? []) as Array<{ id: string }>).map((s) => s.id);
+      if (siblingIds.length > 0) {
+        await sb.from("poll_votes").delete().eq("user_id", viewer.id).in("option_id", siblingIds);
+      }
+    }
+  }
+
+  const { error } = await sb
+    .from("poll_votes")
+    .insert({ option_id: parsed.data.optionId, user_id: viewer.id });
+  if (error) return fail("Le vote a échoué.");
+
+  revalidatePath("/vestiaire");
+  return ok({ removed: false });
 }
 
 const editSchema = z.object({ messageId: z.string().uuid(), body: z.string().trim().min(1) });

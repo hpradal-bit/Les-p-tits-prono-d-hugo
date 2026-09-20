@@ -12,8 +12,11 @@ import {
   readState,
   sameBurst,
   splitMentions,
+  tallyPoll,
   unreadCount,
   type RawMessage,
+  type RawPollOption,
+  type RawPollVote,
   type RawReaction,
   type RawRead,
 } from "./model.ts";
@@ -35,6 +38,7 @@ function msg(over: Partial<RawMessage> = {}): RawMessage {
     createdAt: "2026-09-20T18:00:00.000Z",
     updatedAt: "2026-09-20T18:00:00.000Z",
     deletedAt: null,
+    pollAllowsMultiple: null,
     ...over,
   };
 }
@@ -187,6 +191,41 @@ test("splitMentions : un texte sans mention reconnue reste un seul segment", () 
   assert.deepEqual(splitMentions("Rien à signaler", ROSTER), [
     { text: "Rien à signaler", mentionUserId: null },
   ]);
+});
+
+const POLL_OPTIONS: RawPollOption[] = [
+  { id: "o1", messageId: "poll1", position: 0, label: "Toulouse" },
+  { id: "o2", messageId: "poll1", position: 1, label: "Bordeaux" },
+];
+
+test("tallyPoll : compte les voix par option, et marque les miennes", () => {
+  const votes: RawPollVote[] = [
+    { optionId: "o1", userId: "u1" },
+    { optionId: "o1", userId: "u2" },
+    { optionId: "o2", userId: "u3" },
+  ];
+  const tally = tallyPoll(POLL_OPTIONS, votes, "u1");
+  assert.deepEqual(
+    tally.map((t) => [t.option.id, t.count, t.mine, t.percent]),
+    [
+      ["o1", 2, true, 67],
+      ["o2", 1, false, 33],
+    ],
+  );
+});
+
+test("tallyPoll : personne n'a encore voté → 0 partout, jamais une division par zéro", () => {
+  const tally = tallyPoll(POLL_OPTIONS, [], "u1");
+  assert.deepEqual(tally.map((t) => [t.count, t.percent, t.mine]), [
+    [0, 0, false],
+    [0, 0, false],
+  ]);
+});
+
+test("tallyPoll : respecte l'ordre des options (position), pas l'ordre des votes", () => {
+  const votes: RawPollVote[] = [{ optionId: "o2", userId: "u1" }];
+  const tally = tallyPoll([POLL_OPTIONS[1], POLL_OPTIONS[0]], votes, "u1");
+  assert.deepEqual(tally.map((t) => t.option.id), ["o1", "o2"]);
 });
 
 test("sameBurst : même expéditeur, moins de 5 min d'écart → même rafale", () => {

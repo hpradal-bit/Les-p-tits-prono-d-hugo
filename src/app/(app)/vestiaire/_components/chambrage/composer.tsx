@@ -17,11 +17,28 @@ const EMOJI_PALETTE = [
   "🏉", "🏆", "⚡", "🎯", "😴", "🤡", "👀", "❤️",
 ];
 
+interface PollDraft {
+  question: string;
+  options: string[];
+  allowsMultiple: boolean;
+  sending: boolean;
+  error: string | null;
+}
+
+const EMPTY_POLL_DRAFT: PollDraft = {
+  question: "",
+  options: ["", ""],
+  allowsMultiple: false,
+  sending: false,
+  error: null,
+};
+
 export function Composer({
   replyTo,
   onCancelReply,
   onSendText,
   onSendImage,
+  onSendPoll,
   onTyping,
   roster,
   disabled,
@@ -30,6 +47,8 @@ export function Composer({
   onCancelReply: () => void;
   onSendText: (body: string) => void;
   onSendImage: (file: File, caption: string) => void;
+  /** Renvoie `true` si le sondage a bien été envoyé. */
+  onSendPoll: (question: string, options: string[], allowsMultiple: boolean) => Promise<boolean>;
   onTyping: () => void;
   /** Pour l'autocomplétion « @Untel ». */
   roster: readonly MentionCandidate[];
@@ -37,6 +56,7 @@ export function Composer({
 }) {
   const [body, setBody] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
+  const [pollDraft, setPollDraft] = useState<PollDraft | null>(null);
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string; caption: string } | null>(
     null,
   );
@@ -115,6 +135,39 @@ export function Composer({
     if (!pendingImage) return;
     URL.revokeObjectURL(pendingImage.previewUrl);
     setPendingImage(null);
+  }
+
+  function updatePollOption(index: number, value: string) {
+    setPollDraft((d) => (d ? { ...d, options: d.options.map((o, i) => (i === index ? value : o)) } : d));
+  }
+
+  function addPollOption() {
+    setPollDraft((d) => (d && d.options.length < 10 ? { ...d, options: [...d.options, ""] } : d));
+  }
+
+  function removePollOption(index: number) {
+    setPollDraft((d) => (d && d.options.length > 2 ? { ...d, options: d.options.filter((_, i) => i !== index) } : d));
+  }
+
+  async function submitPoll() {
+    if (!pollDraft) return;
+    const question = pollDraft.question.trim();
+    const options = pollDraft.options.map((o) => o.trim()).filter((o) => o.length > 0);
+    if (!question) {
+      setPollDraft({ ...pollDraft, error: "La question ne peut pas être vide." });
+      return;
+    }
+    if (options.length < 2) {
+      setPollDraft({ ...pollDraft, error: "Il faut au moins deux réponses." });
+      return;
+    }
+    setPollDraft({ ...pollDraft, sending: true, error: null });
+    const success = await onSendPoll(question, options, pollDraft.allowsMultiple);
+    if (success) {
+      setPollDraft(null);
+    } else {
+      setPollDraft({ ...pollDraft, sending: false, error: "L'envoi a échoué. Réessaie dans un instant." });
+    }
   }
 
   if (pendingImage) {
@@ -252,6 +305,14 @@ export function Composer({
         >
           📷
         </button>
+        <button
+          type="button"
+          onClick={() => setPollDraft(EMPTY_POLL_DRAFT)}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
+          aria-label="Créer un sondage"
+        >
+          📊
+        </button>
 
         <textarea
           ref={textareaRef}
@@ -303,6 +364,93 @@ export function Composer({
           ➤
         </button>
       </div>
+
+      {pollDraft && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-ink/30 backdrop-blur-[1px]"
+          onClick={() => !pollDraft.sending && setPollDraft(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-t-[24px] bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-card)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-[18px] text-ink">Créer un sondage</h2>
+              <button
+                type="button"
+                onClick={() => setPollDraft(null)}
+                disabled={pollDraft.sending}
+                className="grid size-8 place-items-center rounded-full bg-surface-sunk text-ink-muted"
+                aria-label="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              value={pollDraft.question}
+              onChange={(e) => setPollDraft({ ...pollDraft, question: e.target.value })}
+              placeholder="Poser une question…"
+              autoFocus
+              className="w-full rounded-[14px] border border-line bg-surface-sunk px-3.5 py-2.5 text-[14.5px] text-ink outline-none"
+            />
+
+            <div className="flex flex-col gap-2">
+              {pollDraft.options.map((option, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={option}
+                    onChange={(e) => updatePollOption(i, e.target.value)}
+                    placeholder={`Réponse ${i + 1}`}
+                    maxLength={80}
+                    className="w-full flex-1 rounded-[14px] border border-line bg-surface-sunk px-3.5 py-2 text-[14px] text-ink outline-none"
+                  />
+                  {pollDraft.options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removePollOption(i)}
+                      className="grid size-8 shrink-0 place-items-center rounded-full text-ink-faint"
+                      aria-label="Retirer cette réponse"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {pollDraft.options.length < 10 && (
+                <button
+                  type="button"
+                  onClick={addPollOption}
+                  className="self-start text-[13.5px] font-semibold text-clay"
+                >
+                  + Ajouter une réponse
+                </button>
+              )}
+            </div>
+
+            <label className="flex items-center gap-2 text-[13.5px] text-ink">
+              <input
+                type="checkbox"
+                checked={pollDraft.allowsMultiple}
+                onChange={(e) => setPollDraft({ ...pollDraft, allowsMultiple: e.target.checked })}
+                className="size-4"
+              />
+              Autoriser plusieurs réponses
+            </label>
+
+            {pollDraft.error && <p className="text-[13px] font-semibold text-wrong">{pollDraft.error}</p>}
+
+            <button
+              type="button"
+              onClick={submitPoll}
+              disabled={pollDraft.sending}
+              className="rounded-full bg-clay py-2.5 text-center text-[14px] font-bold text-surface disabled:opacity-60"
+            >
+              {pollDraft.sending ? "Envoi…" : "Créer le sondage"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

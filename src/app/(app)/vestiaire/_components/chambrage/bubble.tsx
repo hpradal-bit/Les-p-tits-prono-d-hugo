@@ -53,6 +53,7 @@ export function MessageBubble({
   onDelete,
   onJumpTo,
   onOpenReactionDetail,
+  onVote,
 }: {
   vm: MessageVM;
   clubs: readonly ClubAvatar[];
@@ -67,6 +68,7 @@ export function MessageBubble({
   onDelete: () => void;
   onJumpTo: (messageId: string) => void;
   onOpenReactionDetail: () => void;
+  onVote: (optionId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -206,7 +208,51 @@ export function MessageBubble({
                 />
               )}
 
-              {message.body && (
+              {message.messageType === "poll" && vm.poll && (
+                <div className="flex flex-col gap-2">
+                  <p className="flex items-start gap-1.5 font-semibold">
+                    <span aria-hidden>📊</span>
+                    <span className="whitespace-pre-wrap break-words">{message.body}</span>
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {vm.poll.tally.map((t) => (
+                      <button
+                        key={t.option.id}
+                        type="button"
+                        onClick={() => onVote(t.option.id)}
+                        className={cn(
+                          "relative overflow-hidden rounded-[12px] border px-3 py-2 text-left text-[13.5px]",
+                          isMine ? "border-surface/40" : "border-line",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute inset-y-0 left-0 transition-all",
+                            isMine ? "bg-surface/20" : "bg-clay-soft",
+                          )}
+                          style={{ width: `${t.percent}%` }}
+                        />
+                        <span className="relative flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5">
+                            {t.mine && <span aria-hidden>✓</span>}
+                            {t.option.label}
+                          </span>
+                          <span className={cn("shrink-0 text-[12px]", isMine ? "text-surface/70" : "text-ink-faint")}>
+                            {t.count}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className={cn("text-[11.5px]", isMine ? "text-surface/70" : "text-ink-faint")}>
+                    {vm.poll.allowsMultiple ? "Réponses multiples · " : ""}
+                    {vm.poll.totalVoters} vote{vm.poll.totalVoters > 1 ? "s" : ""}
+                  </p>
+                </div>
+              )}
+
+              {message.messageType !== "poll" && message.body && (
                 <p className="whitespace-pre-wrap break-words">
                   {vm.mentionSegments.map((segment, i) =>
                     segment.mentionUserId ? (

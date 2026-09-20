@@ -8,10 +8,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Uuid } from "@/lib/types";
 import { loadLeagueRoster } from "../standings/queries.ts";
 import type { PlayerRef } from "../standings/engine.ts";
-import type { RawMessage, RawReaction, RawRead } from "./model.ts";
+import type { RawMessage, RawPollOption, RawPollVote, RawReaction, RawRead } from "./model.ts";
 
 const MESSAGE_COLUMNS =
-  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at";
+  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple";
 
 function toMessage(row: Record<string, unknown>): RawMessage {
   return {
@@ -24,6 +24,7 @@ function toMessage(row: Record<string, unknown>): RawMessage {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     deletedAt: (row.deleted_at as string | null) ?? null,
+    pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
   };
 }
 
@@ -89,6 +90,38 @@ export async function loadReactionsFor(
   }));
 }
 
+export async function loadPollOptionsFor(
+  sb: SupabaseClient,
+  messageIds: readonly string[],
+): Promise<RawPollOption[]> {
+  if (messageIds.length === 0) return [];
+  const { data, error } = await sb
+    .from("poll_options")
+    .select("id, message_id, position, label")
+    .in("message_id", messageIds)
+    .order("position", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: string; message_id: string; position: number; label: string }>).map(
+    (o) => ({ id: o.id, messageId: o.message_id, position: o.position, label: o.label }),
+  );
+}
+
+export async function loadPollVotesFor(
+  sb: SupabaseClient,
+  optionIds: readonly string[],
+): Promise<RawPollVote[]> {
+  if (optionIds.length === 0) return [];
+  const { data, error } = await sb
+    .from("poll_votes")
+    .select("option_id, user_id")
+    .in("option_id", optionIds);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ option_id: string; user_id: string }>).map((v) => ({
+    optionId: v.option_id,
+    userId: v.user_id,
+  }));
+}
+
 export async function loadReads(sb: SupabaseClient, leagueId: Uuid): Promise<RawRead[]> {
   const { data, error } = await sb
     .from("message_reads")
@@ -121,6 +154,8 @@ export interface ChambrageInitialData {
   hasMoreOlder: boolean;
   reactions: RawReaction[];
   reads: RawRead[];
+  pollOptions: RawPollOption[];
+  pollVotes: RawPollVote[];
   roster: PlayerRef[];
   lastReadAt: string | null;
 }
@@ -133,13 +168,16 @@ export async function loadChambrage(
   pageSize = 30,
 ): Promise<ChambrageInitialData> {
   const { messages, hasMoreOlder } = await loadMessagesPage(sb, leagueId, { limit: pageSize });
+  const pollMessageIds = messages.filter((m) => m.messageType === "poll").map((m) => m.id);
 
-  const [reactions, reads, roster, lastReadAt] = await Promise.all([
+  const [reactions, reads, pollOptions, roster, lastReadAt] = await Promise.all([
     loadReactionsFor(sb, messages.map((m) => m.id)),
     loadReads(sb, leagueId),
+    loadPollOptionsFor(sb, pollMessageIds),
     loadLeagueRoster(sb, leagueId),
     loadMyLastRead(sb, leagueId, viewerId),
   ]);
+  const pollVotes = await loadPollVotesFor(sb, pollOptions.map((o) => o.id));
 
-  return { messages, hasMoreOlder, reactions, reads, roster, lastReadAt };
+  return { messages, hasMoreOlder, reactions, reads, pollOptions, pollVotes, roster, lastReadAt };
 }

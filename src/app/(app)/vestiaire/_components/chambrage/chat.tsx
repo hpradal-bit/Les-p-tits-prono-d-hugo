@@ -26,7 +26,10 @@ import {
   readState as computeReadState,
   sameBurst,
   splitMentions,
+  tallyPoll,
   type RawMessage,
+  type RawPollOption,
+  type RawPollVote,
   type RawReaction,
   type RawRead,
 } from "@/lib/chambrage/model";
@@ -35,10 +38,12 @@ import {
   deleteMessage,
   markChambrageRead,
   sendImageMessage,
+  sendPollMessage,
   sendTextMessage,
   toggleReaction,
+  votePoll,
 } from "@/lib/chambrage/actions";
-import { loadMessagesPage, loadReactionsFor } from "@/lib/chambrage/queries";
+import { loadMessagesPage, loadPollOptionsFor, loadReactionsFor } from "@/lib/chambrage/queries";
 import { MessageBubble } from "./bubble";
 import { Composer } from "./composer";
 import { ReactionDetailSheet } from "./reaction-sheet";
@@ -48,6 +53,8 @@ export interface ChambrageInitial {
   messages: RawMessage[];
   hasMoreOlder: boolean;
   reactions: RawReaction[];
+  pollOptions: RawPollOption[];
+  pollVotes: RawPollVote[];
   reads: RawRead[];
   lastReadAt: string | null;
 }
@@ -91,6 +98,8 @@ export function ChambrageChat({
 
   const [messages, setMessages] = useState<RawMessage[]>(initial.messages);
   const [reactions, setReactions] = useState<RawReaction[]>(initial.reactions);
+  const [pollOptions, setPollOptions] = useState<RawPollOption[]>(initial.pollOptions);
+  const [pollVotes, setPollVotes] = useState<RawPollVote[]>(initial.pollVotes);
   const [reads, setReads] = useState<RawRead[]>(initial.reads);
   const [hasMoreOlder, setHasMoreOlder] = useState(initial.hasMoreOlder);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -161,8 +170,12 @@ export function ChambrageChat({
             createdAt: row.created_at as string,
             updatedAt: row.updated_at as string,
             deletedAt: (row.deleted_at as string | null) ?? null,
+            pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
           };
           setMessages((prev) => mergeMessages(prev, [incoming]));
+          if (incoming.messageType === "poll") void loadPollOptionsFor(sb, [incoming.id]).then((opts) =>
+            setPollOptions((prev) => mergePollOptions(prev, opts)),
+          );
 
           const el = scrollRef.current;
           if (incoming.senderId !== viewerId) {
@@ -199,6 +212,32 @@ export function ChambrageChat({
             );
             if (payload.eventType === "DELETE") return withoutThis;
             return [...withoutThis, { messageId, userId: row.user_id as string, emoji: row.emoji as string }];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId]);
+
+  /* --- Temps réel : votes d'un sondage ---------------------------------------- */
+  useEffect(() => {
+    const channel = sb
+      .channel(`chambrage-poll-votes-${leagueId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "poll_votes" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Record<string, unknown>;
+          const optionId = row.option_id as string;
+          const userId = row.user_id as string;
+          setPollVotes((prev) => {
+            const withoutThis = prev.filter((v) => !(v.optionId === optionId && v.userId === userId));
+            if (payload.eventType === "DELETE") return withoutThis;
+            return [...withoutThis, { optionId, userId }];
           });
         },
       )
@@ -380,6 +419,7 @@ export function ChambrageChat({
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      pollAllowsMultiple: null,
     };
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
@@ -414,6 +454,7 @@ export function ChambrageChat({
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      pollAllowsMultiple: null,
     };
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
@@ -438,6 +479,41 @@ export function ChambrageChat({
     } else {
       setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
     }
+  }
+
+  async function handleSendPoll(question: string, options: string[], allowsMultiple: boolean): Promise<boolean> {
+    const result = await sendPollMessage({
+      leagueId,
+      question,
+      options,
+      allowsMultiple,
+      replyToId: replyTo?.id ?? null,
+    });
+    if (!result.ok) return false;
+
+    setMessages((prev) => mergeMessages(prev, [result.data.message]));
+    setPollOptions((prev) => mergePollOptions(prev, result.data.options));
+    setReplyTo(null);
+    stickToBottomRef.current = true;
+    requestAnimationFrame(() => scrollToBottom(true));
+    return true;
+  }
+
+  async function handleVote(optionId: string, allowsMultiple: boolean) {
+    // Optimiste : bascule tout de suite, l'écho temps réel confirmera sans
+    // à-coup visible.
+    setPollVotes((prev) => {
+      const messageId = pollOptions.find((o) => o.id === optionId)?.messageId;
+      const alreadyMine = prev.some((v) => v.optionId === optionId && v.userId === viewerId);
+      const withoutMine = allowsMultiple
+        ? prev.filter((v) => !(v.optionId === optionId && v.userId === viewerId))
+        : prev.filter((v) => {
+            if (v.userId !== viewerId) return true;
+            return pollOptions.find((o) => o.id === v.optionId)?.messageId !== messageId;
+          });
+      return alreadyMine ? withoutMine : [...withoutMine, { optionId, userId: viewerId }];
+    });
+    await votePoll({ optionId, allowsMultiple });
   }
 
   async function handleReact(messageId: string, emoji: string) {
@@ -539,11 +615,28 @@ export function ChambrageChat({
               ? "Message supprimé"
               : replyToMessage.messageType === "image"
                 ? "📷 Photo"
-                : (replyToMessage.body ?? ""),
+                : replyToMessage.messageType === "poll"
+                  ? `📊 ${replyToMessage.body ?? "Sondage"}`
+                  : (replyToMessage.body ?? ""),
         }
       : null;
 
     const mentionSegments = message.body ? splitMentions(message.body, roster) : [];
+
+    const poll =
+      message.messageType === "poll"
+        ? (() => {
+            const options = pollOptions.filter((o) => o.messageId === message.id);
+            const votesForMessage = pollVotes.filter((v) =>
+              options.some((o) => o.id === v.optionId),
+            );
+            return {
+              tally: tallyPoll(options, votesForMessage, viewerId),
+              allowsMultiple: message.pollAllowsMultiple ?? false,
+              totalVoters: new Set(votesForMessage.map((v) => v.userId)).size,
+            };
+          })()
+        : null;
 
     return {
       message,
@@ -557,6 +650,7 @@ export function ChambrageChat({
       notReadByNames: computeNotReadBy(message, reads, memberIds).map(nameFor),
       mentionSegments,
       mentionsMe: mentionSegments.some((s) => s.mentionUserId === viewerId),
+      poll,
       pending: pendingStatus[message.id],
     };
   }
@@ -663,6 +757,7 @@ export function ChambrageChat({
                     onDelete={() => handleDelete(message.id)}
                     onJumpTo={jumpTo}
                     onOpenReactionDetail={() => setReactionSheetFor(message.id)}
+                    onVote={(optionId) => handleVote(optionId, message.pollAllowsMultiple ?? false)}
                   />
                 </div>
               </div>
@@ -711,6 +806,7 @@ export function ChambrageChat({
           onCancelReply={() => setReplyTo(null)}
           onSendText={handleSendText}
           onSendImage={handleSendImage}
+          onSendPoll={handleSendPoll}
           onTyping={handleTyping}
           roster={others}
         />
@@ -732,6 +828,12 @@ function mergeReactions(existing: RawReaction[], incoming: RawReaction[]): RawRe
   const byKey = new Map(existing.map((r) => [key(r), r]));
   for (const r of incoming) byKey.set(key(r), r);
   return [...byKey.values()];
+}
+
+function mergePollOptions(existing: RawPollOption[], incoming: RawPollOption[]): RawPollOption[] {
+  const byId = new Map(existing.map((o) => [o.id, o]));
+  for (const o of incoming) byId.set(o.id, o);
+  return [...byId.values()];
 }
 
 function EditBar({

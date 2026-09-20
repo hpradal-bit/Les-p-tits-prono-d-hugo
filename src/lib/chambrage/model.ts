@@ -4,7 +4,7 @@
  * ces règles testables sans réseau, et rejouables à l'identique.
  */
 
-export type MessageType = "text" | "image";
+export type MessageType = "text" | "image" | "poll";
 
 export interface RawMessage {
   id: string;
@@ -16,6 +16,55 @@ export interface RawMessage {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Non nul seulement pour un sondage (`messageType === "poll"`). */
+  pollAllowsMultiple: boolean | null;
+}
+
+export interface RawPollOption {
+  id: string;
+  messageId: string;
+  position: number;
+  label: string;
+}
+
+export interface RawPollVote {
+  optionId: string;
+  userId: string;
+}
+
+export interface PollOptionTally {
+  option: RawPollOption;
+  count: number;
+  /** Ai-je voté pour cette option ? */
+  mine: boolean;
+  /** Part de l'ensemble des votes de ce sondage, 0 à 100 — 0 si personne n'a encore voté. */
+  percent: number;
+}
+
+/**
+ * Le dépouillement d'un sondage : combien de voix par option, et pour
+ * lesquelles le joueur connecté a lui-même voté. Le pourcentage se calcule
+ * sur le total de VOIX (pas de votants) : un sondage à réponses multiples où
+ * chacun coche deux cases n'a donc pas des pourcentages qui totalisent 100 —
+ * c'est le comportement WhatsApp, pas un bug d'arrondi.
+ */
+export function tallyPoll(
+  options: readonly RawPollOption[],
+  votes: readonly RawPollVote[],
+  viewerId: string,
+): PollOptionTally[] {
+  const total = votes.length;
+  return [...options]
+    .sort((a, b) => a.position - b.position)
+    .map((option) => {
+      const forOption = votes.filter((v) => v.optionId === option.id);
+      return {
+        option,
+        count: forOption.length,
+        mine: forOption.some((v) => v.userId === viewerId),
+        percent: total === 0 ? 0 : Math.round((forOption.length / total) * 100),
+      };
+    });
 }
 
 export interface RawReaction {

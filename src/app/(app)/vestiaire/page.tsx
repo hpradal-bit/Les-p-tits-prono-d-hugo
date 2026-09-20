@@ -113,6 +113,8 @@ export default async function VestiairePage({
           hasMoreOlder: chambrage.hasMoreOlder,
           reactions: chambrage.reactions,
           reads: chambrage.reads,
+          pollOptions: chambrage.pollOptions,
+          pollVotes: chambrage.pollVotes,
           lastReadAt: chambrage.lastReadAt,
         }}
       />
