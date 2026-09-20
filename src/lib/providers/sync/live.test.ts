@@ -171,3 +171,123 @@ describe("un match qui se termine distribue ses points", () => {
     );
   });
 });
+
+/**
+ * Le 19 septembre : six matchs à 16h35, un seul connu de TheSportsDB (qui
+ * répondait pourtant sans erreur — juste sans ce match-là dans son relevé
+ * « par date »), les cinq autres n'ayant de référence que chez ESPN. Comme
+ * TheSportsDB n'avait techniquement pas échoué, `runWithFallback` s'arrêtait
+ * là et ESPN n'était jamais consulté pour rattraper les cinq restants.
+ */
+describe("rattrapage d'un jour resté bloqué : couverture partielle d'un fournisseur", () => {
+  const STALE_KICKOFF = "2026-09-19T14:35:00.000Z";
+  /** Bien après la fenêtre du match, un autre jour : déclenche le rattrapage. */
+  const LATER = new Date("2026-09-20T10:00:00.000Z");
+
+  function namedProvider(name: string, fixtures: ProviderFixture[]): SportsDataProvider {
+    return {
+      name,
+      dailyQuota: null,
+      getFixtures: async () => ({ provider: name, data: [], requestsUsed: 1, warnings: [] }),
+      getLiveScores: async () => ({ provider: name, data: fixtures, requestsUsed: 1, warnings: [] }),
+      getStandings: async () => ({ provider: name, data: [], requestsUsed: 1, warnings: [] }),
+    };
+  }
+
+  function seedTwoStaleFixtures() {
+    return {
+      seasons: [{ id: SEASON, label: "2026/2027", competition_id: "c1", starts_on: "2026-09-01", status: "active" }],
+      rounds: [{ id: "r1", season_id: SEASON, number: 3, name: "J3" }],
+      fixtures: [
+        {
+          id: "known-to-a", round_id: "r1", season_id: SEASON,
+          home_team_id: "t-a-home", away_team_id: "t-a-away",
+          kickoff_at: STALE_KICKOFF, kickoff_confirmed: true, locks_at: "2026-09-19T12:35:00.000Z",
+          status: "scheduled", home_score: null, away_score: null, minute: null,
+          venue: null, data_source: "alpha", updated_at: null, last_synced_at: null,
+        },
+        {
+          id: "known-to-b", round_id: "r1", season_id: SEASON,
+          home_team_id: "t-b-home", away_team_id: "t-b-away",
+          kickoff_at: STALE_KICKOFF, kickoff_confirmed: true, locks_at: "2026-09-19T12:35:00.000Z",
+          status: "scheduled", home_score: null, away_score: null, minute: null,
+          venue: null, data_source: "alpha", updated_at: null, last_synced_at: null,
+        },
+      ],
+      external_refs: [
+        { provider: "alpha", entity_type: "season", entity_id: SEASON, external_id: "s-alpha" },
+        { provider: "beta", entity_type: "season", entity_id: SEASON, external_id: "s-beta" },
+      ],
+      sync_runs: [],
+      events: [],
+    };
+  }
+
+  function twoProviderContext(sb: unknown, aFixtures: ProviderFixture[], bFixtures: ProviderFixture[]): SyncContext {
+    const chain = { providers: [namedProvider("alpha", aFixtures), namedProvider("beta", bFixtures)], skipped: [] };
+    return {
+      sb,
+      season: { id: SEASON, label: "2026/2027", competitionId: "c1", startsOn: "2026-09-01", endsOn: null },
+      settings: [],
+      // Des noms sans le moindre mot en commun : deux discriminants réduits à
+      // une seule lettre (« Équipe A »/« Équipe B ») se seraient effondrés au
+      // même jeu de mots significatifs (`significantTokens` écarte les mots
+      // d'une lettre) et auraient produit une égalité — jamais rapprochée,
+      // par prudence (`matchTeam`). Un vrai nom de club n'a pas ce problème.
+      teams: [
+        { id: "t-a-home", name: "Vulcains", shortName: "Vulcains", code: "VUL" },
+        { id: "t-a-away", name: "Griffons", shortName: "Griffons", code: "GRI" },
+        { id: "t-b-home", name: "Marmottes", shortName: "Marmottes", code: "MAR" },
+        { id: "t-b-away", name: "Iguanes", shortName: "Iguanes", code: "IGU" },
+      ],
+      aliases: {},
+      chain,
+      chainFor: () => chain,
+      lockMinutes: 120,
+      apisportsUsedToday: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  test("le fournisseur B rattrape ce que A ne connaissait pas, sans écraser ce que A a déjà donné", async () => {
+    const fake = fakeSupabase(seedTwoStaleFixtures());
+
+    const aOnly = providerFixture({
+      externalId: "a-1",
+      kickoffAt: STALE_KICKOFF,
+      status: "finished",
+      homeTeam: { externalId: "e-a-home", name: "Vulcains", aliases: [] },
+      awayTeam: { externalId: "e-a-away", name: "Griffons", aliases: [] },
+      homeScore: 20,
+      awayScore: 15,
+    });
+    const bOnly = providerFixture({
+      externalId: "b-1",
+      kickoffAt: STALE_KICKOFF,
+      status: "finished",
+      homeTeam: { externalId: "e-b-home", name: "Marmottes", aliases: [] },
+      awayTeam: { externalId: "e-b-away", name: "Iguanes", aliases: [] },
+      homeScore: 18,
+      awayScore: 22,
+    });
+
+    const report = await syncLive(twoProviderContext(fake.client, [aOnly], [bOnly]), {
+      now: LATER,
+      date: "2026-09-20",
+      recompute: async (_sb, ids) => ({ fixtures: ids.length, predictions: 0 }),
+    });
+
+    const byId = new Map(fake.db.fixtures.map((f) => [f.id as string, f]));
+    const a = byId.get("known-to-a") as { home_score: number | null; away_score: number | null };
+    const b = byId.get("known-to-b") as { home_score: number | null; away_score: number | null };
+    assert.equal(a.home_score, 20, "A doit avoir mis à jour son propre match");
+    assert.equal(a.away_score, 15);
+    assert.equal(b.home_score, 18, "B doit avoir rattrapé le match que A ne connaissait pas du tout");
+    assert.equal(b.away_score, 22);
+    assert.deepEqual(
+      new Set(report.finished),
+      new Set(["known-to-a", "known-to-b"]),
+      "les deux matchs doivent être reconnus comme terminés, pas seulement celui du premier fournisseur",
+    );
+  });
+});

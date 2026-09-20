@@ -46,7 +46,7 @@ export default async function SynchronisationPage() {
     loadSettings(admin),
     admin
       .from("sync_runs")
-      .select("kind, provider, status, started_at, requests_used, fixtures_updated, error")
+      .select("kind, provider, status, started_at, requests_used, fixtures_updated, error, detail")
       .order("started_at", { ascending: false })
       .limit(8),
     admin.from("external_refs").select("provider, entity_type"),
@@ -60,6 +60,20 @@ export default async function SynchronisationPage() {
   const runs = runsResult.data ?? [];
   const refs = refsResult.data ?? [];
   const fixtures = fixturesResult.data ?? [];
+
+  // Un passage « succès » peut quand même porter des avertissements — un
+  // match resté bloqué à « scheduled » 24 h après son coup d'envoi n'empêche
+  // pas la synchro de réussir techniquement, donc ne marque jamais `error`.
+  // Sans cette lecture explicite, ces avertissements ne vivaient que dans
+  // `sync_runs.detail`, jamais sous les yeux de personne.
+  const latestLive = runs.find((r) => r.kind === "live");
+  const latestWarnings: string[] = Array.isArray(
+    (latestLive?.detail as { warnings?: unknown } | null)?.warnings,
+  )
+    ? ((latestLive!.detail as { warnings: unknown[] }).warnings.filter(
+        (w): w is string => typeof w === "string",
+      ))
+    : [];
 
   const seasons: SeasonChoice[] = (seasonsResult.data ?? []).map((s) => {
     const competition = (Array.isArray(s.competitions) ? s.competitions[0] : s.competitions) as
@@ -158,6 +172,19 @@ export default async function SynchronisationPage() {
           </li>
         </ul>
       </Card>
+
+      {latestWarnings.length > 0 && (
+        <Card className="flex flex-col gap-2 border-l-[3px] border-l-wrong p-4">
+          <Label>⚠️ Alertes du dernier passage</Label>
+          <ul className="flex flex-col gap-1.5">
+            {latestWarnings.map((w, i) => (
+              <li key={i} className="text-[13px] leading-snug text-ink">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-1">

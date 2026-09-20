@@ -275,25 +275,6 @@ export async function syncLive(
   const catchupDates = staleDatesToQuery(stale, maxCatchupDates).filter((d) => d !== date);
 
   for (const staleDate of catchupDates) {
-    const catchup = await runWithFallback(ctx.chainFor("live"), async (p) => {
-      const externalId = await loadSeasonExternalId(
-        sb,
-        p.name,
-        ctx.season.id,
-        ctx.season.competitionId,
-      );
-      if (!externalId) {
-        throw new ProviderError(p.name, `aucune référence de saison pour ${ctx.season.label}`);
-      }
-      return p.getLiveScores(externalId, staleDate);
-    });
-
-    await recordProviderUsage(sb, "live", catchup.attempts, catchup.requestsByProvider);
-    if (!catchup.response) {
-      warnings.push(`rattrapage du ${staleDate} : aucun fournisseur joignable`);
-      continue;
-    }
-
     const dayStart = new Date(`${staleDate}T00:00:00.000Z`);
     const dayCandidates = await loadFixturesBetween(
       sb,
@@ -302,21 +283,54 @@ export async function syncLive(
       new Date(dayStart.getTime() + 2 * 86_400_000).toISOString(),
     );
 
-    const caught = await applyProviderBatch(ctx, {
-      incoming: catchup.response.data,
-      candidates: dayCandidates,
-      resolver,
-      fixtureRefs,
-      provider: catchup.response.provider,
-      now,
-      officialAfterMinutes,
-      deferOfficial: requireCorroboration,
-    });
+    // On interroge TOUS les fournisseurs de la chaîne pour ce jour-là, pas
+    // seulement le premier qui répond. `runWithFallback` s'arrête au premier
+    // succès — juste pour repérer une panne, pas une lacune de couverture.
+    // Or un match resté bloqué peut très bien être absent du relevé « par
+    // date » d'un fournisseur qui répond pourtant sans erreur (couverture
+    // incomplète d'une compétition) : c'était le cas le 19 septembre, où
+    // TheSportsDB ne connaissait qu'un match sur six du multiplexe de 16h35,
+    // les cinq autres n'ayant de référence que chez ESPN — jamais consulté
+    // puisque TheSportsDB n'avait techniquement pas échoué.
+    let sawAnyProvider = false;
+    for (const p of ctx.chainFor("live").providers) {
+      const attempt = await runWithFallback({ providers: [p], skipped: [] }, async (provider) => {
+        const externalId = await loadSeasonExternalId(
+          sb,
+          provider.name,
+          ctx.season.id,
+          ctx.season.competitionId,
+        );
+        if (!externalId) {
+          throw new ProviderError(provider.name, `aucune référence de saison pour ${ctx.season.label}`);
+        }
+        return provider.getLiveScores(externalId, staleDate);
+      });
 
-    fixturesUpdated += caught.updated;
-    finished.push(...caught.finished);
-    finishedDetails.push(...caught.finishedDetails);
-    changes.push(...caught.changes.map((c) => `rattrapage ${staleDate} · ${c}`));
+      await recordProviderUsage(sb, "live", attempt.attempts, attempt.requestsByProvider);
+      if (!attempt.response) continue;
+      sawAnyProvider = true;
+
+      const caught = await applyProviderBatch(ctx, {
+        incoming: attempt.response.data,
+        candidates: dayCandidates,
+        resolver,
+        fixtureRefs,
+        provider: attempt.response.provider,
+        now,
+        officialAfterMinutes,
+        deferOfficial: requireCorroboration,
+      });
+
+      fixturesUpdated += caught.updated;
+      finished.push(...caught.finished);
+      finishedDetails.push(...caught.finishedDetails);
+      changes.push(...caught.changes.map((c) => `rattrapage ${staleDate} (${p.name}) · ${c}`));
+    }
+
+    if (!sawAnyProvider) {
+      warnings.push(`rattrapage du ${staleDate} : aucun fournisseur joignable`);
+    }
   }
 
   // --- Recoupement avant le passage en officiel ----------------------------
