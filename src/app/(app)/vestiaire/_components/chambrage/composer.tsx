@@ -6,10 +6,14 @@
  * l'autocomplétion « @Untel » pour interpeller un joueur en particulier.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { searchGifsAction } from "@/lib/chambrage/actions";
 import type { MentionCandidate } from "@/lib/chambrage/model";
+import type { GifResult } from "@/lib/chambrage/gif-provider";
 import type { MessageVM } from "./types";
+
+const GIF_SEARCH_DEBOUNCE_MS = 400;
 
 const EMOJI_PALETTE = [
   "😀", "😂", "😍", "😎", "🤔", "😢", "😡", "😱",
@@ -39,6 +43,7 @@ export function Composer({
   onSendText,
   onSendImage,
   onSendPoll,
+  onSendGif,
   onTyping,
   roster,
   disabled,
@@ -49,6 +54,7 @@ export function Composer({
   onSendImage: (file: File, caption: string) => void;
   /** Renvoie `true` si le sondage a bien été envoyé. */
   onSendPoll: (question: string, options: string[], allowsMultiple: boolean) => Promise<boolean>;
+  onSendGif: (gifUrl: string) => void;
   onTyping: () => void;
   /** Pour l'autocomplétion « @Untel ». */
   roster: readonly MentionCandidate[];
@@ -57,6 +63,11 @@ export function Composer({
   const [body, setBody] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [pollDraft, setPollDraft] = useState<PollDraft | null>(null);
+  const [gifPickerOpen, setGifPickerOpen] = useState(false);
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifResults, setGifResults] = useState<GifResult[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  const [gifError, setGifError] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string; caption: string } | null>(
     null,
   );
@@ -168,6 +179,45 @@ export function Composer({
     } else {
       setPollDraft({ ...pollDraft, sending: false, error: "L'envoi a échoué. Réessaie dans un instant." });
     }
+  }
+
+  // Recherche différée : on attend une pause dans la frappe avant d'interroger
+  // Tenor, pour ne pas lancer une requête à chaque lettre tapée. Le tout
+  // passe par un minuteur, y compris la remise à zéro d'une recherche vidée —
+  // un `setState` synchrone au corps de l'effet enchaînerait un second rendu.
+  useEffect(() => {
+    if (!gifPickerOpen) return;
+    if (gifQuery.trim().length === 0) {
+      const timer = setTimeout(() => {
+        setGifResults([]);
+        setGifError(null);
+        setGifLoading(false);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+    const loadingTimer = setTimeout(() => setGifLoading(true), 0);
+    const timer = setTimeout(async () => {
+      const result = await searchGifsAction(gifQuery);
+      if (result.ok) {
+        setGifResults(result.data);
+        setGifError(result.data.length === 0 ? "Aucun résultat." : null);
+      } else {
+        setGifResults([]);
+        setGifError(result.error);
+      }
+      setGifLoading(false);
+    }, GIF_SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(loadingTimer);
+      clearTimeout(timer);
+    };
+  }, [gifPickerOpen, gifQuery]);
+
+  function pickGif(gif: GifResult) {
+    onSendGif(gif.url);
+    setGifPickerOpen(false);
+    setGifQuery("");
+    setGifResults([]);
   }
 
   if (pendingImage) {
@@ -313,6 +363,14 @@ export function Composer({
         >
           📊
         </button>
+        <button
+          type="button"
+          onClick={() => setGifPickerOpen(true)}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-[11px] font-black text-ink-muted"
+          aria-label="Envoyer un GIF"
+        >
+          GIF
+        </button>
 
         <textarea
           ref={textareaRef}
@@ -448,6 +506,64 @@ export function Composer({
             >
               {pollDraft.sending ? "Envoi…" : "Créer le sondage"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {gifPickerOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-ink/30 backdrop-blur-[1px]"
+          onClick={() => setGifPickerOpen(false)}
+        >
+          <div
+            className="flex h-[70vh] w-full max-w-md flex-col gap-3 rounded-t-[24px] bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-card)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <input
+                value={gifQuery}
+                onChange={(e) => setGifQuery(e.target.value)}
+                placeholder="Chercher un GIF…"
+                autoFocus
+                className="w-full flex-1 rounded-full border border-line bg-surface-sunk px-3.5 py-2 text-[14.5px] text-ink outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setGifPickerOpen(false)}
+                className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-sunk text-ink-muted"
+                aria-label="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {gifLoading && <p className="py-4 text-center text-[13px] text-ink-muted">Recherche…</p>}
+              {!gifLoading && gifError && (
+                <p className="py-4 text-center text-[13px] text-ink-muted">{gifError}</p>
+              )}
+              {!gifLoading && !gifError && gifResults.length === 0 && gifQuery.trim().length === 0 && (
+                <p className="py-4 text-center text-[13px] text-ink-muted">Tape un mot pour chercher un GIF.</p>
+              )}
+              {gifResults.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {gifResults.map((gif) => (
+                    <button key={gif.id} type="button" onClick={() => pickGif(gif)} className="overflow-hidden rounded-[14px]">
+                      {/* Prévisualisation d'un GIF hébergé par Tenor : <img> nature. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={gif.previewUrl}
+                        alt={gif.description}
+                        className="h-28 w-full object-cover"
+                        loading="lazy"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="text-center text-[10.5px] text-ink-faint">Propulsé par Tenor</p>
           </div>
         </div>
       )}

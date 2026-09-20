@@ -37,6 +37,7 @@ import {
   editMessage,
   deleteMessage,
   markChambrageRead,
+  sendGifMessage,
   sendImageMessage,
   sendPollMessage,
   sendTextMessage,
@@ -481,6 +482,40 @@ export function ChambrageChat({
     }
   }
 
+  async function handleSendGif(gifUrl: string) {
+    const tempId = `temp-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const optimistic: RawMessage = {
+      id: tempId,
+      senderId: viewerId,
+      messageType: "image",
+      body: null,
+      mediaUrl: gifUrl,
+      replyToId: replyTo?.id ?? null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      pollAllowsMultiple: null,
+    };
+    setMessages((prev) => mergeMessages(prev, [optimistic]));
+    setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
+    setReplyTo(null);
+    stickToBottomRef.current = true;
+    requestAnimationFrame(() => scrollToBottom(true));
+
+    const result = await sendGifMessage({ leagueId, gifUrl, replyToId: optimistic.replyToId });
+    if (result.ok) {
+      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+      setPendingStatus((p) => {
+        const next = { ...p };
+        delete next[tempId];
+        return next;
+      });
+    } else {
+      setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+    }
+  }
+
   async function handleSendPoll(question: string, options: string[], allowsMultiple: boolean): Promise<boolean> {
     const result = await sendPollMessage({
       leagueId,
@@ -807,6 +842,7 @@ export function ChambrageChat({
           onSendText={handleSendText}
           onSendImage={handleSendImage}
           onSendPoll={handleSendPoll}
+          onSendGif={handleSendGif}
           onTyping={handleTyping}
           roster={others}
         />

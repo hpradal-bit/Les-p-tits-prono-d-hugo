@@ -20,6 +20,7 @@ import { CHAMBRAGE_MEDIA_BUCKET, ALLOWED_IMAGE_MIME, MAX_IMAGE_BYTES } from "./m
 import { notifyNewMessage, notifyReaction } from "./notify.ts";
 import { loadMessageById } from "./queries.ts";
 import { parseMentions, type RawMessage, type RawPollOption } from "./model.ts";
+import { GifProviderError, isTenorMediaUrl, searchGifs, type GifResult } from "./gif-provider.ts";
 
 export type ChambrageResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -202,6 +203,69 @@ export async function sendImageMessage(formData: FormData): Promise<ChambrageRes
     leagueId: leagueId.data,
     senderName: viewer.displayName,
     preview: caption ? `📷 ${caption}` : "📷 Photo",
+  });
+
+  revalidatePath("/vestiaire");
+  return ok(message);
+}
+
+/** Recherche de GIF (Tenor) pour le sélecteur du composer. */
+export async function searchGifsAction(query: string): Promise<ChambrageResult<GifResult[]>> {
+  const viewer = await getViewer();
+  if (!viewer) return fail("Connexion requise.");
+
+  try {
+    return ok(await searchGifs(query));
+  } catch (cause) {
+    const message = cause instanceof GifProviderError ? cause.message : "La recherche a échoué.";
+    return fail(message);
+  }
+}
+
+const gifSchema = z.object({
+  leagueId: z.string().uuid(),
+  gifUrl: z.string().url(),
+  replyToId: z.string().uuid().nullable(),
+});
+
+/** Envoie un GIF choisi dans le sélecteur — un message image, l'URL Tenor jamais re-téléversée. */
+export async function sendGifMessage(input: {
+  leagueId: string;
+  gifUrl: string;
+  replyToId?: string | null;
+}): Promise<ChambrageResult<RawMessage>> {
+  const viewer = await getViewer();
+  if (!viewer) return fail("Connexion requise.");
+
+  const parsed = gifSchema.safeParse({
+    leagueId: input.leagueId,
+    gifUrl: input.gifUrl,
+    replyToId: input.replyToId ?? null,
+  });
+  if (!parsed.success || !isTenorMediaUrl(parsed.data.gifUrl)) {
+    return fail("GIF invalide.");
+  }
+
+  const sb = await createClient();
+  const { data, error } = await sb
+    .from("messages")
+    .insert({
+      league_id: parsed.data.leagueId,
+      sender_id: viewer.id,
+      message_type: "image",
+      media_url: parsed.data.gifUrl,
+      reply_to_id: parsed.data.replyToId,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+  if (error || !data) return fail("L'envoi a échoué. Réessaie dans un instant.");
+
+  const message = toMessage(data);
+  scheduleMessageNotification({
+    message,
+    leagueId: parsed.data.leagueId,
+    senderName: viewer.displayName,
+    preview: "🎞️ GIF",
   });
 
   revalidatePath("/vestiaire");
