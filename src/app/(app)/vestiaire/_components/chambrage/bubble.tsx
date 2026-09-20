@@ -3,7 +3,9 @@
 /**
  * Une bulle de message : la mienne à droite, celle d'un autre à gauche, avec
  * son avatar, l'heure, l'aperçu de réponse cité, les réactions, et le statut
- * lu pour mes propres messages. L'appui long ouvre le menu d'actions (§2.10).
+ * lu pour mes propres messages. L'appui long ouvre le menu d'actions (§2.10) ;
+ * sur ses propres messages, glisser vers la gauche révèle qui l'a lu, comme
+ * iMessage.
  */
 
 import { useEffect, useState } from "react";
@@ -69,12 +71,16 @@ export function MessageBubble({
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [heartBurst, setHeartBurst] = useState(false);
+  const [showReadBy, setShowReadBy] = useState(false);
   const { message, isMine, sender, replyTo, reactions } = vm;
   const deleted = message.deletedAt !== null;
 
   const { dragX, handlers: swipeHandlers } = useMessageGestures({
     onLongPress: () => !deleted && setMenuOpen(true),
     onSwipeReply: () => !deleted && onReply(),
+    // Glisser vers la gauche sur SON PROPRE message révèle qui l'a lu, comme
+    // iMessage — un geste qui n'a pas de sens sur le message d'un autre.
+    onSwipeLeft: isMine && !deleted ? () => setShowReadBy(true) : undefined,
     onDoubleTap: () => {
       if (deleted) return;
       onReact("❤️");
@@ -106,7 +112,7 @@ export function MessageBubble({
   return (
     <div
       className={cn("relative flex gap-2 touch-pan-y", isMine ? "flex-row-reverse" : "flex-row")}
-      style={{ transform: dragX > 0 ? `translateX(${dragX}px)` : undefined }}
+      style={{ transform: dragX !== 0 ? `translateX(${dragX}px)` : undefined }}
     >
       {dragX > 0 && (
         <span
@@ -115,6 +121,16 @@ export function MessageBubble({
           style={{ opacity: Math.min(1, dragX / 40) }}
         >
           ↩️
+        </span>
+      )}
+
+      {dragX < 0 && (
+        <span
+          aria-hidden
+          className="absolute top-1/2 right-0 translate-x-full -translate-y-1/2 pl-1.5 text-[15px] text-ink-faint"
+          style={{ opacity: Math.min(1, -dragX / 40) }}
+        >
+          👁️
         </span>
       )}
 
@@ -298,6 +314,40 @@ export function MessageBubble({
               className="mt-1 rounded-[14px] py-3 text-center text-[14px] font-semibold text-ink-muted"
             >
               Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showReadBy && (
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/30 backdrop-blur-[1px]"
+          onClick={() => setShowReadBy(false)}
+        >
+          <div
+            className="mb-0 flex w-full max-w-md flex-col gap-2 rounded-t-[24px] bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-card)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-display text-[15px] text-ink">
+              {vm.readState === "sent" ? "Envoyé" : "Lu par"}
+            </p>
+            {vm.readByNames.length > 0 ? (
+              <ul className="flex flex-col gap-1.5">
+                {vm.readByNames.map((name) => (
+                  <li key={name} className="text-[14px] text-ink">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[13.5px] text-ink-muted">Personne n&apos;a encore lu ce message.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowReadBy(false)}
+              className="mt-1 rounded-[14px] py-3 text-center text-[14px] font-semibold text-ink-muted"
+            >
+              Fermer
             </button>
           </div>
         </div>

@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * Les trois gestes d'une bulle de message, unifiés sur les Pointer Events
+ * Les quatre gestes d'une bulle de message, unifiés sur les Pointer Events
  * (souris/tactile/stylet en un seul modèle, pour ne jamais faire concurrence
  * à eux-mêmes sur un écran tactile) :
  *  - appui long → menu d'actions (§2.10) ;
  *  - glissement vers la droite → répondre, comme WhatsApp/Messenger ;
+ *  - glissement vers la gauche (sur ses propres messages seulement, quand
+ *    `onSwipeLeft` est fourni) → qui a lu, comme iMessage ;
  *  - double-tap → réaction rapide ❤️, comme Messenger/Instagram.
  * Un déplacement vertical annule le geste (c'est un défilement de la liste),
  * un déplacement horizontal annule l'appui long (c'est un glissement).
@@ -23,10 +25,13 @@ const DOUBLE_TAP_RADIUS_PX = 24;
 export function useMessageGestures({
   onLongPress,
   onSwipeReply,
+  onSwipeLeft,
   onDoubleTap,
 }: {
   onLongPress: () => void;
   onSwipeReply: () => void;
+  /** Fourni seulement pour ses propres messages : glisser vers la gauche devient un geste valide. */
+  onSwipeLeft?: () => void;
   onDoubleTap: () => void;
 }) {
   const [dragX, setDragX] = useState(0);
@@ -82,15 +87,17 @@ export function useMessageGestures({
       }
     }
     if (dragging.current) {
-      setDragX(Math.max(0, Math.min(SWIPE_MAX_PX, dx)));
+      const min = onSwipeLeft ? -SWIPE_MAX_PX : 0;
+      setDragX(Math.max(min, Math.min(SWIPE_MAX_PX, dx)));
     }
-  }, []);
+  }, [onSwipeLeft]);
 
   const endGesture = useCallback(
     (endX: number, endY: number) => {
       clearTimer();
       if (dragging.current) {
         if (dragX >= SWIPE_TRIGGER_PX) onSwipeReply();
+        else if (onSwipeLeft && dragX <= -SWIPE_TRIGGER_PX) onSwipeLeft();
       } else if (!longPressFired.current) {
         const now = Date.now();
         const closeEnough =
@@ -109,7 +116,7 @@ export function useMessageGestures({
       pointerId.current = null;
       setDragX(0);
     },
-    [dragX, onSwipeReply, onDoubleTap],
+    [dragX, onSwipeReply, onSwipeLeft, onDoubleTap],
   );
 
   const onPointerUp = useCallback(
