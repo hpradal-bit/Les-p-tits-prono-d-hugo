@@ -43,6 +43,11 @@ describe("sniffImageType", () => {
     assert.equal(sniffImageType(header), "image/webp");
   });
 
+  it("reconnaît un GIF, 87a ou 89a", () => {
+    assert.equal(sniffImageType(bytes(...ascii("GIF87a"), 0x00)), "image/gif");
+    assert.equal(sniffImageType(bytes(...ascii("GIF89a"), 0x00)), "image/gif");
+  });
+
   it("refuse un exécutable, quel que soit le nom du fichier", () => {
     assert.equal(sniffImageType(bytes(0x4d, 0x5a, 0x90, 0x00, 0x03)), null);
   });
@@ -62,6 +67,7 @@ describe("extensionFor", () => {
     assert.equal(extensionFor("image/png"), "png");
     assert.equal(extensionFor("image/jpeg"), "jpg");
     assert.equal(extensionFor("image/webp"), "webp");
+    assert.equal(extensionFor("image/gif"), "gif");
   });
 
   it("ne connaît aucune extension pour un type non autorisé", () => {

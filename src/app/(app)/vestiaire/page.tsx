@@ -9,10 +9,11 @@ import { getViewer } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
 import { loadClubAvatars } from "@/lib/auth/avatar-policy";
-import { loadFeed, loadReactionChoices, type FeedFilter } from "@/lib/feed/queries";
+import { loadFeed, loadReactionChoices } from "@/lib/feed/queries";
 import { loadLastDebrief } from "@/lib/feed/debrief";
+import { loadChambrage } from "@/lib/chambrage/queries.ts";
+import { ChambrageChat } from "./_components/chambrage/chat";
 import { ReactionBar } from "./_components/reaction-bar";
-import { PostForm } from "./_components/post-form";
 import { MarkFeedRead } from "./_components/mark-read";
 import { RoundDebrief } from "./_components/round-debrief";
 import { PowerHistoryView } from "./_components/power-history";
@@ -22,30 +23,25 @@ export const metadata: Metadata = { title: "Zone de chambrage" };
 export const dynamic = "force-dynamic";
 
 /**
- * Trois onglets, pas quatre filtres : « Discussion » est le fil classique où
- * l'on s'écrit, « Super-pouvoirs » est un écran à part entière, rangé par
- * journée et filtrable par joueur. « Tout » garde le mélange d'origine.
+ * Trois onglets : « Chambrage » est la vraie messagerie de groupe (§ refonte),
+ * « Résumé » ce que le jeu raconte tout seul (scores exacts, dépassements,
+ * séries noires…), « Super-pouvoirs » un écran à part, rangé par journée et
+ * filtrable par joueur.
  */
-const TABS = ["tout", "discussion", "pouvoirs"] as const;
+const TABS = ["chambrage", "resume", "pouvoirs"] as const;
 type Tab = (typeof TABS)[number];
 
 const FilterSchema = z.object({
-  filtre: z.enum(TABS).catch("tout"),
+  filtre: z.enum(TABS).catch("chambrage"),
   joueur: z.string().uuid().optional(),
   league: z.string().uuid().optional(),
 });
 
 const TAB_LABELS: { value: Tab; label: string }[] = [
-  { value: "tout", label: "Tout" },
-  { value: "discussion", label: "Discussion" },
+  { value: "chambrage", label: "Chambrage" },
+  { value: "resume", label: "Résumé" },
   { value: "pouvoirs", label: "Super-pouvoirs" },
 ];
-
-/** L'onglet Discussion s'appuie sur le filtre « messages » déjà en place. */
-const FEED_FILTER: Record<Exclude<Tab, "pouvoirs">, FeedFilter> = {
-  tout: "tout",
-  discussion: "messages",
-};
 
 const TONE: Record<string, string> = {
   neutral: "border-line",
@@ -79,13 +75,16 @@ export default async function VestiairePage({
   const { leagueId, leagues: myLeagues } = resolved;
 
   const showPowers = filtre === "pouvoirs";
+  const showResume = filtre === "resume";
+  const showChambrage = filtre === "chambrage";
 
-  const [items, choices, debrief, clubs, powerHistory] = await Promise.all([
-    showPowers ? Promise.resolve([]) : loadFeed(leagueId, FEED_FILTER[filtre]),
+  const [choices, clubs, debrief, resumeItems, powerHistory, chambrage] = await Promise.all([
     loadReactionChoices(),
-    loadLastDebrief(leagueId),
     loadClubAvatars(sb),
+    showResume ? loadLastDebrief(leagueId) : Promise.resolve(null),
+    showResume ? loadFeed(leagueId, "jeu") : Promise.resolve([]),
     showPowers ? loadPowerHistory(sb, leagueId, { playerId: joueur ?? null }) : Promise.resolve(null),
+    showChambrage ? loadChambrage(sb, leagueId, viewer.id) : Promise.resolve(null),
   ]);
 
   const withLeague = (href: string) =>
@@ -93,8 +92,9 @@ export default async function VestiairePage({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Ouvrir l'écran vaut lecture : la pastille s'éteint, pour moi seul. */}
-      <MarkFeedRead leagueId={leagueId} />
+      {/* Sur le fil de jeu : ouvrir l'écran vaut lecture. Chambrage marque sa
+          propre lecture, sur ses propres tables. */}
+      {showResume && <MarkFeedRead leagueId={leagueId} />}
 
       <div>
         <h1 className="font-display text-2xl tracking-tight text-ink">
@@ -120,7 +120,7 @@ export default async function VestiairePage({
         {TAB_LABELS.map((t) => (
           <Link
             key={t.value}
-            href={withLeague(t.value === "tout" ? "/vestiaire" : `/vestiaire?filtre=${t.value}`)}
+            href={withLeague(t.value === "chambrage" ? "/vestiaire" : `/vestiaire?filtre=${t.value}`)}
             aria-current={filtre === t.value ? "page" : undefined}
             className={`shrink-0 border-b-2 px-3 pb-2.5 pt-1 text-[13.5px] font-semibold transition ${
               filtre === t.value
@@ -133,7 +133,25 @@ export default async function VestiairePage({
         ))}
       </nav>
 
-      {showPowers && powerHistory ? (
+      {showChambrage && chambrage && (
+        <ChambrageChat
+          leagueId={leagueId}
+          viewerId={viewer.id}
+          viewerName={viewer.displayName}
+          roster={chambrage.roster}
+          clubs={clubs}
+          reactionChoices={choices}
+          initial={{
+            messages: chambrage.messages,
+            hasMoreOlder: chambrage.hasMoreOlder,
+            reactions: chambrage.reactions,
+            reads: chambrage.reads,
+            lastReadAt: chambrage.lastReadAt,
+          }}
+        />
+      )}
+
+      {showPowers && powerHistory && (
         <PowerHistoryView
           history={powerHistory}
           selectedPlayer={joueur ?? null}
@@ -146,64 +164,59 @@ export default async function VestiairePage({
             )
           }
         />
-      ) : (
-        <>
-      <RoundDebrief data={debrief} />
-
-      <Card className="p-4">
-        <PostForm leagueId={leagueId} />
-      </Card>
-
-      {items.length === 0 ? (
-        <Card className="flex flex-col items-center gap-2 p-8 text-center">
-          <span className="text-3xl" aria-hidden>🏉</span>
-          <p className="font-display text-[17px] text-ink">
-            {filtre === "discussion" ? "Personne n'a encore parlé" : "La zone de chambrage est encore vide"}
-          </p>
-          <p className="max-w-[36ch] text-[14px] text-ink-muted">
-            {filtre === "discussion"
-              ? "À toi de lancer les hostilités."
-              : "Elle se remplira toute seule au fil des journées : scores exacts, dépassements au classement, séries noires."}
-          </p>
-        </Card>
-      ) : (
-        <ul className="flex flex-col gap-2.5">
-          {items.map((item) => (
-            <li key={item.id}>
-              <Card className={`p-4 ${item.rendered ? TONE[item.rendered.tone] : "border-line"}`}>
-                {item.rendered ? (
-                  <p className="whitespace-pre-wrap text-[15px] leading-snug text-ink">
-                    <span className="mr-1.5" aria-hidden>{item.rendered.emoji}</span>
-                    {item.rendered.text}
-                  </p>
-                ) : (
-                  <div className="flex items-start gap-2.5">
-                    <PlayerAvatar
-                      player={{
-                        userId: "",
-                        firstName: item.authorFirstName ?? "",
-                        displayName: item.authorName ?? "",
-                        avatarKind: item.authorAvatarKind ?? "emoji",
-                        avatarValue: item.authorAvatarValue ?? "🏉",
-                      }}
-                      clubs={clubs}
-                      size={32}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <Label>{item.authorName ?? "Un joueur"}</Label>
-                      <p className="mt-1 whitespace-pre-wrap text-[15px] leading-snug text-ink">
-                        {item.body}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <p className="mt-1.5 font-mono text-[11px] text-ink-faint">{ago(item.createdAt)}</p>
-                <ReactionBar postId={item.id} reactions={item.reactions} choices={choices} />
-              </Card>
-            </li>
-          ))}
-        </ul>
       )}
+
+      {showResume && (
+        <>
+          <RoundDebrief data={debrief} />
+
+          {resumeItems.length === 0 ? (
+            <Card className="flex flex-col items-center gap-2 p-8 text-center">
+              <span className="text-3xl" aria-hidden>🏉</span>
+              <p className="font-display text-[17px] text-ink">Rien à raconter pour l&apos;instant</p>
+              <p className="max-w-[36ch] text-[14px] text-ink-muted">
+                Il se remplira tout seul au fil des journées : scores exacts, dépassements au
+                classement, séries noires.
+              </p>
+            </Card>
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {resumeItems.map((item) => (
+                <li key={item.id}>
+                  <Card className={`p-4 ${item.rendered ? TONE[item.rendered.tone] : "border-line"}`}>
+                    {item.rendered ? (
+                      <p className="whitespace-pre-wrap text-[15px] leading-snug text-ink">
+                        <span className="mr-1.5" aria-hidden>{item.rendered.emoji}</span>
+                        {item.rendered.text}
+                      </p>
+                    ) : (
+                      <div className="flex items-start gap-2.5">
+                        <PlayerAvatar
+                          player={{
+                            userId: "",
+                            firstName: item.authorFirstName ?? "",
+                            displayName: item.authorName ?? "",
+                            avatarKind: item.authorAvatarKind ?? "emoji",
+                            avatarValue: item.authorAvatarValue ?? "🏉",
+                          }}
+                          clubs={clubs}
+                          size={32}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <Label>{item.authorName ?? "Un joueur"}</Label>
+                          <p className="mt-1 whitespace-pre-wrap text-[15px] leading-snug text-ink">
+                            {item.body}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <p className="mt-1.5 font-mono text-[11px] text-ink-faint">{ago(item.createdAt)}</p>
+                    <ReactionBar postId={item.id} reactions={item.reactions} choices={choices} />
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>

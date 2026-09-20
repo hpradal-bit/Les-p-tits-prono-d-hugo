@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { FEED_READ_EVENT } from "../vestiaire/_components/mark-read";
+import { CHAMBRAGE_READ_EVENT } from "../vestiaire/_components/chambrage/chat";
 
 interface Tab {
   href: string;
@@ -21,34 +21,34 @@ interface Tab {
   /** Préfixes d'URL qui allument cet onglet. */
   matches: string[];
   icon: (props: { className?: string }) => React.ReactElement;
-  /** Cet onglet peut porter la pastille « non lu ». */
-  badge?: "feed";
+  /** Cet onglet peut porter le badge « non lu ». */
+  badge?: "chambrage";
 }
 
 /** Rythme du sondage : assez lent pour être invisible, assez vif pour animer. */
 const UNREAD_POLL_MS = 60_000;
 
 /**
- * La pastille des messages non lus.
+ * Le badge numérique des messages non lus de Chambrage.
  *
  * Sondage plutôt qu'état rendu par le serveur : un layout partagé n'est pas
- * rechargé à chaque navigation, la pastille serait restée figée dans l'état du
- * premier chargement. Ici elle se remet à jour à chaque changement d'écran, à
- * l'ouverture du Vestiaire, et une fois par minute.
+ * rechargé à chaque navigation, le badge serait resté figé dans l'état du
+ * premier chargement. Ici il se remet à jour à chaque changement d'écran, à
+ * l'ouverture de Chambrage, et une fois par minute.
  */
-function useUnreadFeed(): boolean {
-  const [unread, setUnread] = useState(false);
+function useUnreadChambrage(): number {
+  const [count, setCount] = useState(0);
   const pathname = usePathname() ?? "";
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/feed/unread", { cache: "no-store" });
+      const response = await fetch("/api/chambrage/unread", { cache: "no-store" });
       if (!response.ok) return;
-      const data = (await response.json()) as { unread?: boolean };
-      setUnread(Boolean(data.unread));
+      const data = (await response.json()) as { count?: number };
+      setCount(Math.max(0, Math.trunc(data.count ?? 0)));
     } catch {
       // Hors ligne : on garde la dernière réponse connue plutôt que de faire
-      // clignoter la pastille au gré du réseau.
+      // clignoter le badge au gré du réseau.
     }
   }, []);
 
@@ -58,16 +58,16 @@ function useUnreadFeed(): boolean {
     // et enchaînerait un second rendu complet de la barre.
     const first = setTimeout(refresh, 0);
     const id = setInterval(refresh, UNREAD_POLL_MS);
-    const onRead = () => setUnread(false);
-    window.addEventListener(FEED_READ_EVENT, onRead);
+    const onRead = () => setCount(0);
+    window.addEventListener(CHAMBRAGE_READ_EVENT, onRead);
     return () => {
       clearTimeout(first);
       clearInterval(id);
-      window.removeEventListener(FEED_READ_EVENT, onRead);
+      window.removeEventListener(CHAMBRAGE_READ_EVENT, onRead);
     };
   }, [refresh, pathname]);
 
-  return unread;
+  return count;
 }
 
 function IconBall({ className }: { className?: string }) {
@@ -167,7 +167,7 @@ const PLAYER_TABS: Tab[] = [
   { href: "/journee", label: "Mes pronos", matches: ["/journee"], icon: IconBall },
   { href: "/resultats", label: "Résultats", matches: ["/resultats", "/match"], icon: IconResults },
   { href: "/classement", label: "Classement", matches: ["/classement"], icon: IconTrophy },
-  { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat, badge: "feed" },
+  { href: "/vestiaire", label: "Chambrage", matches: ["/vestiaire"], icon: IconChat, badge: "chambrage" },
   { href: "/profil", label: "Profil", matches: ["/profil", "/reglages", "/questions"], icon: IconUser },
 ];
 
@@ -184,7 +184,7 @@ function isActive(pathname: string, tab: Tab) {
 
 export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname() ?? "";
-  const unreadFeed = useUnreadFeed();
+  const unreadChambrage = useUnreadChambrage();
   const tabs = isAdmin ? [...PLAYER_TABS, ADMIN_TAB] : PLAYER_TABS;
 
   return (
@@ -221,11 +221,13 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
                   )}
                 >
                   <Icon className="size-[22px]" />
-                  {tab.badge === "feed" && unreadFeed && (
+                  {tab.badge === "chambrage" && unreadChambrage > 0 && (
                     <span
                       aria-hidden
-                      className="absolute right-2.5 top-0 size-2.5 rounded-full border-2 border-surface bg-wrong"
-                    />
+                      className="absolute -right-1 -top-1 grid min-w-[18px] place-items-center rounded-full border-2 border-surface bg-wrong px-1 text-[10px] font-bold leading-[14px] text-surface"
+                    >
+                      {unreadChambrage > 99 ? "99+" : unreadChambrage}
+                    </span>
                   )}
                 </span>
                 <span
@@ -236,8 +238,11 @@ export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
                 >
                   {tab.label}
                 </span>
-                {tab.badge === "feed" && unreadFeed && (
-                  <span className="sr-only">Messages non lus</span>
+                {tab.badge === "chambrage" && unreadChambrage > 0 && (
+                  <span className="sr-only">
+                    {unreadChambrage} message{unreadChambrage > 1 ? "s" : ""} non lu
+                    {unreadChambrage > 1 ? "s" : ""}
+                  </span>
                 )}
               </Link>
             </li>

@@ -71,6 +71,10 @@ export function sniffImageType(bytes: Uint8Array): string | null {
     return "image/webp";
   }
 
+  // GIF : "GIF87a" ou "GIF89a"
+  if (bytes.length >= 6 && ascii(0, "GIF87a")) return "image/gif";
+  if (bytes.length >= 6 && ascii(0, "GIF89a")) return "image/gif";
+
   return null;
 }
 
@@ -83,6 +87,8 @@ export function extensionFor(mime: string): string | null {
       return "jpg";
     case "image/webp":
       return "webp";
+    case "image/gif":
+      return "gif";
     default:
       return null;
   }
