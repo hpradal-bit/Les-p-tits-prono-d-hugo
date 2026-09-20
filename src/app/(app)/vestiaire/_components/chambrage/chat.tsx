@@ -25,6 +25,7 @@ import {
   readBy as computeReadBy,
   readState as computeReadState,
   sameBurst,
+  splitMentions,
   type RawMessage,
   type RawReaction,
   type RawRead,
@@ -542,6 +543,8 @@ export function ChambrageChat({
         }
       : null;
 
+    const mentionSegments = message.body ? splitMentions(message.body, roster) : [];
+
     return {
       message,
       sender,
@@ -552,6 +555,8 @@ export function ChambrageChat({
       readState: computeReadState(message, reads, memberIds),
       readByNames: computeReadBy(message, reads, memberIds).map(nameFor),
       notReadByNames: computeNotReadBy(message, reads, memberIds).map(nameFor),
+      mentionSegments,
+      mentionsMe: mentionSegments.some((s) => s.mentionUserId === viewerId),
       pending: pendingStatus[message.id],
     };
   }
@@ -707,6 +712,7 @@ export function ChambrageChat({
           onSendText={handleSendText}
           onSendImage={handleSendImage}
           onTyping={handleTyping}
+          roster={others}
         />
       )}
 

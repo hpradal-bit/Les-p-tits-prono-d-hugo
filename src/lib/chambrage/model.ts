@@ -183,6 +183,84 @@ export function firstUnreadId(
   return null;
 }
 
+export interface MentionCandidate {
+  userId: string;
+  displayName: string;
+}
+
+/**
+ * Repère les `@Untel` d'un message parmi les membres de la ligue, pour
+ * notifier précisément la bonne personne — jamais deviné à l'affichage, la
+ * même règle sert à notifier et à surligner.
+ *
+ * Aucune colonne dédiée : le nom affiché tel qu'écrit dans le corps du
+ * message fait foi, comparé insensible à la casse. La correspondance la
+ * plus longue l'emporte (« Marco » ne doit jamais se lire comme « Marc »
+ * suivi de « o »), et doit s'arrêter sur une frontière de mot.
+ */
+export function parseMentions(body: string, roster: readonly MentionCandidate[]): string[] {
+  const found = new Set<string>();
+  const candidates = [...roster]
+    .filter((c) => c.displayName.trim() !== "")
+    .sort((a, b) => b.displayName.length - a.displayName.length);
+  const lower = body.toLowerCase();
+
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] !== "@") continue;
+    const rest = lower.slice(i + 1);
+    const match = candidates.find((c) => rest.startsWith(c.displayName.toLowerCase()));
+    if (!match) continue;
+    const end = i + 1 + match.displayName.length;
+    const boundary = body[end];
+    if (boundary && /[\p{L}\p{N}]/u.test(boundary)) continue;
+    found.add(match.userId);
+  }
+
+  return [...found];
+}
+
+export interface MentionSegment {
+  text: string;
+  /** L'identifiant du joueur mentionné dans ce segment, ou `null` pour du texte ordinaire. */
+  mentionUserId: string | null;
+}
+
+/**
+ * Le même repérage que `parseMentions`, mais découpé en segments pour
+ * l'affichage — chaque `@Untel` reconnu devient son propre segment, mis en
+ * évidence par l'écran.
+ */
+export function splitMentions(body: string, roster: readonly MentionCandidate[]): MentionSegment[] {
+  const candidates = [...roster]
+    .filter((c) => c.displayName.trim() !== "")
+    .sort((a, b) => b.displayName.length - a.displayName.length);
+  const lower = body.toLowerCase();
+
+  const segments: MentionSegment[] = [];
+  let plainStart = 0;
+  let i = 0;
+  while (i < body.length) {
+    if (body[i] === "@") {
+      const rest = lower.slice(i + 1);
+      const match = candidates.find((c) => rest.startsWith(c.displayName.toLowerCase()));
+      if (match) {
+        const end = i + 1 + match.displayName.length;
+        const boundary = body[end];
+        if (!boundary || !/[\p{L}\p{N}]/u.test(boundary)) {
+          if (i > plainStart) segments.push({ text: body.slice(plainStart, i), mentionUserId: null });
+          segments.push({ text: body.slice(i, end), mentionUserId: match.userId });
+          i = end;
+          plainStart = end;
+          continue;
+        }
+      }
+    }
+    i += 1;
+  }
+  if (plainStart < body.length) segments.push({ text: body.slice(plainStart), mentionUserId: null });
+  return segments;
+}
+
 /**
  * Deux messages consécutifs appartiennent-ils à la même « rafale » — même
  * expéditeur, moins de `maxGapMinutes` d'écart ? Sert à n'afficher l'avatar

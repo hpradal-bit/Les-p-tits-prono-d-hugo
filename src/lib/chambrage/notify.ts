@@ -16,6 +16,7 @@ import { excerpt } from "../feed/post-notice.ts";
 export const CHAT_MESSAGE_KIND = "chat_message";
 export const CHAT_REPLY_KIND = "chat_reply";
 export const CHAT_REACTION_KIND = "chat_reaction";
+export const CHAT_MENTION_KIND = "chat_mention";
 
 export interface NewMessageNotice {
   messageId: string;
@@ -26,6 +27,8 @@ export interface NewMessageNotice {
   preview: string;
   /** L'auteur du message cité, si celui-ci répond à quelqu'un. */
   replyToSenderId: string | null;
+  /** Qui ce message interpelle par un « @Untel » — prime sur la réponse. */
+  mentionedUserIds?: readonly string[];
 }
 
 export async function notifyNewMessage(
@@ -37,15 +40,20 @@ export async function notifyNewMessage(
     .select("user_id")
     .eq("league_id", notice.leagueId);
 
+  const mentioned = new Set(notice.mentionedUserIds ?? []);
+
   let queued = 0;
   for (const member of (members ?? []) as Array<{ user_id: string }>) {
     if (member.user_id === notice.senderId) continue;
 
+    const isMentioned = mentioned.has(member.user_id);
     const isReplyTarget = notice.replyToSenderId === member.user_id;
-    const kind = isReplyTarget ? CHAT_REPLY_KIND : CHAT_MESSAGE_KIND;
-    const title = isReplyTarget
-      ? `↩️ ${notice.senderName} t'a répondu`
-      : `💬 ${notice.senderName}`;
+    const kind = isMentioned ? CHAT_MENTION_KIND : isReplyTarget ? CHAT_REPLY_KIND : CHAT_MESSAGE_KIND;
+    const title = isMentioned
+      ? `🔔 ${notice.senderName} t'a mentionné`
+      : isReplyTarget
+        ? `↩️ ${notice.senderName} t'a répondu`
+        : `💬 ${notice.senderName}`;
 
     const outcome = await enqueue(
       admin,

@@ -15,10 +15,11 @@ import { getViewer } from "@/lib/auth/session";
 import { loadSettings, setting } from "@/lib/settings";
 import { sniffImageType, extensionFor } from "@/lib/auth/avatars";
 import { avatarFileSchema } from "@/lib/auth/schemas";
+import { loadLeagueRoster } from "../standings/queries.ts";
 import { CHAMBRAGE_MEDIA_BUCKET, ALLOWED_IMAGE_MIME, MAX_IMAGE_BYTES } from "./media.ts";
 import { notifyNewMessage, notifyReaction } from "./notify.ts";
 import { loadMessageById } from "./queries.ts";
-import type { RawMessage } from "./model.ts";
+import { parseMentions, type RawMessage } from "./model.ts";
 
 export type ChambrageResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -64,6 +65,10 @@ function scheduleMessageNotification(params: {
         const original = await loadMessageById(admin, params.message.replyToId);
         replyToSenderId = original?.senderId ?? null;
       }
+      const roster = await loadLeagueRoster(admin, params.leagueId);
+      const mentionedUserIds = params.message.body
+        ? parseMentions(params.message.body, roster)
+        : [];
       await notifyNewMessage(admin, {
         messageId: params.message.id,
         leagueId: params.leagueId,
@@ -71,6 +76,7 @@ function scheduleMessageNotification(params: {
         senderName: params.senderName,
         preview: params.preview,
         replyToSenderId,
+        mentionedUserIds,
       });
     } catch (cause) {
       console.error("[chambrage] notification de message impossible", cause);

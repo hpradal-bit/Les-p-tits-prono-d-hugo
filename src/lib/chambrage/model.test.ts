@@ -7,14 +7,22 @@ import {
   mergeMessages,
   myReaction,
   notReadBy,
+  parseMentions,
   readBy,
   readState,
   sameBurst,
+  splitMentions,
   unreadCount,
   type RawMessage,
   type RawReaction,
   type RawRead,
 } from "./model.ts";
+
+const ROSTER = [
+  { userId: "u-marc", displayName: "Marc" },
+  { userId: "u-marco", displayName: "Marco" },
+  { userId: "u-fanta", displayName: "Fanta" },
+];
 
 function msg(over: Partial<RawMessage> = {}): RawMessage {
   return {
@@ -142,6 +150,43 @@ test("firstUnreadId : repère le premier message non lu d'un autre joueur", () =
 test("firstUnreadId : rien de neuf → null", () => {
   const messages = [{ id: "m1", senderId: "u2", createdAt: "2026-09-20T18:00:00.000Z" }];
   assert.equal(firstUnreadId(messages, "u1", "2026-09-20T19:00:00.000Z"), null);
+});
+
+test("parseMentions : repère un @Untel parmi les membres de la ligue", () => {
+  assert.deepEqual(parseMentions("Salut @Fanta, ça va ?", ROSTER), ["u-fanta"]);
+});
+
+test("parseMentions : la correspondance la plus longue l'emporte (Marco, pas Marc)", () => {
+  assert.deepEqual(parseMentions("@Marco tu es là ?", ROSTER), ["u-marco"]);
+});
+
+test("parseMentions : s'arrête à une frontière de mot (Marcolivier n'est ni Marc ni Marco)", () => {
+  assert.deepEqual(parseMentions("@Marcolivier n'existe pas", ROSTER), []);
+});
+
+test("parseMentions : plusieurs mentions distinctes, jamais de doublon", () => {
+  assert.deepEqual(
+    new Set(parseMentions("@Marc et @Fanta, et encore @Marc", ROSTER)),
+    new Set(["u-marc", "u-fanta"]),
+  );
+});
+
+test("parseMentions : aucun @ dans le texte → rien", () => {
+  assert.deepEqual(parseMentions("Salut tout le monde", ROSTER), []);
+});
+
+test("splitMentions : découpe le texte autour de la mention reconnue", () => {
+  assert.deepEqual(splitMentions("Salut @Fanta, ça va ?", ROSTER), [
+    { text: "Salut ", mentionUserId: null },
+    { text: "@Fanta", mentionUserId: "u-fanta" },
+    { text: ", ça va ?", mentionUserId: null },
+  ]);
+});
+
+test("splitMentions : un texte sans mention reconnue reste un seul segment", () => {
+  assert.deepEqual(splitMentions("Rien à signaler", ROSTER), [
+    { text: "Rien à signaler", mentionUserId: null },
+  ]);
 });
 
 test("sameBurst : même expéditeur, moins de 5 min d'écart → même rafale", () => {

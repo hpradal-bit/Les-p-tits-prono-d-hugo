@@ -2,11 +2,13 @@
 
 /**
  * Le champ de saisie : texte, emoji, photo — moderne, avec la bannière de
- * réponse au-dessus quand on cite un message (§2.4, §2.5, §2.9).
+ * réponse au-dessus quand on cite un message (§2.4, §2.5, §2.9), et
+ * l'autocomplétion « @Untel » pour interpeller un joueur en particulier.
  */
 
 import { useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import type { MentionCandidate } from "@/lib/chambrage/model";
 import type { MessageVM } from "./types";
 
 const EMOJI_PALETTE = [
@@ -21,6 +23,7 @@ export function Composer({
   onSendText,
   onSendImage,
   onTyping,
+  roster,
   disabled,
 }: {
   replyTo: MessageVM | null;
@@ -28,6 +31,8 @@ export function Composer({
   onSendText: (body: string) => void;
   onSendImage: (file: File, caption: string) => void;
   onTyping: () => void;
+  /** Pour l'autocomplétion « @Untel ». */
+  roster: readonly MentionCandidate[];
   disabled?: boolean;
 }) {
   const [body, setBody] = useState("");
@@ -35,16 +40,60 @@ export function Composer({
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string; caption: string } | null>(
     null,
   );
+  // Position du « @ » qui ouvre l'autocomplétion en cours, et ce qui a été
+  // tapé après — `null` quand aucune mention n'est en train de s'écrire.
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canSendText = body.trim().length > 0;
+  const suggestions =
+    mentionStart === null
+      ? []
+      : roster
+          .filter((p) => p.displayName.toLowerCase().startsWith(mentionQuery.toLowerCase()))
+          .slice(0, 5);
 
   function submitText() {
     if (!canSendText) return;
     onSendText(body.trim());
     setBody("");
     setShowEmoji(false);
+    setMentionStart(null);
+  }
+
+  function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    setBody(value);
+    onTyping();
+
+    const caret = e.target.selectionStart ?? value.length;
+    // Un « @ » actif : précédé d'un début de ligne ou d'une espace, suivi
+    // d'aucune espace jusqu'au curseur.
+    const match = /(?:^|\s)@([\p{L}\p{N}]*)$/u.exec(value.slice(0, caret));
+    if (match) {
+      setMentionStart(caret - match[1].length - 1);
+      setMentionQuery(match[1]);
+      setActiveSuggestion(0);
+    } else {
+      setMentionStart(null);
+    }
+  }
+
+  function selectMention(candidate: MentionCandidate) {
+    if (mentionStart === null) return;
+    const before = body.slice(0, mentionStart);
+    const after = body.slice(mentionStart + 1 + mentionQuery.length);
+    const next = `${before}@${candidate.displayName} ${after}`;
+    setBody(next);
+    setMentionStart(null);
+    const caret = before.length + candidate.displayName.length + 2;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
   }
 
   function pickImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -159,6 +208,26 @@ export function Composer({
         </div>
       )}
 
+      {suggestions.length > 0 && (
+        <ul className="flex gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
+          {suggestions.map((p, i) => (
+            <li key={p.userId}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => selectMention(p)}
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold",
+                  i === activeSuggestion ? "bg-clay text-surface" : "bg-surface-sunk text-ink",
+                )}
+              >
+                @{p.displayName}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex items-end gap-2 px-3 py-2.5">
         <input
           ref={fileInputRef}
@@ -187,11 +256,29 @@ export function Composer({
         <textarea
           ref={textareaRef}
           value={body}
-          onChange={(e) => {
-            setBody(e.target.value);
-            onTyping();
-          }}
+          onChange={handleBodyChange}
           onKeyDown={(e) => {
+            if (suggestions.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i + 1) % suggestions.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActiveSuggestion((i) => (i - 1 + suggestions.length) % suggestions.length);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                selectMention(suggestions[activeSuggestion]);
+                return;
+              }
+              if (e.key === "Escape") {
+                setMentionStart(null);
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               submitText();

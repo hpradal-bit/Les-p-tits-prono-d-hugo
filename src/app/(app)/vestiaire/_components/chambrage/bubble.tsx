@@ -159,6 +159,7 @@ export function MessageBubble({
           className={cn(
             "relative min-w-0 select-none rounded-[20px] px-3.5 py-2.5 text-[14.5px] leading-snug shadow-[var(--shadow-card)]",
             isMine ? "rounded-tr-[4px] bg-clay text-surface" : "rounded-tl-[4px] bg-surface text-ink",
+            !isMine && vm.mentionsMe && "ring-2 ring-clay/60",
             vm.pending === "sending" && "opacity-60",
             vm.pending === "error" && "border border-wrong",
           )}
@@ -205,7 +206,22 @@ export function MessageBubble({
                 />
               )}
 
-              {message.body && <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+              {message.body && (
+                <p className="whitespace-pre-wrap break-words">
+                  {vm.mentionSegments.map((segment, i) =>
+                    segment.mentionUserId ? (
+                      <strong
+                        key={i}
+                        className={cn("font-bold", isMine ? "text-surface" : "text-clay")}
+                      >
+                        {segment.text}
+                      </strong>
+                    ) : (
+                      <span key={i}>{segment.text}</span>
+                    ),
+                  )}
+                </p>
+              )}
 
               {message.updatedAt !== message.createdAt && (
                 <span className={cn("mt-0.5 block text-[10px]", isMine ? "text-surface/60" : "text-ink-faint")}>
