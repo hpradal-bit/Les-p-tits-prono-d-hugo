@@ -328,19 +328,34 @@ export function MessageBubble({
             className="mb-0 flex w-full max-w-md flex-col gap-2 rounded-t-[24px] bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-card)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="font-display text-[15px] text-ink">
-              {vm.readState === "sent" ? "Envoyé" : "Lu par"}
-            </p>
-            {vm.readByNames.length > 0 ? (
-              <ul className="flex flex-col gap-1.5">
-                {vm.readByNames.map((name) => (
-                  <li key={name} className="text-[14px] text-ink">
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[13.5px] text-ink-muted">Personne n&apos;a encore lu ce message.</p>
+            <div>
+              <p className="font-display text-[15px] text-ink">Lu par</p>
+              {vm.readByNames.length > 0 ? (
+                <ul className="mt-1.5 flex flex-col gap-1.5">
+                  {vm.readByNames.map((name) => (
+                    <li key={name} className="flex items-center gap-1.5 text-[14px] text-ink">
+                      <span aria-hidden className="text-clay">✓✓</span>
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1.5 text-[13.5px] text-ink-muted">Personne, pour l&apos;instant.</p>
+              )}
+            </div>
+
+            {vm.notReadByNames.length > 0 && (
+              <div className="mt-1 border-t border-line pt-3">
+                <p className="font-display text-[15px] text-ink">Pas encore lu</p>
+                <ul className="mt-1.5 flex flex-col gap-1.5">
+                  {vm.notReadByNames.map((name) => (
+                    <li key={name} className="flex items-center gap-1.5 text-[14px] text-ink-muted">
+                      <span aria-hidden className="text-ink-faint">✓</span>
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <button
               type="button"

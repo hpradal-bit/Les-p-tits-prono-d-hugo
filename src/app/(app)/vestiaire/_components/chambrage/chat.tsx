@@ -21,6 +21,7 @@ import {
   groupReactions,
   mergeMessages,
   myReaction as computeMyReaction,
+  notReadBy as computeNotReadBy,
   readBy as computeReadBy,
   readState as computeReadState,
   sameBurst,
@@ -550,6 +551,7 @@ export function ChambrageChat({
       myReactionEmoji: computeMyReaction(reactions, message.id, viewerId),
       readState: computeReadState(message, reads, memberIds),
       readByNames: computeReadBy(message, reads, memberIds).map(nameFor),
+      notReadByNames: computeNotReadBy(message, reads, memberIds).map(nameFor),
       pending: pendingStatus[message.id],
     };
   }

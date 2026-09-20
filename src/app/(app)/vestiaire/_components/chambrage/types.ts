@@ -11,6 +11,7 @@ export interface MessageVM {
   myReactionEmoji: string | null;
   readState: ReadState;
   readByNames: string[];
+  notReadByNames: string[];
   /** Envoi optimiste : encore en vol, ou en échec — `undefined` une fois confirmé. */
   pending?: "sending" | "error";
 }

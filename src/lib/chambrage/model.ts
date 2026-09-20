@@ -126,6 +126,25 @@ export function readBy(
 }
 
 /**
+ * Le complément exact de `readBy` — qui n'a PAS encore lu. Jamais déduit en
+ * comparant juste à `readState` (« pas read ») : un groupe encore
+ * `partially_read` a des lecteurs ET des non-lecteurs, il faut les deux
+ * listes à la fois pour l'écran « qui a lu / qui n'a pas lu ».
+ */
+export function notReadBy(
+  message: Pick<RawMessage, "senderId" | "createdAt">,
+  reads: readonly RawRead[],
+  memberIds: readonly string[],
+): string[] {
+  const sentAt = new Date(message.createdAt).getTime();
+  return memberIds.filter((id) => {
+    if (id === message.senderId) return false;
+    const row = reads.find((r) => r.userId === id);
+    return row === undefined || new Date(row.lastReadAt).getTime() < sentAt;
+  });
+}
+
+/**
  * Combien de messages d'AUTRES joueurs sont arrivés depuis la dernière
  * lecture — le badge « 🔴 3 » sur l'onglet Chambrage. Ses propres messages
  * ne comptent jamais : les écrire ne crée pas une dette de lecture envers

@@ -6,6 +6,7 @@ import {
   groupReactions,
   mergeMessages,
   myReaction,
+  notReadBy,
   readBy,
   readState,
   sameBurst,
@@ -94,6 +95,24 @@ test("readBy : liste les lecteurs, jamais l'auteur", () => {
     { userId: "u1", lastReadAt: "2026-09-20T19:00:00.000Z" }, // l'auteur : jamais compté
   ];
   assert.deepEqual(readBy(msg(), reads, ["u1", "u2", "u3"]), ["u2"]);
+});
+
+test("notReadBy : liste ceux qui n'ont pas encore lu, jamais l'auteur", () => {
+  const reads: RawRead[] = [{ userId: "u2", lastReadAt: "2026-09-20T18:05:00.000Z" }];
+  assert.deepEqual(notReadBy(msg(), reads, ["u1", "u2", "u3"]), ["u3"]);
+});
+
+test("notReadBy : une lecture antérieure à l'envoi compte comme non lu", () => {
+  const reads: RawRead[] = [{ userId: "u2", lastReadAt: "2026-09-20T17:00:00.000Z" }];
+  assert.deepEqual(notReadBy(msg(), reads, ["u1", "u2", "u3"]), ["u2", "u3"]);
+});
+
+test("notReadBy et readBy sont complémentaires sur les autres membres", () => {
+  const reads: RawRead[] = [{ userId: "u2", lastReadAt: "2026-09-20T18:05:00.000Z" }];
+  const members = ["u1", "u2", "u3", "u4"];
+  const read = readBy(msg(), reads, members);
+  const notRead = notReadBy(msg(), reads, members);
+  assert.deepEqual([...read, ...notRead].sort(), ["u2", "u3", "u4"]);
 });
 
 test("unreadCount : compte les messages des autres depuis la dernière lecture", () => {
