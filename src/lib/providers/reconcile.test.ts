@@ -30,6 +30,7 @@ function provisional(overrides: Partial<StoredFixture> = {}): StoredFixture {
     minute: null,
     venue: null,
     dataSource: null,
+    lastSyncedAt: null,
     ...overrides,
   };
 }

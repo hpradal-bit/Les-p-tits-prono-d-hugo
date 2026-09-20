@@ -7,6 +7,7 @@ import { LeagueSwitcher } from "@/components/league-switcher";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
 import { computeStandings } from "@/lib/standings/engine";
 import { loadStandingsData } from "@/lib/standings/queries";
+import { isInProgress } from "@/lib/standings/format";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLeagueId } from "@/lib/leagues/queries.ts";
@@ -460,12 +461,12 @@ function RoundFixturesBlock({
   const toPlay = fixtures.filter(
     (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
   );
-  const live = fixtures.filter((f) => f.fixture.status === "live");
+  const live = fixtures.filter((f) => isInProgress(f.fixture.status));
   const done = fixtures.filter(
     (f) => f.fixture.status === "finished" || f.fixture.status === "official",
   );
   const locked = fixtures.filter(
-    (f) => f.isLocked && f.fixture.status !== "live" && f.fixture.status !== "finished" && f.fixture.status !== "official",
+    (f) => f.isLocked && !isInProgress(f.fixture.status) && f.fixture.status !== "finished" && f.fixture.status !== "official",
   );
 
   if (fixtures.length === 0) {

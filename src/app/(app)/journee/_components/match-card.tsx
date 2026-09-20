@@ -7,6 +7,8 @@ import {
   outcomeWasCorrect,
   predictionBoxTint,
 } from "@/lib/predictions/display";
+import { isInProgress, liveBadgeLabel } from "@/lib/standings/format";
+import { LastSynced } from "./last-synced";
 import type { JourneyFixture, PredictionScore } from "@/lib/predictions/types";
 import type { Ruleset } from "@/lib/types";
 import type { PowerAdjustment } from "@/lib/powers/queries";
@@ -139,7 +141,7 @@ export function MatchCard({
   powerAdjustment?: PowerAdjustment;
 }) {
   const { fixture } = item;
-  const live = fixture.status === "live";
+  const live = isInProgress(fixture.status);
   const done = fixture.status === "finished" || fixture.status === "official";
   const hasScore = fixture.homeScore !== null && fixture.awayScore !== null;
 
@@ -156,7 +158,7 @@ export function MatchCard({
         {live ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-[11px] font-bold text-live">
             <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden />
-            {fixture.minute ? `${fixture.minute}'` : "LIVE"}
+            {liveBadgeLabel(fixture.status, fixture.minute)}
           </span>
         ) : (
           <span className="rounded-full bg-winner-soft px-2.5 py-1 text-[11px] font-bold text-winner">
@@ -164,6 +166,12 @@ export function MatchCard({
           </span>
         )}
       </div>
+
+      {live && (
+        <div className="mt-0.5 flex justify-end">
+          <LastSynced at={fixture.lastSyncedAt} />
+        </div>
+      )}
 
       <div className="mt-2.5 flex items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">

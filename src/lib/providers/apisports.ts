@@ -50,7 +50,8 @@ export interface ApiSportsOptions {
 export function mapApiSportsStatus(short: unknown): FixtureStatus {
   const code = (asString(short) ?? "").toUpperCase();
   if (["NS", "TBD"].includes(code)) return "scheduled";
-  if (["1H", "HT", "2H", "ET", "BT", "LIVE"].includes(code)) return "live";
+  if (code === "HT") return "halftime";
+  if (["1H", "2H", "ET", "BT", "LIVE"].includes(code)) return "live";
   if (["FT", "AET", "AWD", "WO"].includes(code)) return "finished";
   if (["PST", "SUSP", "INT"].includes(code)) return "postponed";
   if (["CANC", "ABD"].includes(code)) return "cancelled";

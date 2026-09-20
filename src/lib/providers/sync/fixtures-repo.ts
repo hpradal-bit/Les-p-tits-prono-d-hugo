@@ -9,7 +9,7 @@ import type { FixturePatch, StoredFixture, StoredRound } from "../reconcile.ts";
 
 const FIXTURE_COLUMNS =
   "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, " +
-  "status, home_score, away_score, minute, venue, data_source";
+  "status, home_score, away_score, minute, venue, data_source, last_synced_at";
 
 interface FixtureRow {
   id: string;
@@ -25,6 +25,7 @@ interface FixtureRow {
   minute: number | null;
   venue: string | null;
   data_source: string | null;
+  last_synced_at: string | null;
 }
 
 function toStored(row: FixtureRow): StoredFixture {
@@ -42,6 +43,7 @@ function toStored(row: FixtureRow): StoredFixture {
     minute: row.minute,
     venue: row.venue,
     dataSource: row.data_source,
+    lastSyncedAt: row.last_synced_at,
   };
 }
 

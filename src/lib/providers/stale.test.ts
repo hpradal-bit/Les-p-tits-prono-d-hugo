@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findStaleFixtures, staleDatesToQuery } from "./schedule.ts";
+import { findFrozenFixtures, findStaleFixtures, staleDatesToQuery } from "./schedule.ts";
 
 const SETTINGS = { matchWindowMinutes: 135, lookbackDays: 14 };
 
@@ -165,4 +165,62 @@ test("déduplique les dates et respecte le plafond", () => {
   assert.deepEqual(staleDatesToQuery(stale, 2), ["2026-09-13", "2026-09-12"]);
   assert.deepEqual(staleDatesToQuery(stale, 10), ["2026-09-13", "2026-09-12", "2026-09-04"]);
   assert.deepEqual(staleDatesToQuery(stale, 0), []);
+});
+
+// --- findFrozenFixtures ------------------------------------------------------
+//
+// Le scénario du 16 septembre, mais repéré PENDANT le match plutôt que le
+// lendemain : TheSportsDB remonte 30' puis se tait, alors que le match est
+// resté `live` toute la soirée — largement dans sa fenêtre de 135 min.
+
+test("un match live dont last_synced_at ne bouge plus est signalé", () => {
+  const now = new Date("2026-09-05T20:15:00.000Z"); // coup d'envoi 19:15, +60 min
+  const frozen = findFrozenFixtures(
+    now,
+    [{ id: "bb-racing", status: "live", lastSyncedAt: "2026-09-05T19:45:00.000Z" }], // figé depuis 30 min
+    20,
+  );
+  assert.equal(frozen.length, 1);
+  assert.equal(frozen[0].id, "bb-racing");
+  assert.equal(frozen[0].minutesSinceUpdate, 30);
+});
+
+test("un match qui vient d'être mis à jour n'est pas signalé", () => {
+  const now = new Date("2026-09-05T19:50:00.000Z");
+  const frozen = findFrozenFixtures(
+    now,
+    [{ id: "frais", status: "live", lastSyncedAt: "2026-09-05T19:48:00.000Z" }], // 2 min
+    20,
+  );
+  assert.equal(frozen.length, 0);
+});
+
+test("la mi-temps est surveillée comme le direct", () => {
+  const now = new Date("2026-09-05T20:10:00.000Z");
+  const frozen = findFrozenFixtures(
+    now,
+    [{ id: "mi-temps", status: "halftime", lastSyncedAt: "2026-09-05T19:45:00.000Z" }], // 25 min
+    20,
+  );
+  assert.equal(frozen.length, 1);
+});
+
+test("un match terminé, officiel ou pas encore commencé n'est jamais signalé", () => {
+  const now = new Date("2026-09-05T23:00:00.000Z");
+  const frozen = findFrozenFixtures(
+    now,
+    [
+      { id: "fini", status: "finished", lastSyncedAt: "2026-09-05T19:45:00.000Z" },
+      { id: "officiel", status: "official", lastSyncedAt: "2026-09-05T19:45:00.000Z" },
+      { id: "pas-commence", status: "scheduled", lastSyncedAt: null },
+    ],
+    20,
+  );
+  assert.deepEqual(frozen, []);
+});
+
+test("un match jamais mis à jour depuis qu'il est live n'a pas encore assez d'historique pour juger", () => {
+  const now = new Date("2026-09-05T20:15:00.000Z");
+  const frozen = findFrozenFixtures(now, [{ id: "tout-neuf", status: "live", lastSyncedAt: null }], 20);
+  assert.deepEqual(frozen, []);
 });

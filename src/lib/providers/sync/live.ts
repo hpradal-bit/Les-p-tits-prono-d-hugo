@@ -36,6 +36,7 @@ import { recomputeFixtures } from "../../scoring/persist.ts";
 import { sweepOrphanedPowers } from "../../powers/resolve.ts";
 import {
   evaluateWindow,
+  findFrozenFixtures,
   findStaleFixtures,
   localDateKey,
   minutesLeftInDay,
@@ -378,11 +379,24 @@ export async function syncLive(
 
   // Ce qui reste bloqué après le rattrapage doit se voir : un match encore
   // `live` trois jours après son coup d'envoi est une panne, pas un silence.
-  const stillStale = findStaleFixtures(now, await loadSeasonFixtures(sb, ctx.season.id), staleSettings);
+  const refreshedFixtures = await loadSeasonFixtures(sb, ctx.season.id);
+  const stillStale = findStaleFixtures(now, refreshedFixtures, staleSettings);
   for (const f of stillStale) {
     warnings.push(
       `match ${f.id} toujours « ${f.status} » ${Math.round(f.elapsedMinutes / 60)} h après le coup ` +
         "d'envoi : le fournisseur n'a jamais annoncé la fin (saisir le résultat depuis l'admin)",
+    );
+  }
+
+  // Repéré PENDANT la fenêtre de match, pas seulement après (§ findStaleFixtures
+  // ci-dessus) : c'est l'angle mort qui avait laissé un score figé toute une
+  // soirée le 16 septembre sans que rien ne le signale avant le lendemain.
+  const frozenAfterMinutes = setting(ctx.settings, "sync.frozen_after_minutes", 20);
+  const frozen = findFrozenFixtures(now, refreshedFixtures, frozenAfterMinutes);
+  for (const f of frozen) {
+    warnings.push(
+      `match ${f.id} : aucune mise à jour depuis ${f.minutesSinceUpdate} min alors qu'il est en ` +
+        "direct — le fournisseur semble figé (vérifier le score depuis l'espace admin)",
     );
   }
 

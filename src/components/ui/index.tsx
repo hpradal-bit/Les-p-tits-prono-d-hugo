@@ -135,11 +135,11 @@ export function CompetitionLogo({
   );
 }
 
-export function LiveBadge() {
+export function LiveBadge({ label = "Live" }: { label?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-live-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-live">
       <span className="size-1.5 rounded-full bg-live" aria-hidden />
-      Live
+      {label}
     </span>
   );
 }

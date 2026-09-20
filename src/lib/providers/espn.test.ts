@@ -74,6 +74,10 @@ test("ESPN : la table des statuts couvre les cas connus", () => {
   assert.equal(mapEspnStatus("quelque-chose-de-nouveau", null, null), "scheduled");
 });
 
+test("ESPN : la mi-temps se distingue du direct", () => {
+  assert.equal(mapEspnStatus("in", "STATUS_HALFTIME", false), "halftime");
+});
+
 // --- Robustesse : l'API peut changer sans préavis ---------------------------
 
 test("ESPN : une réponse vide lève une erreur de fournisseur", () => {

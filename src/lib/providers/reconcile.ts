@@ -25,6 +25,7 @@ export interface StoredFixture {
   minute: number | null;
   venue: string | null;
   dataSource: string | null;
+  lastSyncedAt: string | null;
 }
 
 /** Le patch à appliquer, en colonnes de la table `fixtures`. */
@@ -221,6 +222,9 @@ const STATUS_RANK: Record<FixtureStatus, number> = {
   postponed: 0,
   cancelled: 0,
   live: 1,
+  // Même rang que "live" : la mi-temps va et vient librement avec le direct,
+  // ce n'est jamais un pas vers un statut final.
+  halftime: 1,
   finished: 2,
   official: 3,
 };

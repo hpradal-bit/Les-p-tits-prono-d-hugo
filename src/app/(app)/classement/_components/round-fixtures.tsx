@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { Card, LiveBadge, TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { formatShortKickoff, hasResult } from "@/lib/standings/format";
+import { formatShortKickoff, hasResult, isInProgress, liveBadgeLabel } from "@/lib/standings/format";
 import type { RoundFixture } from "@/lib/standings/queries";
 
 export function RoundFixtures({ fixtures }: { fixtures: RoundFixture[] }) {
@@ -29,7 +29,9 @@ export function RoundFixtures({ fixtures }: { fixtures: RoundFixture[] }) {
                   {fixture.awayTeam.shortName}
                 </span>
                 <TeamLogo team={fixture.awayTeam} size={24} />
-                {fixture.status === "live" && <LiveBadge />}
+                {isInProgress(fixture.status) && (
+                  <LiveBadge label={liveBadgeLabel(fixture.status, fixture.minute)} />
+                )}
                 <span
                   className={cn(
                     "tabular shrink-0 text-right font-mono",

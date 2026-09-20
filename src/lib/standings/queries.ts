@@ -490,6 +490,7 @@ export interface MatchFixture {
   awayScore: number | null;
   minute: number | null;
   venue: string | null;
+  lastSyncedAt: string | null;
 }
 
 export interface MatchPrediction {
@@ -543,7 +544,7 @@ export async function loadMatchCenter(
   const { data: fixtureRow, error } = await sb
     .from("fixtures")
     .select(
-      "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute, venue",
+      "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute, venue, last_synced_at",
     )
     .eq("id", fixtureId)
     .maybeSingle();
@@ -563,6 +564,7 @@ export async function loadMatchCenter(
     away_score: number | null;
     minute: number | null;
     venue: string | null;
+    last_synced_at: string | null;
   };
 
   const [teamsRes, roundRes, predictionsRes] = await Promise.all([
@@ -629,6 +631,7 @@ export async function loadMatchCenter(
     awayScore: raw.away_score,
     minute: raw.minute,
     venue: raw.venue,
+    lastSyncedAt: raw.last_synced_at,
   };
 
   const predictionRows = (predictionsRes.data ?? []) as Array<{

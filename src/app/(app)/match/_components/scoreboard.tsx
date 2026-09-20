@@ -4,7 +4,14 @@
 
 import { Card, LiveBadge, TeamLogo } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { FIXTURE_STATUS_LABEL, formatKickoff, hasResult } from "@/lib/standings/format";
+import {
+  FIXTURE_STATUS_LABEL,
+  formatKickoff,
+  hasResult,
+  isInProgress,
+  liveBadgeLabel,
+} from "@/lib/standings/format";
+import { LastSynced } from "../../journee/_components/last-synced";
 import type { MatchFixture } from "@/lib/standings/queries";
 
 export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
@@ -19,8 +26,8 @@ export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
           {fixture.roundName}
           {fixture.venue ? ` · ${fixture.venue}` : ""}
         </p>
-        {fixture.status === "live" ? (
-          <LiveBadge />
+        {isInProgress(fixture.status) ? (
+          <LiveBadge label={liveBadgeLabel(fixture.status, null)} />
         ) : (
           <span
             className={cn(
@@ -47,7 +54,7 @@ export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
           ) : (
             <p className="font-mono text-sm font-semibold text-ink-faint">vs</p>
           )}
-          {fixture.status === "live" && fixture.minute !== null && (
+          {isInProgress(fixture.status) && fixture.minute !== null && (
             <p className="tabular font-mono text-[11px] font-semibold text-live">
               {fixture.minute}&apos;
             </p>
@@ -55,6 +62,12 @@ export function Scoreboard({ fixture }: { fixture: MatchFixture }) {
         </div>
         <TeamSide team={fixture.awayTeam} winner={awayWins} align="right" />
       </div>
+
+      {isInProgress(fixture.status) && (
+        <div className="flex justify-center">
+          <LastSynced at={fixture.lastSyncedAt} />
+        </div>
+      )}
 
       <div className="flex flex-col gap-1 border-t border-line pt-3">
         <p className="font-mono text-[11px] text-ink-muted">

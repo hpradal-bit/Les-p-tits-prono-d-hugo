@@ -50,7 +50,7 @@ test("API-Sports : un match terminé garde son score", () => {
 test("API-Sports : la table des statuts couvre les codes courts", () => {
   assert.equal(mapApiSportsStatus("NS"), "scheduled");
   assert.equal(mapApiSportsStatus("1H"), "live");
-  assert.equal(mapApiSportsStatus("HT"), "live");
+  assert.equal(mapApiSportsStatus("HT"), "halftime");
   assert.equal(mapApiSportsStatus("FT"), "finished");
   assert.equal(mapApiSportsStatus("AET"), "finished");
   assert.equal(mapApiSportsStatus("PST"), "postponed");

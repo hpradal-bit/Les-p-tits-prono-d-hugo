@@ -18,6 +18,7 @@ function stored(over: Partial<StoredFixture> = {}): StoredFixture {
     minute: null,
     venue: null,
     dataSource: "thesportsdb",
+    lastSyncedAt: null,
     ...over,
   };
 }

@@ -6,8 +6,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
 import { loadClubAvatars } from "@/lib/auth/avatar-policy";
 import { loadMatchCenter, type MatchPrediction } from "@/lib/standings/queries";
+import { isInProgress, liveBadgeLabel } from "@/lib/standings/format";
 import { TeamLogo } from "@/components/ui";
 import { RevealRow } from "../_components/reveal-row";
+import { LastSynced } from "../../journee/_components/last-synced";
 
 export const metadata: Metadata = { title: "Le match" };
 export const dynamic = "force-dynamic";
@@ -65,7 +67,9 @@ export default async function MatchPage({
             {!isLocked
               ? "Pronos encore ouverts"
               : hasScore
-                ? fixture.status === "live" ? "En cours" : "Terminé"
+                ? isInProgress(fixture.status)
+                  ? fixture.status === "halftime" ? "Mi-temps" : "En cours"
+                  : "Terminé"
                 : "Coup d'envoi · les pronos s'ouvrent"}
           </span>
           <h1 className="font-display text-[30px] leading-[1.02]">
@@ -76,18 +80,25 @@ export default async function MatchPage({
         </div>
 
         {hasScore ? (
-          <div className="flex items-center gap-4">
-            <TeamLogo team={fixture.homeTeam} size={30} />
-            <span className="tabular font-display text-[28px] leading-none">
-              {fixture.homeScore} – {fixture.awayScore}
-            </span>
-            <TeamLogo team={fixture.awayTeam} size={30} />
-            {fixture.minute !== null && fixture.status === "live" && (
-              <span className="ml-auto rounded-full bg-surface/20 px-2.5 py-1 text-[12px] font-bold">
-                {fixture.minute}&apos;
+          <>
+            <div className="flex items-center gap-4">
+              <TeamLogo team={fixture.homeTeam} size={30} />
+              <span className="tabular font-display text-[28px] leading-none">
+                {fixture.homeScore} – {fixture.awayScore}
               </span>
+              <TeamLogo team={fixture.awayTeam} size={30} />
+              {isInProgress(fixture.status) && (
+                <span className="ml-auto rounded-full bg-surface/20 px-2.5 py-1 text-[12px] font-bold">
+                  {liveBadgeLabel(fixture.status, fixture.minute)}
+                </span>
+              )}
+            </div>
+            {isInProgress(fixture.status) && (
+              <div className="flex justify-end">
+                <LastSynced at={fixture.lastSyncedAt} className="text-surface/70" />
+              </div>
             )}
-          </div>
+          </>
         ) : isLocked && predictions.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-sage-soft/25 px-3 py-1.5 text-[12px] font-semibold">

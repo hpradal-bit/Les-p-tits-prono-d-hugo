@@ -13,6 +13,8 @@ export type MatchOutcome = "home" | "draw" | "away";
 export type FixtureStatus =
   | "scheduled"
   | "live"
+  /** Mi-temps : toujours en direct, jamais un statut final. */
+  | "halftime"
   | "finished"
   | "official"
   | "postponed"
@@ -46,6 +48,8 @@ export interface Fixture {
   homeScore: number | null;
   awayScore: number | null;
   minute: number | null;
+  /** Dernier passage de la synchro sur ce match — `null` s'il n'a jamais été touché. */
+  lastSyncedAt: string | null;
 }
 
 export interface Round {

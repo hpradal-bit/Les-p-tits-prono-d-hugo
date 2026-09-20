@@ -42,6 +42,7 @@ interface FixtureRow {
   home_score: number | null;
   away_score: number | null;
   minute: number | null;
+  last_synced_at: string | null;
 }
 
 interface RoundRow {
@@ -71,7 +72,7 @@ interface PredictionRow {
 }
 
 const FIXTURE_COLUMNS =
-  "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute";
+  "id, round_id, home_team_id, away_team_id, kickoff_at, kickoff_confirmed, locks_at, status, home_score, away_score, minute, last_synced_at";
 
 const PREDICTION_COLUMNS =
   "fixture_id, outcome, margin_bucket_id, margin_value, exact_home_score, exact_away_score, is_auto, prediction_scores(points, breakdown)";
@@ -105,6 +106,7 @@ function toFixture(r: FixtureRow, teams: Map<string, Team>): Fixture | null {
     homeScore: r.home_score,
     awayScore: r.away_score,
     minute: r.minute,
+    lastSyncedAt: r.last_synced_at,
   };
 }
 

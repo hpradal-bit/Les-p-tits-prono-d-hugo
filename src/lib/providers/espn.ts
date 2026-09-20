@@ -61,7 +61,7 @@ export function mapEspnStatus(state: unknown, detail: unknown, completed: unknow
     case "pre":
       return "scheduled";
     case "in":
-      return "live";
+      return name.includes("HALFTIME") || name.includes("HALF TIME") ? "halftime" : "live";
     case "post":
       return completed === false ? "postponed" : "finished";
     default:

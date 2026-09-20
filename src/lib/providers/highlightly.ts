@@ -58,7 +58,8 @@ function splitSeasonRef(ref: string): { leagueId: string; season: string } {
 function mapHighlightlyStatus(raw: unknown): FixtureStatus {
   const s = (asString(raw) ?? "").toLowerCase().trim();
   if (!s || s === "not started" || s === "ns" || s === "scheduled" || s === "tbd") return "scheduled";
-  if (s.includes("live") || s === "1h" || s === "2h" || s === "ht" || s === "in progress" || s === "ongoing") return "live";
+  if (s === "ht" || s === "half time" || s === "halftime") return "halftime";
+  if (s.includes("live") || s === "1h" || s === "2h" || s === "in progress" || s === "ongoing") return "live";
   if (s.includes("finished") || s === "ft" || s === "ended" || s === "completed" || s === "full time") return "finished";
   if (s.includes("postponed") || s === "pst") return "postponed";
   if (s.includes("cancel") || s.includes("abandon") || s === "canc" || s === "abd") return "cancelled";

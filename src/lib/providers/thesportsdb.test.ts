@@ -29,6 +29,11 @@ test("mapTheSportsDbStatus : null ou vide → scheduled", () => {
   assert.equal(mapTheSportsDbStatus(""), "scheduled");
 });
 
+test("mapTheSportsDbStatus : HT → halftime, distinct du direct", () => {
+  assert.equal(mapTheSportsDbStatus("HT"), "halftime");
+  assert.equal(mapTheSportsDbStatus("Half Time"), "halftime");
+});
+
 // --- Parsing des événements --------------------------------------------------
 
 const sampleEvents = {

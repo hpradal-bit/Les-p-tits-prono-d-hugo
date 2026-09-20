@@ -252,6 +252,51 @@ export function findStaleFixtures(
   );
 }
 
+export interface FrozenFixture {
+  id: string;
+  minutesSinceUpdate: number;
+}
+
+/**
+ * Un match `live`/`halftime` dont `last_synced_at` n'a pas bougé depuis
+ * `thresholdMinutes`, PENDANT sa fenêtre de match.
+ *
+ * Différent de `findStaleFixtures` : celui-ci ne regarde qu'après la fenêtre
+ * (coup d'envoi + 135 min). C'était exactement l'angle mort de l'incident du
+ * 16 septembre — TheSportsDB s'était figé à la 30ᵉ minute et la synchro a
+ * tourné toute la soirée sans jamais s'en inquiéter, puisque le match restait
+ * dans les clous de sa fenêtre. `last_synced_at` n'avance que si quelque
+ * chose a réellement changé (`planLiveUpdate` ne le pose que si le patch
+ * n'est pas vide) : un 0-0 qui dure est donc indiscernable, à ce seul
+ * critère, d'un fournisseur muet — c'est justement ce que cette fonction ne
+ * peut pas trancher seule, et pourquoi elle ne fait que signaler, jamais agir
+ * toute seule.
+ */
+export function findFrozenFixtures(
+  now: Date,
+  fixtures: Array<{ id: string; status: string; lastSyncedAt: string | null }>,
+  thresholdMinutes: number,
+): FrozenFixture[] {
+  const t = now.getTime();
+  const thresholdMs = Math.max(1, thresholdMinutes) * MINUTE_MS;
+  const frozen: FrozenFixture[] = [];
+
+  for (const fixture of fixtures) {
+    if (fixture.status !== "live" && fixture.status !== "halftime") continue;
+    if (!fixture.lastSyncedAt) continue;
+
+    const lastUpdate = new Date(fixture.lastSyncedAt).getTime();
+    if (Number.isNaN(lastUpdate)) continue;
+
+    const since = t - lastUpdate;
+    if (since >= thresholdMs) {
+      frozen.push({ id: fixture.id, minutesSinceUpdate: Math.round(since / MINUTE_MS) });
+    }
+  }
+
+  return frozen.sort((a, b) => b.minutesSinceUpdate - a.minutesSinceUpdate);
+}
+
 /**
  * Les dates distinctes à interroger pour rattraper ces matchs, plafonnées.
  *
