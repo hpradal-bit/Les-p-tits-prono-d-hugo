@@ -251,6 +251,14 @@ h1, h2, h3, .font-display {
 }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 
+/* Double-tap sur une bulle de Chambrage (§ réaction rapide ❤️, comme
+   Messenger/Instagram) — une seule règle globale, jamais une par bulle. */
+@keyframes chambrage-heart {
+  0% { transform: scale(0.4); opacity: 0; }
+  35% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

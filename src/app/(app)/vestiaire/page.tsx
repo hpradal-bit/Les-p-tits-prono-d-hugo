@@ -90,6 +90,35 @@ export default async function VestiairePage({
   const withLeague = (href: string) =>
     href.includes("?") ? `${href}&league=${leagueId}` : `${href}?league=${leagueId}`;
 
+  // Chambrage occupe l'écran entier (§ refonte) : pas de titre, pas
+  // d'onglets, pas de barre de navigation derrière — une vraie conversation
+  // plein écran, pas un écran dans un écran. On en sort par son propre
+  // chevron « retour », vers l'écran Résumé (qui, lui, garde le chrome
+  // normal de l'application, barre de navigation comprise).
+  if (showChambrage && chambrage) {
+    const leagueName = myLeagues.find((l) => l.leagueId === leagueId)?.leagueName ?? "Chambrage";
+    return (
+      <ChambrageChat
+        leagueId={leagueId}
+        leagueName={leagueName}
+        resumeHref={withLeague("/vestiaire?filtre=resume")}
+        pouvoirsHref={withLeague("/vestiaire?filtre=pouvoirs")}
+        viewerId={viewer.id}
+        viewerName={viewer.displayName}
+        roster={chambrage.roster}
+        clubs={clubs}
+        reactionChoices={choices}
+        initial={{
+          messages: chambrage.messages,
+          hasMoreOlder: chambrage.hasMoreOlder,
+          reactions: chambrage.reactions,
+          reads: chambrage.reads,
+          lastReadAt: chambrage.lastReadAt,
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Sur le fil de jeu : ouvrir l'écran vaut lecture. Chambrage marque sa
@@ -132,24 +161,6 @@ export default async function VestiairePage({
           </Link>
         ))}
       </nav>
-
-      {showChambrage && chambrage && (
-        <ChambrageChat
-          leagueId={leagueId}
-          viewerId={viewer.id}
-          viewerName={viewer.displayName}
-          roster={chambrage.roster}
-          clubs={clubs}
-          reactionChoices={choices}
-          initial={{
-            messages: chambrage.messages,
-            hasMoreOlder: chambrage.hasMoreOlder,
-            reactions: chambrage.reactions,
-            reads: chambrage.reads,
-            lastReadAt: chambrage.lastReadAt,
-          }}
-        />
-      )}
 
       {showPowers && powerHistory && (
         <PowerHistoryView

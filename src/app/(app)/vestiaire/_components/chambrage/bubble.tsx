@@ -6,11 +6,11 @@
  * lu pour mes propres messages. L'appui long ouvre le menu d'actions (§2.10).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PlayerAvatar } from "../../../_components/player-avatar";
 import { cn } from "@/lib/cn";
 import type { ClubAvatar } from "@/lib/auth/avatars";
-import { useLongPress } from "./use-long-press";
+import { useMessageGestures } from "./use-message-gestures";
 import type { MessageVM } from "./types";
 
 const QUICK_EMOJIS = ["❤️", "😂", "👍", "😮", "😢", "😡", "🔥"];
@@ -43,6 +43,8 @@ export function MessageBubble({
   vm,
   clubs,
   quickEmojis = QUICK_EMOJIS,
+  showAvatar = true,
+  showName = true,
   onReply,
   onReact,
   onEdit,
@@ -53,6 +55,10 @@ export function MessageBubble({
   vm: MessageVM;
   clubs: readonly ClubAvatar[];
   quickEmojis?: string[];
+  /** Dernier message d'une rafale (même expéditeur, peu d'écart) : c'est là que l'avatar s'affiche, comme WhatsApp/Messenger. */
+  showAvatar?: boolean;
+  /** Premier message d'une rafale : c'est là que le nom s'affiche. */
+  showName?: boolean;
   onReply: () => void;
   onReact: (emoji: string) => void;
   onEdit: () => void;
@@ -62,10 +68,25 @@ export function MessageBubble({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [heartBurst, setHeartBurst] = useState(false);
   const { message, isMine, sender, replyTo, reactions } = vm;
   const deleted = message.deletedAt !== null;
 
-  const longPress = useLongPress(() => !deleted && setMenuOpen(true));
+  const { dragX, handlers: swipeHandlers } = useMessageGestures({
+    onLongPress: () => !deleted && setMenuOpen(true),
+    onSwipeReply: () => !deleted && onReply(),
+    onDoubleTap: () => {
+      if (deleted) return;
+      onReact("❤️");
+      setHeartBurst(true);
+    },
+  });
+
+  useEffect(() => {
+    if (!heartBurst) return;
+    const t = setTimeout(() => setHeartBurst(false), 700);
+    return () => clearTimeout(t);
+  }, [heartBurst]);
 
   const canEdit = isMine && !deleted && message.messageType === "text";
   const canDelete = isMine && !deleted;
@@ -83,28 +104,42 @@ export function MessageBubble({
   }
 
   return (
-    <div className={cn("flex gap-2", isMine ? "flex-row-reverse" : "flex-row")}>
+    <div
+      className={cn("relative flex gap-2 touch-pan-y", isMine ? "flex-row-reverse" : "flex-row")}
+      style={{ transform: dragX > 0 ? `translateX(${dragX}px)` : undefined }}
+    >
+      {dragX > 0 && (
+        <span
+          aria-hidden
+          className="absolute top-1/2 left-0 -translate-x-full -translate-y-1/2 pr-1.5 text-[17px] text-ink-faint"
+          style={{ opacity: Math.min(1, dragX / 40) }}
+        >
+          ↩️
+        </span>
+      )}
+
       {!isMine && (
-        <div className="shrink-0 self-end">
-          {sender ? (
-            <PlayerAvatar player={sender} clubs={clubs} size={30} />
-          ) : (
-            <span className="grid size-[30px] place-items-center rounded-full bg-surface-sunk text-[13px]">
-              🏉
-            </span>
-          )}
+        <div className="w-[30px] shrink-0 self-end">
+          {showAvatar &&
+            (sender ? (
+              <PlayerAvatar player={sender} clubs={clubs} size={30} />
+            ) : (
+              <span className="grid size-[30px] place-items-center rounded-full bg-surface-sunk text-[13px]">
+                🏉
+              </span>
+            ))}
         </div>
       )}
 
       <div className={cn("flex max-w-[78%] min-w-0 flex-col gap-1", isMine ? "items-end" : "items-start")}>
-        {!isMine && (
+        {!isMine && showName && (
           <span className="px-1 text-[11.5px] font-semibold text-ink-muted">
             {sender?.displayName ?? "Un joueur"}
           </span>
         )}
 
         <div
-          {...longPress}
+          {...swipeHandlers}
           className={cn(
             "relative min-w-0 select-none rounded-[20px] px-3.5 py-2.5 text-[14.5px] leading-snug shadow-[var(--shadow-card)]",
             isMine ? "rounded-tr-[4px] bg-clay text-surface" : "rounded-tl-[4px] bg-surface text-ink",
@@ -112,6 +147,14 @@ export function MessageBubble({
             vm.pending === "error" && "border border-wrong",
           )}
         >
+          {heartBurst && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 grid animate-[chambrage-heart_0.7s_ease-out] place-items-center text-[42px]"
+            >
+              ❤️
+            </span>
+          )}
           {deleted ? (
             <p className={cn("italic", isMine ? "text-surface/70" : "text-ink-faint")}>
               Message supprimé

@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  daySeparatorLabel,
   firstUnreadId,
   groupReactions,
   mergeMessages,
   myReaction,
   readBy,
   readState,
+  sameBurst,
   unreadCount,
   type RawMessage,
   type RawReaction,
@@ -121,6 +123,42 @@ test("firstUnreadId : repère le premier message non lu d'un autre joueur", () =
 test("firstUnreadId : rien de neuf → null", () => {
   const messages = [{ id: "m1", senderId: "u2", createdAt: "2026-09-20T18:00:00.000Z" }];
   assert.equal(firstUnreadId(messages, "u1", "2026-09-20T19:00:00.000Z"), null);
+});
+
+test("sameBurst : même expéditeur, moins de 5 min d'écart → même rafale", () => {
+  const a = { senderId: "u1", createdAt: "2026-09-20T18:00:00.000Z" };
+  const b = { senderId: "u1", createdAt: "2026-09-20T18:03:00.000Z" };
+  assert.equal(sameBurst(a, b), true);
+});
+
+test("sameBurst : expéditeurs différents → jamais la même rafale", () => {
+  const a = { senderId: "u1", createdAt: "2026-09-20T18:00:00.000Z" };
+  const b = { senderId: "u2", createdAt: "2026-09-20T18:00:30.000Z" };
+  assert.equal(sameBurst(a, b), false);
+});
+
+test("sameBurst : même expéditeur mais trop d'écart → rafales séparées", () => {
+  const a = { senderId: "u1", createdAt: "2026-09-20T18:00:00.000Z" };
+  const b = { senderId: "u1", createdAt: "2026-09-20T18:06:00.000Z" };
+  assert.equal(sameBurst(a, b), false);
+});
+
+test("sameBurst : un message d'auteur inconnu (compte supprimé) n'est jamais regroupé", () => {
+  const a = { senderId: null, createdAt: "2026-09-20T18:00:00.000Z" };
+  const b = { senderId: null, createdAt: "2026-09-20T18:00:10.000Z" };
+  assert.equal(sameBurst(a, b), false);
+});
+
+test("daySeparatorLabel : aujourd'hui, hier, une date plus ancienne", () => {
+  const now = new Date("2026-09-20T20:00:00.000Z");
+  assert.equal(daySeparatorLabel("2026-09-20T08:00:00.000Z", now), "Aujourd'hui");
+  assert.equal(daySeparatorLabel("2026-09-19T23:59:00.000Z", now), "Hier");
+  assert.equal(daySeparatorLabel("2026-09-05T12:00:00.000Z", now), "samedi 5 septembre");
+});
+
+test("daySeparatorLabel : une année différente porte le millésime", () => {
+  const now = new Date("2026-09-20T20:00:00.000Z");
+  assert.equal(daySeparatorLabel("2025-12-31T12:00:00.000Z", now), "mercredi 31 décembre 2025");
 });
 
 test("mergeMessages : fusionne sans doublon et trie chronologiquement", () => {

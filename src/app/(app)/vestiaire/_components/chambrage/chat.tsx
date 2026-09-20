@@ -10,16 +10,20 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { PlayerAvatar } from "../../../_components/player-avatar";
 import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { PlayerRef } from "@/lib/standings/engine";
 import {
+  daySeparatorLabel,
   firstUnreadId,
   groupReactions,
   mergeMessages,
   myReaction as computeMyReaction,
   readBy as computeReadBy,
   readState as computeReadState,
+  sameBurst,
   type RawMessage,
   type RawReaction,
   type RawRead,
@@ -54,6 +58,9 @@ export const CHAMBRAGE_READ_EVENT = "chambrage:lu";
 
 export function ChambrageChat({
   leagueId,
+  leagueName,
+  resumeHref,
+  pouvoirsHref,
   viewerId,
   viewerName,
   roster,
@@ -62,6 +69,11 @@ export function ChambrageChat({
   initial,
 }: {
   leagueId: string;
+  leagueName: string;
+  /** Vers l'écran « Résumé » (le narrateur automatique du jeu) — plein écran, on y retourne par ce lien. */
+  resumeHref: string;
+  /** Vers l'écran « Super-pouvoirs ». */
+  pouvoirsHref: string;
   viewerId: string;
   viewerName: string;
   roster: PlayerRef[];
@@ -72,6 +84,8 @@ export function ChambrageChat({
   const sb = useMemo(() => createClient(), []);
   const rosterById = useMemo(() => new Map(roster.map((p) => [p.userId, p])), [roster]);
   const memberIds = useMemo(() => roster.map((p) => p.userId), [roster]);
+  const others = useMemo(() => roster.filter((p) => p.userId !== viewerId), [roster, viewerId]);
+  const [onlineIds, setOnlineIds] = useState<string[]>([]);
 
   const [messages, setMessages] = useState<RawMessage[]>(initial.messages);
   const [reactions, setReactions] = useState<RawReaction[]>(initial.reactions);
@@ -217,6 +231,26 @@ export function ChambrageChat({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId]);
+
+  /* --- Présence : qui a Chambrage ouvert en ce moment, comme le « en ligne »
+     de WhatsApp/Messenger ------------------------------------------------- */
+  useEffect(() => {
+    const channel = sb.channel(`chambrage-presence-${leagueId}`, {
+      config: { presence: { key: viewerId } },
+    });
+    channel
+      .on("presence", { event: "sync" }, () => {
+        setOnlineIds(Object.keys(channel.presenceState()));
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void channel.track({ at: new Date().toISOString() });
+      });
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId, viewerId]);
 
   /* --- Frappe : Broadcast, jamais persisté ----------------------------------- */
   const typingChannelRef = useRef<ReturnType<typeof sb.channel> | null>(null);
@@ -447,6 +481,49 @@ export function ChambrageChat({
     return rosterById.get(userId)?.displayName ?? "Un joueur";
   }
 
+  const onlineOthers = onlineIds.filter((id) => id !== viewerId);
+  const presenceLabel =
+    onlineOthers.length === 0
+      ? `${roster.length} membre${roster.length > 1 ? "s" : ""}`
+      : onlineOthers.length <= 2
+        ? `${onlineOthers.map(nameFor).join(", ")} en ligne`
+        : `${onlineOthers.length} en ligne`;
+
+  /**
+   * La liste à afficher, entrelacée avec ses séparateurs de journée, chaque
+   * message porteur de son rang dans sa « rafale » (première/dernière) pour
+   * n'afficher le nom et l'avatar qu'une fois par rafale — comme
+   * WhatsApp/Messenger, jamais à chaque message.
+   */
+  type RenderItem =
+    | { kind: "day"; key: string; label: string }
+    | { kind: "msg"; key: string; message: RawMessage; showAvatar: boolean; showName: boolean; tight: boolean };
+  const renderItems = useMemo<RenderItem[]>(() => {
+    const items: RenderItem[] = [];
+    let lastDayKey: string | null = null;
+    messages.forEach((m, i) => {
+      const dayKey = new Date(m.createdAt).toDateString();
+      const newDay = dayKey !== lastDayKey;
+      if (newDay) {
+        items.push({ kind: "day", key: `day-${dayKey}`, label: daySeparatorLabel(m.createdAt) });
+        lastDayKey = dayKey;
+      }
+      const prev = messages[i - 1];
+      const next = messages[i + 1];
+      const firstOfBurst = newDay || !prev || !sameBurst(prev, m);
+      const lastOfBurst = !next || new Date(next.createdAt).toDateString() !== dayKey || !sameBurst(m, next);
+      items.push({
+        kind: "msg",
+        key: m.id,
+        message: m,
+        showAvatar: lastOfBurst,
+        showName: firstOfBurst,
+        tight: !firstOfBurst,
+      });
+    });
+    return items;
+  }, [messages]);
+
   function toVM(message: RawMessage): MessageVM {
     const sender = message.senderId ? (rosterById.get(message.senderId) ?? null) : null;
     const replyToMessage = message.replyToId ? (messagesById.get(message.replyToId) ?? null) : null;
@@ -483,7 +560,43 @@ export function ChambrageChat({
     : [];
 
   return (
-    <div className="flex h-[70dvh] min-h-[420px] flex-col overflow-hidden rounded-[24px] border border-line bg-surface-sunk/40">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-surface-sunk/40"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
+      <header className="flex shrink-0 items-center gap-2.5 border-b border-line bg-surface px-3 py-2.5 shadow-[var(--shadow-card)]">
+        <Link
+          href={resumeHref}
+          aria-label="Retour"
+          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted active:bg-surface-sunk"
+        >
+          ‹
+        </Link>
+
+        <div className="flex shrink-0 -space-x-2.5">
+          {others.slice(0, 3).map((p) => (
+            <div key={p.userId} className="rounded-full ring-2 ring-surface">
+              <PlayerAvatar player={p} clubs={clubs} size={32} />
+            </div>
+          ))}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-[16px] leading-tight text-ink">{leagueName}</p>
+          <p className="truncate text-[12px] text-ink-muted">
+            {onlineOthers.length > 0 && <span className="mr-1 text-winner">●</span>}
+            {presenceLabel}
+          </p>
+        </div>
+
+        <Link
+          href={pouvoirsHref}
+          className="shrink-0 rounded-full border border-line-strong px-2.5 py-1 text-[12px] font-semibold text-ink-muted active:bg-surface-sunk"
+        >
+          Pouvoirs
+        </Link>
+      </header>
+
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-3">
         {loadingOlder && (
           <p className="py-2 text-center text-[11px] text-ink-faint">Chargement…</p>
@@ -499,41 +612,55 @@ export function ChambrageChat({
           </div>
         )}
 
-        <div className="flex flex-col gap-2.5">
-          {messages.map((message) => (
-            <div key={message.id}>
-              {message.id === unreadDividerId && (
-                <div className="my-2 flex items-center gap-2">
-                  <span className="h-px flex-1 bg-wrong/40" />
-                  <span className="rounded-full bg-wrong-soft px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-wrong">
-                    Nouveaux messages
+        <div className="flex flex-col">
+          {renderItems.map((item) => {
+            if (item.kind === "day") {
+              return (
+                <div key={item.key} className="my-3 flex items-center justify-center">
+                  <span className="rounded-full bg-surface px-3 py-1 text-[11px] font-semibold text-ink-muted shadow-[var(--shadow-card)]">
+                    {item.label}
                   </span>
-                  <span className="h-px flex-1 bg-wrong/40" />
                 </div>
-              )}
-              <div
-                ref={(el) => {
-                  if (el) messageRefs.current.set(message.id, el);
-                  else messageRefs.current.delete(message.id);
-                }}
-                className={
-                  highlighted === message.id ? "rounded-[20px] bg-clay-soft/60 transition-colors" : undefined
-                }
-              >
-                <MessageBubble
-                  vm={toVM(message)}
-                  clubs={clubs}
-                  quickEmojis={reactionChoices}
-                  onReply={() => setReplyTo(message)}
-                  onReact={(emoji) => handleReact(message.id, emoji)}
-                  onEdit={() => setEditing(message)}
-                  onDelete={() => handleDelete(message.id)}
-                  onJumpTo={jumpTo}
-                  onOpenReactionDetail={() => setReactionSheetFor(message.id)}
-                />
+              );
+            }
+            const { message } = item;
+            return (
+              <div key={item.key} className={item.tight ? "mt-0.5" : "mt-2.5"}>
+                {message.id === unreadDividerId && (
+                  <div className="my-2 flex items-center gap-2">
+                    <span className="h-px flex-1 bg-wrong/40" />
+                    <span className="rounded-full bg-wrong-soft px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-wrong">
+                      Nouveaux messages
+                    </span>
+                    <span className="h-px flex-1 bg-wrong/40" />
+                  </div>
+                )}
+                <div
+                  ref={(el) => {
+                    if (el) messageRefs.current.set(message.id, el);
+                    else messageRefs.current.delete(message.id);
+                  }}
+                  className={
+                    highlighted === message.id ? "rounded-[20px] bg-clay-soft/60 transition-colors" : undefined
+                  }
+                >
+                  <MessageBubble
+                    vm={toVM(message)}
+                    clubs={clubs}
+                    quickEmojis={reactionChoices}
+                    showAvatar={item.showAvatar}
+                    showName={item.showName}
+                    onReply={() => setReplyTo(message)}
+                    onReact={(emoji) => handleReact(message.id, emoji)}
+                    onEdit={() => setEditing(message)}
+                    onDelete={() => handleDelete(message.id)}
+                    onJumpTo={jumpTo}
+                    onOpenReactionDetail={() => setReactionSheetFor(message.id)}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -610,7 +737,10 @@ function EditBar({
 }) {
   const [value, setValue] = useState(initialBody);
   return (
-    <div className="flex items-center gap-2 border-t border-line bg-surface px-3 py-2.5">
+    <div
+      className="flex items-center gap-2 border-t border-line bg-surface px-3 py-2.5"
+      style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
+    >
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}

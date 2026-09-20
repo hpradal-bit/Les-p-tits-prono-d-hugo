@@ -70,7 +70,10 @@ export function Composer({
 
   if (pendingImage) {
     return (
-      <div className="flex flex-col gap-2.5 border-t border-line bg-surface p-3">
+      <div
+        className="flex flex-col gap-2.5 border-t border-line bg-surface p-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
         <div className="flex items-start gap-2.5">
           {/* Prévisualisation locale (URL objet du fichier choisi), pas encore envoyée. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -109,7 +112,10 @@ export function Composer({
   }
 
   return (
-    <div className="flex flex-col border-t border-line bg-surface">
+    <div
+      className="flex flex-col border-t border-line bg-surface"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
       {replyTo && (
         <div className="flex items-center gap-2 border-b border-line bg-surface-sunk px-3.5 py-2">
           <div className="min-w-0 flex-1 border-l-[3px] border-clay pl-2">

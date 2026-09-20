@@ -165,6 +165,44 @@ export function firstUnreadId(
 }
 
 /**
+ * Deux messages consécutifs appartiennent-ils à la même « rafale » — même
+ * expéditeur, moins de `maxGapMinutes` d'écart ? Sert à n'afficher l'avatar
+ * et le nom qu'une fois par rafale, comme WhatsApp/Messenger, plutôt qu'à
+ * chaque message.
+ */
+export function sameBurst(
+  a: Pick<RawMessage, "senderId" | "createdAt">,
+  b: Pick<RawMessage, "senderId" | "createdAt">,
+  maxGapMinutes = 5,
+): boolean {
+  if (a.senderId === null || b.senderId === null) return false;
+  if (a.senderId !== b.senderId) return false;
+  const gap = Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return gap <= maxGapMinutes * 60_000;
+}
+
+/**
+ * L'étiquette du séparateur de journée au-dessus du premier message d'un
+ * jour civil donné — « Aujourd'hui », « Hier », ou une date complète.
+ * Toujours appelée côté navigateur (le fuseau du joueur, pas celui du
+ * serveur) : c'est pourquoi elle prend `now` en paramètre plutôt que de
+ * l'appeler elle-même, pour rester testable.
+ */
+export function daySeparatorLabel(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+  if (days === 0) return "Aujourd'hui";
+  if (days === 1) return "Hier";
+  const weekday = d.toLocaleDateString("fr-FR", { weekday: "long" });
+  const day = d.getDate();
+  const month = d.toLocaleDateString("fr-FR", { month: "long" });
+  return d.getFullYear() === now.getFullYear()
+    ? `${weekday} ${day} ${month}`
+    : `${weekday} ${day} ${month} ${d.getFullYear()}`;
+}
+
+/**
  * Fusionne un lot de messages fraîchement arrivés (temps réel, ou une page
  * d'historique) dans la liste déjà connue, sans jamais dupliquer — un même
  * message peut arriver deux fois (l'écho temps réel de son propre envoi
