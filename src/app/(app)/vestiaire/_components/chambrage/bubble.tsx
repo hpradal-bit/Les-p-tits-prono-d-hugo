@@ -17,9 +17,18 @@ import type { MessageVM } from "./types";
 
 const QUICK_EMOJIS = ["❤️", "😂", "👍", "😮", "😢", "😡", "🔥"];
 
+// Fuseau Europe/Paris explicite, jamais celui du runtime (serveur en UTC,
+// navigateur en heure française) — voir `parisDayKey` (`model.ts`) pour
+// pourquoi un fuseau implicite ici cassait l'hydratation.
+const TIME_FORMAT = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "Europe/Paris",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function timeLabel(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  return TIME_FORMAT.format(new Date(iso));
 }
 
 function ReadTicks({ state }: { state: MessageVM["readState"] }) {

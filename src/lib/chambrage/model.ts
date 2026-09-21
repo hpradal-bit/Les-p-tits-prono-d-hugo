@@ -330,24 +330,56 @@ export function sameBurst(
 }
 
 /**
+ * Le jour civil (fuseau Europe/Paris — le seul qui compte, un groupe fermé de
+ * joueurs français) d'un horodatage, en "YYYY-MM-DD".
+ *
+ * Ni `toDateString()` ni `getFullYear()/getDate()` ne conviennent ici : ils
+ * lisent le fuseau du *runtime*, pas celui du joueur. Un message rendu une
+ * première fois côté serveur (Vercel, UTC) puis réhydraté côté navigateur
+ * (Europe/Paris) pouvait ainsi tomber dans un jour civil différent selon qui
+ * calculait — un message envoyé à 23h30 heure de Paris est encore le même
+ * jour à Paris, mais déjà le lendemain en UTC. Le nombre de séparateurs de
+ * journée insérés dépendait alors du fuseau d'exécution : un vrai décalage
+ * de *structure*, pas seulement de texte, que React ne peut pas réparer
+ * silencieusement à l'hydratation (« Uncaught Error: Minified React error
+ * #418 », toute la conversation vidée). Fixer le fuseau élimine le problème
+ * à la racine, pour ce calcul comme pour `daySeparatorLabel` et `timeLabel`
+ * (`bubble.tsx`).
+ */
+const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+export function parisDayKey(iso: string): string {
+  return PARIS_DAY_FORMAT.format(new Date(iso));
+}
+
+/** Minuit (UTC, arbitraire) du jour civil parisien d'un horodatage — un
+ *  nombre comparable entre deux jours, jamais réinterprété par un fuseau. */
+function parisDayOrdinal(iso: string): number {
+  const [year, month, day] = parisDayKey(iso).split("-").map(Number);
+  return Date.UTC(year, month - 1, day) / 86_400_000;
+}
+
+/**
  * L'étiquette du séparateur de journée au-dessus du premier message d'un
- * jour civil donné — « Aujourd'hui », « Hier », ou une date complète.
- * Toujours appelée côté navigateur (le fuseau du joueur, pas celui du
- * serveur) : c'est pourquoi elle prend `now` en paramètre plutôt que de
- * l'appeler elle-même, pour rester testable.
+ * jour civil donné (Europe/Paris) — « Aujourd'hui », « Hier », ou une date
+ * complète. `now` reste un paramètre pour rester testable.
  */
 export function daySeparatorLabel(iso: string, now: Date = new Date()): string {
-  const d = new Date(iso);
-  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+  const days = parisDayOrdinal(now.toISOString()) - parisDayOrdinal(iso);
   if (days === 0) return "Aujourd'hui";
   if (days === 1) return "Hier";
-  const weekday = d.toLocaleDateString("fr-FR", { weekday: "long" });
-  const day = d.getDate();
-  const month = d.toLocaleDateString("fr-FR", { month: "long" });
-  return d.getFullYear() === now.getFullYear()
-    ? `${weekday} ${day} ${month}`
-    : `${weekday} ${day} ${month} ${d.getFullYear()}`;
+  const d = new Date(iso);
+  const weekday = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long" }).format(d);
+  const day = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "numeric" }).format(d);
+  const month = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", month: "long" }).format(d);
+  const year = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", year: "numeric" }).format(d);
+  const nowYear = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", year: "numeric" }).format(now);
+  return year === nowYear ? `${weekday} ${day} ${month}` : `${weekday} ${day} ${month} ${year}`;
 }
 
 /**

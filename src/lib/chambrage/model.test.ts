@@ -7,6 +7,7 @@ import {
   mergeMessages,
   myReaction,
   notReadBy,
+  parisDayKey,
   parseMentions,
   readBy,
   readState,
@@ -256,13 +257,33 @@ test("sameBurst : un message d'auteur inconnu (compte supprimé) n'est jamais re
 test("daySeparatorLabel : aujourd'hui, hier, une date plus ancienne", () => {
   const now = new Date("2026-09-20T20:00:00.000Z");
   assert.equal(daySeparatorLabel("2026-09-20T08:00:00.000Z", now), "Aujourd'hui");
-  assert.equal(daySeparatorLabel("2026-09-19T23:59:00.000Z", now), "Hier");
+  // 21h heure de Paris (CEST, UTC+2) la veille — encore hier à Paris, même si
+  // ce n'est plus le même jour UTC que `now` (20h UTC = 22h Paris).
+  assert.equal(daySeparatorLabel("2026-09-19T19:00:00.000Z", now), "Hier");
   assert.equal(daySeparatorLabel("2026-09-05T12:00:00.000Z", now), "samedi 5 septembre");
 });
 
 test("daySeparatorLabel : une année différente porte le millésime", () => {
   const now = new Date("2026-09-20T20:00:00.000Z");
   assert.equal(daySeparatorLabel("2025-12-31T12:00:00.000Z", now), "mercredi 31 décembre 2025");
+});
+
+test("daySeparatorLabel : le jour civil est celui de Paris, jamais celui du runtime", () => {
+  // 23h30 heure de Paris (CEST, UTC+2) le 19 — encore le 19 à Paris, déjà le
+  // 20 en UTC. Un calcul au fuseau du runtime (`toDateString()`,
+  // `getFullYear()`) donnait une réponse différente selon que le code
+  // tournait sur le serveur (UTC) ou dans le navigateur (Paris) : la vraie
+  // panne du 21 septembre 2026 — « Uncaught Error: Minified React error
+  // #418 », toute la conversation vidée, le nombre de séparateurs de
+  // journée insérés ne correspondant plus entre le rendu serveur et
+  // l'hydratation cliente.
+  const now = new Date("2026-09-19T22:00:00.000Z"); // 20 septembre, 00h00 à Paris
+  assert.equal(daySeparatorLabel("2026-09-19T19:00:00.000Z", now), "Hier"); // 21h Paris le 19
+});
+
+test("parisDayKey : le jour civil dépend de Paris, jamais du fuseau d'exécution", () => {
+  assert.equal(parisDayKey("2026-09-19T21:30:00.000Z"), "2026-09-19"); // 23h30 à Paris
+  assert.equal(parisDayKey("2026-09-19T22:30:00.000Z"), "2026-09-20"); // 00h30 à Paris, jour suivant
 });
 
 test("mergeMessages : fusionne sans doublon et trie chronologiquement", () => {

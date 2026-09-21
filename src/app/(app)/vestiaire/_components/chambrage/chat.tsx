@@ -22,6 +22,7 @@ import {
   mergeMessages,
   myReaction as computeMyReaction,
   notReadBy as computeNotReadBy,
+  parisDayKey,
   readBy as computeReadBy,
   readState as computeReadState,
   sameBurst,
@@ -685,7 +686,7 @@ export function ChambrageChat({
     const items: RenderItem[] = [];
     let lastDayKey: string | null = null;
     messages.forEach((m, i) => {
-      const dayKey = new Date(m.createdAt).toDateString();
+      const dayKey = parisDayKey(m.createdAt);
       const newDay = dayKey !== lastDayKey;
       if (newDay) {
         items.push({ kind: "day", key: `day-${dayKey}`, label: daySeparatorLabel(m.createdAt) });
@@ -694,7 +695,7 @@ export function ChambrageChat({
       const prev = messages[i - 1];
       const next = messages[i + 1];
       const firstOfBurst = newDay || !prev || !sameBurst(prev, m);
-      const lastOfBurst = !next || new Date(next.createdAt).toDateString() !== dayKey || !sameBurst(m, next);
+      const lastOfBurst = !next || parisDayKey(next.createdAt) !== dayKey || !sameBurst(m, next);
       items.push({
         kind: "msg",
         key: m.id,
