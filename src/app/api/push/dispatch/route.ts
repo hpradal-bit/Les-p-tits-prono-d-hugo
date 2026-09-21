@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { queueAll } from "@/lib/push/reminders";
 import { flushDue } from "@/lib/push/notify";
+import { logger } from "@/lib/log";
 
 /**
  * Appelé par le planificateur Cloudflare, protégé par le secret partagé.
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const sent = await flushDue(admin);
     return NextResponse.json({ ok: true, ...queued, sent });
   } catch (error) {
-    console.error("[push/dispatch]", error);
+    logger.error("push.dispatch.failed", { error });
     return NextResponse.json({ error: "Échec de l'envoi." }, { status: 500 });
   }
 }

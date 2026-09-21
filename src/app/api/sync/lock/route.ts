@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applyDefaultPredictionsForDueRounds } from "@/lib/predictions/round-lock";
 import { checkSyncSecret } from "@/lib/providers/sync/guard.ts";
+import { logger } from "@/lib/log";
 
 /**
  * POST /api/sync/lock — pose les pronostics par défaut sur les journées
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
       reports,
     });
   } catch (error) {
-    console.error("[sync/lock]", error);
+    logger.error("sync.lock.failed", { error });
     return NextResponse.json({ error: "Échec du verrouillage." }, { status: 500 });
   }
 }

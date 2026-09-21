@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSyncContext, syncCalendar } from "@/lib/providers";
 import { calendarRequestSchema, checkSyncSecret, readBody } from "@/lib/providers/sync/guard.ts";
+import { logger } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json(report, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[sync/calendar]", message);
+    logger.error("sync.calendar.failed", { message, error });
     return NextResponse.json({ error: message, status: "failed" }, { status: 500 });
   }
 }
