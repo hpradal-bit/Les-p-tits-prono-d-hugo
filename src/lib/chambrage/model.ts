@@ -4,7 +4,7 @@
  * ces règles testables sans réseau, et rejouables à l'identique.
  */
 
-export type MessageType = "text" | "image" | "poll";
+export type MessageType = "text" | "image" | "poll" | "audio";
 
 export interface RawMessage {
   id: string;
@@ -18,6 +18,8 @@ export interface RawMessage {
   deletedAt: string | null;
   /** Non nul seulement pour un sondage (`messageType === "poll"`). */
   pollAllowsMultiple: boolean | null;
+  /** Non nulle seulement pour un vocal (`messageType === "audio"`), en secondes. */
+  audioDurationSeconds: number | null;
 }
 
 export interface RawPollOption {

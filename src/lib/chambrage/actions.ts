@@ -16,7 +16,16 @@ import { loadSettings, setting } from "@/lib/settings";
 import { sniffImageType, extensionFor } from "@/lib/auth/avatars";
 import { avatarFileSchema } from "@/lib/auth/schemas";
 import { loadLeagueRoster } from "../standings/queries.ts";
-import { CHAMBRAGE_MEDIA_BUCKET, ALLOWED_IMAGE_MIME, MAX_IMAGE_BYTES } from "./media.ts";
+import {
+  CHAMBRAGE_MEDIA_BUCKET,
+  ALLOWED_IMAGE_MIME,
+  MAX_IMAGE_BYTES,
+  ALLOWED_AUDIO_MIME,
+  MAX_AUDIO_BYTES,
+  MAX_AUDIO_SECONDS,
+  sniffAudioType,
+  audioExtensionFor,
+} from "./media.ts";
 import { notifyNewMessage, notifyReaction } from "./notify.ts";
 import { loadMessageById } from "./queries.ts";
 import { parseMentions, type RawMessage, type RawPollOption } from "./model.ts";
@@ -43,11 +52,12 @@ function toMessage(row: Record<string, unknown>): RawMessage {
     updatedAt: row.updated_at as string,
     deletedAt: (row.deleted_at as string | null) ?? null,
     pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
+    audioDurationSeconds: (row.audio_duration_seconds as number | null) ?? null,
   };
 }
 
 const MESSAGE_COLUMNS =
-  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple";
+  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple, audio_duration_seconds";
 
 /**
  * Après l'écriture : prévenir la ligue, sans jamais retarder l'envoi lui-même
@@ -203,6 +213,81 @@ export async function sendImageMessage(formData: FormData): Promise<ChambrageRes
     leagueId: leagueId.data,
     senderName: viewer.displayName,
     preview: caption ? `📷 ${caption}` : "📷 Photo",
+  });
+
+  revalidatePath("/vestiaire");
+  return ok(message);
+}
+
+/** Un vocal, comme sur WhatsApp : enregistré côté client, envoyé en une pièce jointe. */
+export async function sendVoiceMessage(formData: FormData): Promise<ChambrageResult<RawMessage>> {
+  const viewer = await getViewer();
+  if (!viewer) return fail("Connexion requise.");
+
+  const leagueId = z.string().uuid().safeParse(formData.get("leagueId"));
+  if (!leagueId.success) return fail("Ligue invalide.");
+
+  const replyToRaw = formData.get("replyToId");
+  const replyToId = typeof replyToRaw === "string" && replyToRaw.length > 0 ? replyToRaw : null;
+  if (replyToId && !z.string().uuid().safeParse(replyToId).success) return fail("Réponse invalide.");
+
+  const durationParsed = z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_AUDIO_SECONDS)
+    .safeParse(formData.get("durationSeconds"));
+  if (!durationParsed.success) return fail("Vocal trop long ou durée invalide.");
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return fail("Aucun fichier reçu.");
+  if (file.size > MAX_AUDIO_BYTES) {
+    return fail(`Vocal trop lourd : ${(MAX_AUDIO_BYTES / (1024 * 1024)).toFixed(0)} Mo maximum.`);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffAudioType(bytes.subarray(0, 16));
+  const extension = sniffed ? audioExtensionFor(sniffed) : null;
+  if (!sniffed || !extension || !(ALLOWED_AUDIO_MIME as readonly string[]).includes(sniffed)) {
+    return fail("Ce fichier n'est pas un vocal reconnu.");
+  }
+
+  const sb = await createClient();
+  const path = `${leagueId.data}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await sb.storage.from(CHAMBRAGE_MEDIA_BUCKET).upload(path, bytes, {
+    contentType: sniffed,
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (uploadError) return fail("Le téléversement a échoué. Réessaie dans un instant.");
+
+  const {
+    data: { publicUrl },
+  } = sb.storage.from(CHAMBRAGE_MEDIA_BUCKET).getPublicUrl(path);
+
+  const { data, error } = await sb
+    .from("messages")
+    .insert({
+      league_id: leagueId.data,
+      sender_id: viewer.id,
+      message_type: "audio",
+      media_url: publicUrl,
+      audio_duration_seconds: durationParsed.data,
+      reply_to_id: replyToId,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+  if (error || !data) {
+    await sb.storage.from(CHAMBRAGE_MEDIA_BUCKET).remove([path]);
+    return fail("L'envoi a échoué. Réessaie dans un instant.");
+  }
+
+  const message = toMessage(data);
+  scheduleMessageNotification({
+    message,
+    leagueId: leagueId.data,
+    senderName: viewer.displayName,
+    preview: "🎤 Message vocal",
   });
 
   revalidatePath("/vestiaire");

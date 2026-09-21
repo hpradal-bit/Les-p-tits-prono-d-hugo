@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { searchGifsAction } from "@/lib/chambrage/actions";
 import type { MentionCandidate } from "@/lib/chambrage/model";
 import type { GifResult } from "@/lib/chambrage/gif-provider";
+import { useAudioRecorder } from "./use-audio-recorder";
 import type { MessageVM } from "./types";
 
 const GIF_SEARCH_DEBOUNCE_MS = 400;
@@ -44,6 +45,7 @@ export function Composer({
   onSendImage,
   onSendPoll,
   onSendGif,
+  onSendVoice,
   onTyping,
   roster,
   disabled,
@@ -55,6 +57,7 @@ export function Composer({
   /** Renvoie `true` si le sondage a bien été envoyé. */
   onSendPoll: (question: string, options: string[], allowsMultiple: boolean) => Promise<boolean>;
   onSendGif: (gifUrl: string) => void;
+  onSendVoice: (blob: Blob, mimeType: string, durationSeconds: number) => void;
   onTyping: () => void;
   /** Pour l'autocomplétion « @Untel ». */
   roster: readonly MentionCandidate[];
@@ -78,6 +81,7 @@ export function Composer({
   const [activeSuggestion, setActiveSuggestion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recorder = useAudioRecorder();
 
   const canSendText = body.trim().length > 0;
   const suggestions =
@@ -220,6 +224,81 @@ export function Composer({
     setGifResults([]);
   }
 
+  function sendRecordedVoice() {
+    if (!recorder.recorded) return;
+    onSendVoice(recorder.recorded.blob, recorder.recorded.mimeType, recorder.recorded.durationSeconds);
+    recorder.reset();
+  }
+
+  if (recorder.state === "recording") {
+    const mm = String(Math.floor(recorder.elapsedSeconds / 60)).padStart(2, "0");
+    const ss = String(recorder.elapsedSeconds % 60).padStart(2, "0");
+    return (
+      <div
+        className="flex items-center gap-3 border-t border-line bg-surface p-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <button
+          type="button"
+          onClick={recorder.cancel}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-ink-faint"
+          aria-label="Annuler l'enregistrement"
+        >
+          ✕
+        </button>
+        <div className="flex flex-1 items-center gap-2">
+          <span className="size-2.5 shrink-0 animate-pulse rounded-full bg-wrong" />
+          <span className="text-[14px] font-semibold tabular-nums text-ink">
+            {mm}:{ss}
+          </span>
+          <span className="text-[13px] text-ink-muted">Enregistrement…</span>
+        </div>
+        <button
+          type="button"
+          onClick={recorder.stop}
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-clay text-[16px] text-surface"
+          aria-label="Arrêter l'enregistrement"
+        >
+          ⏹
+        </button>
+      </div>
+    );
+  }
+
+  if (recorder.state === "stopped" && recorder.recorded) {
+    const mm = String(Math.floor(recorder.recorded.durationSeconds / 60)).padStart(2, "0");
+    const ss = String(recorder.recorded.durationSeconds % 60).padStart(2, "0");
+    return (
+      <div
+        className="flex items-center gap-2.5 border-t border-line bg-surface p-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <button
+          type="button"
+          onClick={recorder.cancel}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-ink-faint"
+          aria-label="Annuler le vocal"
+        >
+          ✕
+        </button>
+        <div className="flex flex-1 items-center gap-2 rounded-full border border-line bg-surface-sunk px-3 py-1">
+          <audio controls src={recorder.recorded.previewUrl} className="h-8 w-full" />
+          <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">
+            {mm}:{ss}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={sendRecordedVoice}
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-clay text-[16px] font-bold text-surface"
+          aria-label="Envoyer le vocal"
+        >
+          ➤
+        </button>
+      </div>
+    );
+  }
+
   if (pendingImage) {
     return (
       <div
@@ -279,7 +358,11 @@ export function Composer({
                 ? "Message supprimé"
                 : replyTo.message.messageType === "image"
                   ? "📷 Photo"
-                  : replyTo.message.body}
+                  : replyTo.message.messageType === "audio"
+                    ? "🎤 Message vocal"
+                    : replyTo.message.messageType === "poll"
+                      ? `📊 ${replyTo.message.body}`
+                      : replyTo.message.body}
             </p>
           </div>
           <button
@@ -331,6 +414,10 @@ export function Composer({
         </ul>
       )}
 
+      {recorder.error && (
+        <p className="px-3.5 pb-1.5 text-[12px] font-semibold text-wrong">{recorder.error}</p>
+      )}
+
       <div className="flex items-end gap-2 px-3 py-2.5">
         <input
           ref={fileInputRef}
@@ -370,6 +457,14 @@ export function Composer({
           aria-label="Envoyer un GIF"
         >
           GIF
+        </button>
+        <button
+          type="button"
+          onClick={recorder.start}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
+          aria-label="Enregistrer un vocal"
+        >
+          🎤
         </button>
 
         <textarea

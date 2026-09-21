@@ -41,6 +41,7 @@ import {
   sendImageMessage,
   sendPollMessage,
   sendTextMessage,
+  sendVoiceMessage,
   toggleReaction,
   votePoll,
 } from "@/lib/chambrage/actions";
@@ -172,6 +173,7 @@ export function ChambrageChat({
             updatedAt: row.updated_at as string,
             deletedAt: (row.deleted_at as string | null) ?? null,
             pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
+            audioDurationSeconds: (row.audio_duration_seconds as number | null) ?? null,
           };
           setMessages((prev) => mergeMessages(prev, [incoming]));
           if (incoming.messageType === "poll") void loadPollOptionsFor(sb, [incoming.id]).then((opts) =>
@@ -421,6 +423,7 @@ export function ChambrageChat({
       updatedAt: now,
       deletedAt: null,
       pollAllowsMultiple: null,
+      audioDurationSeconds: null,
     };
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
@@ -456,6 +459,7 @@ export function ChambrageChat({
       updatedAt: now,
       deletedAt: null,
       pollAllowsMultiple: null,
+      audioDurationSeconds: null,
     };
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
@@ -496,6 +500,7 @@ export function ChambrageChat({
       updatedAt: now,
       deletedAt: null,
       pollAllowsMultiple: null,
+      audioDurationSeconds: null,
     };
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
@@ -504,6 +509,47 @@ export function ChambrageChat({
     requestAnimationFrame(() => scrollToBottom(true));
 
     const result = await sendGifMessage({ leagueId, gifUrl, replyToId: optimistic.replyToId });
+    if (result.ok) {
+      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+      setPendingStatus((p) => {
+        const next = { ...p };
+        delete next[tempId];
+        return next;
+      });
+    } else {
+      setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+    }
+  }
+
+  async function handleSendVoice(blob: Blob, mimeType: string, durationSeconds: number) {
+    const tempId = `temp-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const optimistic: RawMessage = {
+      id: tempId,
+      senderId: viewerId,
+      messageType: "audio",
+      body: null,
+      mediaUrl: URL.createObjectURL(blob),
+      replyToId: replyTo?.id ?? null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      pollAllowsMultiple: null,
+      audioDurationSeconds: durationSeconds,
+    };
+    setMessages((prev) => mergeMessages(prev, [optimistic]));
+    setPendingStatus((p) => ({ ...p, [tempId]: "sending" }));
+    setReplyTo(null);
+    stickToBottomRef.current = true;
+    requestAnimationFrame(() => scrollToBottom(true));
+
+    const formData = new FormData();
+    formData.set("leagueId", leagueId);
+    formData.set("file", blob, `vocal.${mimeType.includes("mp4") ? "m4a" : "webm"}`);
+    formData.set("durationSeconds", String(durationSeconds));
+    if (optimistic.replyToId) formData.set("replyToId", optimistic.replyToId);
+
+    const result = await sendVoiceMessage(formData);
     if (result.ok) {
       setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
       setPendingStatus((p) => {
@@ -650,9 +696,11 @@ export function ChambrageChat({
               ? "Message supprimé"
               : replyToMessage.messageType === "image"
                 ? "📷 Photo"
-                : replyToMessage.messageType === "poll"
-                  ? `📊 ${replyToMessage.body ?? "Sondage"}`
-                  : (replyToMessage.body ?? ""),
+                : replyToMessage.messageType === "audio"
+                  ? "🎤 Message vocal"
+                  : replyToMessage.messageType === "poll"
+                    ? `📊 ${replyToMessage.body ?? "Sondage"}`
+                    : (replyToMessage.body ?? ""),
         }
       : null;
 
@@ -843,6 +891,7 @@ export function ChambrageChat({
           onSendImage={handleSendImage}
           onSendPoll={handleSendPoll}
           onSendGif={handleSendGif}
+          onSendVoice={handleSendVoice}
           onTyping={handleTyping}
           roster={others}
         />

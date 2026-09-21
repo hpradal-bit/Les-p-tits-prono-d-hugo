@@ -39,6 +39,7 @@ function msg(over: Partial<RawMessage> = {}): RawMessage {
     updatedAt: "2026-09-20T18:00:00.000Z",
     deletedAt: null,
     pollAllowsMultiple: null,
+    audioDurationSeconds: null,
     ...over,
   };
 }

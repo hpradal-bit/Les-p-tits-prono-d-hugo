@@ -208,6 +208,25 @@ export function MessageBubble({
                 />
               )}
 
+              {message.messageType === "audio" && message.mediaUrl && (
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span aria-hidden>🎤</span>
+                  {/* Lecteur natif : choix pragmatique face au reste du chantier — pas de waveform. */}
+                  <audio controls src={message.mediaUrl} className="h-8 min-w-0 flex-1" />
+                  {message.audioDurationSeconds !== null && (
+                    <span
+                      className={cn(
+                        "shrink-0 text-[11px] tabular-nums",
+                        isMine ? "text-surface/70" : "text-ink-faint",
+                      )}
+                    >
+                      {String(Math.floor(message.audioDurationSeconds / 60)).padStart(2, "0")}:
+                      {String(message.audioDurationSeconds % 60).padStart(2, "0")}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {message.messageType === "poll" && vm.poll && (
                 <div className="flex flex-col gap-2">
                   <p className="flex items-start gap-1.5 font-semibold">

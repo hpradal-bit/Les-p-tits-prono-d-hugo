@@ -11,7 +11,7 @@ import type { PlayerRef } from "../standings/engine.ts";
 import type { RawMessage, RawPollOption, RawPollVote, RawReaction, RawRead } from "./model.ts";
 
 const MESSAGE_COLUMNS =
-  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple";
+  "id, sender_id, message_type, body, media_url, reply_to_id, created_at, updated_at, deleted_at, poll_allows_multiple, audio_duration_seconds";
 
 function toMessage(row: Record<string, unknown>): RawMessage {
   return {
@@ -25,6 +25,7 @@ function toMessage(row: Record<string, unknown>): RawMessage {
     updatedAt: row.updated_at as string,
     deletedAt: (row.deleted_at as string | null) ?? null,
     pollAllowsMultiple: (row.poll_allows_multiple as boolean | null) ?? null,
+    audioDurationSeconds: (row.audio_duration_seconds as number | null) ?? null,
   };
 }
 
