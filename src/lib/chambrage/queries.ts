@@ -168,15 +168,19 @@ export async function loadChambrage(
   viewerId: Uuid,
   pageSize = 30,
 ): Promise<ChambrageInitialData> {
-  const { messages, hasMoreOlder } = await loadMessagesPage(sb, leagueId, { limit: pageSize });
-  const pollMessageIds = messages.filter((m) => m.messageType === "poll").map((m) => m.id);
-
-  const [reactions, reads, pollOptions, roster, lastReadAt] = await Promise.all([
-    loadReactionsFor(sb, messages.map((m) => m.id)),
+  // `reads`/`roster`/`lastReadAt` ne dépendent pas des messages : ils partent
+  // en parallèle de la page de messages elle-même, pas seulement entre eux.
+  const [{ messages, hasMoreOlder }, reads, roster, lastReadAt] = await Promise.all([
+    loadMessagesPage(sb, leagueId, { limit: pageSize }),
     loadReads(sb, leagueId),
-    loadPollOptionsFor(sb, pollMessageIds),
     loadLeagueRoster(sb, leagueId),
     loadMyLastRead(sb, leagueId, viewerId),
+  ]);
+
+  const pollMessageIds = messages.filter((m) => m.messageType === "poll").map((m) => m.id);
+  const [reactions, pollOptions] = await Promise.all([
+    loadReactionsFor(sb, messages.map((m) => m.id)),
+    loadPollOptionsFor(sb, pollMessageIds),
   ]);
   const pollVotes = await loadPollVotesFor(sb, pollOptions.map((o) => o.id));
 

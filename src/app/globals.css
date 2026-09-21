@@ -259,6 +259,17 @@ h1, h2, h3, .font-display {
   100% { transform: scale(1.4); opacity: 0; }
 }
 
+/* Entrée d'un écran (via `template.tsx`, § navigation entre onglets) : un
+   fondu léger avec une légère montée, façon Instagram/Facebook — jamais un
+   glissement large qui donnerait le mal de mer sur un changement d'onglet. */
+@keyframes screen-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-screen-enter {
+  animation: screen-enter 220ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
