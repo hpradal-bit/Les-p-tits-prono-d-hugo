@@ -597,23 +597,27 @@ export async function loadMatchCenter(
   // ligue arbitraire. Une compétition pouvant héberger plusieurs ligues
   // indépendantes, on ne peut pas la déduire du seul match — seulement de
   // « quelle ligue, sur cette compétition, le spectateur partage-t-il ? ».
-  let leagueId: Uuid | null = null;
-  if (viewerId && round?.season_id) {
+  //
+  // Deux allers-retours dépendants (saison → adhésion), mais qui ne dépendent
+  // eux-mêmes que de `round`, déjà en main : lancés en parallèle du lot
+  // buckets/profils/scores/pouvoirs ci-dessous plutôt qu'avant lui, ils ne
+  // rallongent plus le chemin critique de la page.
+  async function resolveLeagueId(): Promise<Uuid | null> {
+    if (!viewerId || !round?.season_id) return null;
     const { data: seasonRow } = await sb
       .from("seasons")
       .select("competition_id")
       .eq("id", round.season_id)
       .maybeSingle();
-    if (seasonRow) {
-      const { data: membership } = await sb
-        .from("league_members")
-        .select("league_id, leagues!inner(competition_id)")
-        .eq("user_id", viewerId)
-        .eq("leagues.competition_id", seasonRow.competition_id)
-        .limit(1)
-        .maybeSingle();
-      leagueId = (membership?.league_id as string | undefined) ?? null;
-    }
+    if (!seasonRow) return null;
+    const { data: membership } = await sb
+      .from("league_members")
+      .select("league_id, leagues!inner(competition_id)")
+      .eq("user_id", viewerId)
+      .eq("leagues.competition_id", seasonRow.competition_id)
+      .limit(1)
+      .maybeSingle();
+    return (membership?.league_id as string | undefined) ?? null;
   }
 
   const fixture: MatchFixture = {
@@ -653,7 +657,7 @@ export async function loadMatchCenter(
   const userIds = [...new Set(predictionRows.map((p) => p.user_id))];
   const predictionIds = predictionRows.map((p) => p.id);
 
-  const [bucketsRes, profilesRes, scoresRes, roster, powerUses] = await Promise.all([
+  const [bucketsRes, profilesRes, scoresRes, leagueId, powerUses] = await Promise.all([
     bucketIds.length === 0
       ? Promise.resolve({ data: [], error: null })
       : sb.from("margin_buckets").select("id, label").in("id", bucketIds),
@@ -666,17 +670,19 @@ export async function loadMatchCenter(
           .from("prediction_scores")
           .select("prediction_id, points, breakdown")
           .in("prediction_id", predictionIds),
-    // Le détail d'un match est un écran de groupe : n'y voient leur trace que
-    // les membres de CETTE ligue. Un compte de test hors ligue (mais actif,
-    // avec de vrais pronostics automatiques) n'y a pas sa place — il en
-    // disparaît complètement plutôt que d'y traîner sous un nom générique.
-    leagueId ? loadLeagueRoster(sb, leagueId) : Promise.resolve<PlayerRef[]>([]),
+    resolveLeagueId(),
     loadPowerUses(sb, new Set([fixtureId])),
   ]);
 
   if (bucketsRes.error) throw bucketsRes.error;
   if (profilesRes.error) throw profilesRes.error;
   if (scoresRes.error) throw scoresRes.error;
+
+  // Le détail d'un match est un écran de groupe : n'y voient leur trace que
+  // les membres de CETTE ligue. Un compte de test hors ligue (mais actif,
+  // avec de vrais pronostics automatiques) n'y a pas sa place — il en
+  // disparaît complètement plutôt que d'y traîner sous un nom générique.
+  const roster = leagueId ? await loadLeagueRoster(sb, leagueId) : [];
 
   const buckets = new Map<string, string>();
   for (const b of (bucketsRes.data ?? []) as Array<{ id: string; label: string }>) {
