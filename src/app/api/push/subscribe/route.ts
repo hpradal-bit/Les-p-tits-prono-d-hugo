@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 /** Enregistre un abonnement push pour le joueur connecté. */
 
@@ -18,6 +19,12 @@ export async function POST(request: Request) {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: "Connexion requise." }, { status: 401 });
+
+  // Audit P3, point 10 : borne la fréquence par joueur — un abonnement
+  // change rarement, dix appels par minute couvrent largement un
+  // renouvellement légitime tout en coupant une boucle pathologique.
+  const limited = rateLimit(`push:subscribe:${user.id}`, { limit: 10, windowMs: 60_000 });
+  if (!limited.ok) return rateLimitResponse(limited);
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

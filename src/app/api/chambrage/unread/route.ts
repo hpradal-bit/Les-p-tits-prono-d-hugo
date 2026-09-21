@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
 import { loadMyLeagues } from "@/lib/leagues/queries.ts";
 import { loadChambrageUnreadCount } from "@/lib/chambrage/unread.ts";
+import { rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 /**
  * « Combien de messages ai-je manqués dans Chambrage ? »
@@ -20,6 +21,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const viewer = await getViewer();
   if (!viewer) return NextResponse.json({ count: 0 }, { status: 401 });
+
+  // Audit P3, point 10 : désormais surtout un filet de secours (le badge est
+  // poussé par Supabase Realtime, voir bottom-nav.tsx) — la limite reste
+  // large pour ne jamais gêner un usage légitime.
+  const limited = rateLimit(`chambrage:unread:${viewer.id}`, { limit: 30, windowMs: 60_000 });
+  if (!limited.ok) return rateLimitResponse(limited);
 
   const sb = await createClient();
   const leagues = await loadMyLeagues(sb, viewer.id);

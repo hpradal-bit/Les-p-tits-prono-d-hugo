@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 /** Révoque un abonnement. On marque plutôt que d'effacer : la trace sert au diagnostic. */
 
@@ -11,6 +12,10 @@ export async function POST(request: Request) {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: "Connexion requise." }, { status: 401 });
+
+  // Audit P3, point 10 : voir /api/push/subscribe.
+  const limited = rateLimit(`push:unsubscribe:${user.id}`, { limit: 10, windowMs: 60_000 });
+  if (!limited.ok) return rateLimitResponse(limited);
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Requête illisible." }, { status: 400 });

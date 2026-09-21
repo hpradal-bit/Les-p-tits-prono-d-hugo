@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/auth/session";
 import { loadMyLeagues } from "@/lib/leagues/queries.ts";
 import { loadUnreadLeagues } from "@/lib/feed/unread";
+import { rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 /**
  * « Ai-je des messages non lus ? »
@@ -20,6 +21,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const viewer = await getViewer();
   if (!viewer) return NextResponse.json({ unread: false }, { status: 401 });
+
+  // Audit P3, point 10 : voir /api/chambrage/unread.
+  const limited = rateLimit(`feed:unread:${viewer.id}`, { limit: 30, windowMs: 60_000 });
+  if (!limited.ok) return rateLimitResponse(limited);
 
   const sb = await createClient();
   const leagues = await loadMyLeagues(sb, viewer.id);
