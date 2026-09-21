@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AttemptLog } from "../registry.ts";
+import { logger } from "../../log.ts";
 
 export type SyncKind = "calendar" | "live" | "standings";
 export type SyncStatus = "running" | "success" | "partial" | "skipped" | "failed";
@@ -16,6 +17,57 @@ export type SyncStatus = "running" | "success" | "partial" | "skipped" | "failed
 export interface SyncRunHandle {
   id: string | null;
   startedAt: string;
+  kind: SyncKind;
+  /**
+   * `false` si un autre run du même `kind` tenait déjà le verrou (audit P2,
+   * point 6) : l'appelant doit alors s'arrêter tout de suite, sans consommer
+   * de requête fournisseur ni toucher aux fixtures — un deuxième appel
+   * concurrent (double clic sur `/admin/synchronisation`, ou plusieurs
+   * planificateurs en parallèle demain) ne doit jamais faire deux appels
+   * fournisseur redondants ni deux écritures simultanées.
+   */
+  locked: boolean;
+}
+
+/**
+ * Le verrou anti-concurrence d'une synchronisation.
+ *
+ * Une seule ligne par `kind` dans `sync_locks` (migration `0063`) :
+ * l'acquisition passe par la fonction SQL `try_acquire_sync_lock`, qui fait
+ * l'insertion/mise à jour et le test de fraîcheur **dans la même
+ * transaction** côté PostgreSQL — impossible à obtenir de façon fiable avec
+ * une lecture puis une écriture séparées depuis Node, qui laisserait une
+ * fenêtre de course entre les deux appels.
+ *
+ * Un verrou plus vieux que `staleAfterMinutes` est considéré abandonné (une
+ * synchronisation qui a planté sans jamais appeler `closeRun`/`releaseLock`)
+ * et peut être repris — sans quoi un run mort bloquerait tous les suivants
+ * pour toujours.
+ */
+async function acquireLock(
+  sb: SupabaseClient,
+  kind: SyncKind,
+  staleAfterMinutes = 15,
+): Promise<boolean> {
+  const { data, error } = await sb.rpc("try_acquire_sync_lock", {
+    p_kind: kind,
+    p_stale_after_minutes: staleAfterMinutes,
+  });
+  if (error) {
+    // Le verrou est une protection additionnelle, pas une dépendance dure :
+    // si la fonction SQL n'est pas encore déployée (migration pas encore
+    // appliquée en production, cf. rapport de remédiation), la synchro
+    // continue de fonctionner comme avant plutôt que de se bloquer.
+    logger.warn("sync.lock.acquire_failed", { kind, error });
+    return true;
+  }
+  return data === true;
+}
+
+/** Relâche le verrou — toujours appelé, que le run ait réussi ou échoué. */
+async function releaseLock(sb: SupabaseClient, kind: SyncKind): Promise<void> {
+  const { error } = await sb.rpc("release_sync_lock", { p_kind: kind });
+  if (error) logger.warn("sync.lock.release_failed", { kind, error });
 }
 
 export interface SyncRunResult {
@@ -27,32 +79,48 @@ export interface SyncRunResult {
   detail?: Record<string, unknown>;
 }
 
-/** Ouvre une ligne `sync_runs`. Ne fait jamais échouer la synchronisation. */
+/**
+ * Ouvre une ligne `sync_runs`, après avoir tenté de prendre le verrou du
+ * `kind`. Ne fait jamais échouer la synchronisation : ni l'échec du verrou,
+ * ni l'échec de l'écriture du journal ne remontent une exception.
+ */
 export async function openRun(
   sb: SupabaseClient,
   kind: SyncKind,
   provider = "chain",
 ): Promise<SyncRunHandle> {
   const startedAt = new Date().toISOString();
+  const locked = await acquireLock(sb, kind);
+
   const { data, error } = await sb
     .from("sync_runs")
-    .insert({ kind, provider, status: "running", started_at: startedAt })
+    .insert({
+      kind,
+      provider,
+      status: locked ? "running" : "skipped",
+      started_at: startedAt,
+      ...(locked ? {} : { finished_at: startedAt, error: "synchronisation déjà en cours (verrou occupé)" }),
+    })
     .select("id")
     .single();
 
   if (error) {
-    console.error("[sync] impossible d'ouvrir le journal :", error.message);
-    return { id: null, startedAt };
+    logger.error("sync.run.open_failed", { kind, error });
+    return { id: null, startedAt, locked, kind };
   }
-  return { id: data.id, startedAt };
+  return { id: data.id, startedAt, locked, kind };
 }
 
-/** Referme la ligne. Une erreur d'écriture est journalisée, jamais propagée. */
+/**
+ * Referme la ligne et relâche le verrou pris par `openRun`. Une erreur
+ * d'écriture est journalisée, jamais propagée.
+ */
 export async function closeRun(
   sb: SupabaseClient,
   handle: SyncRunHandle,
   result: SyncRunResult,
 ): Promise<void> {
+  if (handle.locked) await releaseLock(sb, handle.kind);
   if (!handle.id) return;
   const { error } = await sb
     .from("sync_runs")
@@ -67,7 +135,7 @@ export async function closeRun(
     })
     .eq("id", handle.id);
 
-  if (error) console.error("[sync] impossible de refermer le journal :", error.message);
+  if (error) logger.error("sync.run.close_failed", { error });
 }
 
 /**
@@ -104,7 +172,7 @@ export async function recordProviderUsage(
 
   if (rows.length === 0) return;
   const { error } = await sb.from("sync_runs").insert(rows);
-  if (error) console.error("[sync] usage fournisseur non journalisé :", error.message);
+  if (error) logger.error("sync.provider_usage.not_recorded", { kind, error });
 }
 
 /** La dernière synchronisation réussie d'un type donné. */

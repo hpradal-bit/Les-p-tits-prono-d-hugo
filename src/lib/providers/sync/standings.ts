@@ -41,6 +41,19 @@ export async function syncStandings(ctx: SyncContext): Promise<StandingsSyncRepo
   const { sb } = ctx;
   const run = await openRun(sb, "standings");
 
+  // Audit P2, point 6 : voir la même garde dans syncLive.
+  if (!run.locked) {
+    return {
+      status: "skipped",
+      provider: "aucun",
+      requestsUsed: 0,
+      rowsReceived: 0,
+      rowsWritten: 0,
+      unmatched: [],
+      warnings: ["synchronisation déjà en cours (verrou occupé)"],
+    };
+  }
+
   const outcome = await runWithFallback(ctx.chainFor("standings"), async (provider) => {
     const externalId = await loadSeasonExternalId(
       sb,

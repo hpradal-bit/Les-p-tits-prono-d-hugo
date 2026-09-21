@@ -197,6 +197,17 @@ export function fakeSupabase(seed: FakeDb = {}) {
       from(table: string) {
         return new Query(table, db, writes);
       },
+      // Le verrou anti-concurrence des synchros (audit P2, point 6,
+      // `try_acquire_sync_lock`/`release_sync_lock`, migration 0063) passe
+      // par des fonctions SQL (`.rpc`), absentes de cette base de test en
+      // mémoire. Le double fournit toujours le verrou : les tests de synchro
+      // ne testent pas la concurrence, seulement la logique métier.
+      rpc(name: string) {
+        return Promise.resolve({
+          data: name === "try_acquire_sync_lock" ? true : null,
+          error: null,
+        });
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
   };

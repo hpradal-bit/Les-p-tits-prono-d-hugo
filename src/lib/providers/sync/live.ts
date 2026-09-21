@@ -59,6 +59,7 @@ import {
   loadSeasonFixtures,
 } from "./fixtures-repo.ts";
 import { closeRun, lastSuccessfulRun, openRun, recordProviderUsage, type SyncRunResult } from "./runs.ts";
+import { logger } from "../../log.ts";
 
 export interface LiveSyncOptions {
   /** Date à interroger (`YYYY-MM-DD`). Par défaut : aujourd'hui, heure de Paris. */
@@ -124,6 +125,26 @@ export async function syncLive(
   // Toute exécution ouvre une ligne de journal, y compris celle qui décide de
   // ne rien faire : c'est ce qui permet de vérifier que le planificateur tourne.
   const run = await openRun(sb, "live");
+
+  // Audit P2, point 6 : une synchro « live » du même kind est déjà en cours
+  // (verrou occupé) — on s'arrête immédiatement, sans consommer de requête
+  // fournisseur ni relire les fixtures, plutôt que de risquer deux écritures
+  // concurrentes des mêmes scores/événements.
+  if (!run.locked) {
+    return {
+      status: "skipped",
+      provider: "aucun",
+      requestsUsed: 0,
+      inWindow: false,
+      nextCheckAt: new Date(now.getTime() + 60_000).toISOString(),
+      fixturesUpdated: 0,
+      finished: [],
+      finishedDetails: [],
+      predictionsScored: 0,
+      changes: [],
+      warnings: ["synchronisation déjà en cours (verrou occupé)"],
+    };
+  }
 
   const seasonFixtures = await loadSeasonFixtures(sb, ctx.season.id);
   const verdict = evaluateWindow(now, seasonFixtures, windowSettings);
@@ -756,5 +777,5 @@ async function emitFixtureFinished(
     fixture_id: fixtureId,
     payload,
   });
-  if (error) console.error("[sync] événement non écrit :", error.message);
+  if (error) logger.error("sync.live.event_not_written", { fixtureId, error });
 }

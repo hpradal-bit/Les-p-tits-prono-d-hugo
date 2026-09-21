@@ -81,6 +81,24 @@ export async function syncCalendar(
   const range = options.range ?? defaultRange(ctx);
   const run = await openRun(sb, "calendar");
 
+  // Audit P2, point 6 : voir la même garde dans syncLive.
+  if (!run.locked) {
+    return {
+      status: "skipped",
+      provider: "aucun",
+      requestsUsed: 0,
+      fixturesReceived: 0,
+      kickoffsConfirmed: 0,
+      fixturesUpdated: 0,
+      fixturesCreated: 0,
+      roundsCreated: 0,
+      teamsCreated: [],
+      unmatched: [],
+      changes: [],
+      warnings: ["synchronisation déjà en cours (verrou occupé)"],
+    };
+  }
+
   const outcome = await runWithFallback(ctx.chainFor("calendar"), async (provider) => {
     const externalId = await loadSeasonExternalId(
       sb,
