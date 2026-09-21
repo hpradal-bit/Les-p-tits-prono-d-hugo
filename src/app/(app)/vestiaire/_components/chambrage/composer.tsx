@@ -190,7 +190,7 @@ export function Composer({
   }
 
   // Recherche différée : on attend une pause dans la frappe avant d'interroger
-  // Tenor, pour ne pas lancer une requête à chaque lettre tapée. Le tout
+  // GIPHY, pour ne pas lancer une requête à chaque lettre tapée. Le tout
   // passe par un minuteur, y compris la remise à zéro d'une recherche vidée —
   // un `setState` synchrone au corps de l'effet enchaînerait un second rendu.
   useEffect(() => {
@@ -674,7 +674,7 @@ export function Composer({
                 <div className="grid grid-cols-2 gap-2">
                   {gifResults.map((gif) => (
                     <button key={gif.id} type="button" onClick={() => pickGif(gif)} className="overflow-hidden rounded-[14px]">
-                      {/* Prévisualisation d'un GIF hébergé par Tenor : <img> nature. */}
+                      {/* Prévisualisation d'un GIF hébergé par GIPHY : <img> nature. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={gif.previewUrl}
@@ -688,7 +688,7 @@ export function Composer({
               )}
             </div>
 
-            <p className="text-center text-[10.5px] text-ink-faint">Propulsé par Tenor</p>
+            <p className="text-center text-[10.5px] text-ink-faint">Propulsé par GIPHY</p>
           </div>
         </div>
       )}

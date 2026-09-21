@@ -29,7 +29,7 @@ import {
 import { notifyNewMessage, notifyReaction } from "./notify.ts";
 import { loadMessageById } from "./queries.ts";
 import { parseMentions, type RawMessage, type RawPollOption } from "./model.ts";
-import { GifProviderError, isTenorMediaUrl, searchGifs, type GifResult } from "./gif-provider.ts";
+import { GifProviderError, isGiphyMediaUrl, searchGifs, type GifResult } from "./gif-provider.ts";
 
 export type ChambrageResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -294,7 +294,7 @@ export async function sendVoiceMessage(formData: FormData): Promise<ChambrageRes
   return ok(message);
 }
 
-/** Recherche de GIF (Tenor) pour le sélecteur du composer. */
+/** Recherche de GIF (GIPHY) pour le sélecteur du composer. */
 export async function searchGifsAction(query: string): Promise<ChambrageResult<GifResult[]>> {
   const viewer = await getViewer();
   if (!viewer) return fail("Connexion requise.");
@@ -313,7 +313,7 @@ const gifSchema = z.object({
   replyToId: z.string().uuid().nullable(),
 });
 
-/** Envoie un GIF choisi dans le sélecteur — un message image, l'URL Tenor jamais re-téléversée. */
+/** Envoie un GIF choisi dans le sélecteur — un message image, l'URL GIPHY jamais re-téléversée. */
 export async function sendGifMessage(input: {
   leagueId: string;
   gifUrl: string;
@@ -327,7 +327,7 @@ export async function sendGifMessage(input: {
     gifUrl: input.gifUrl,
     replyToId: input.replyToId ?? null,
   });
-  if (!parsed.success || !isTenorMediaUrl(parsed.data.gifUrl)) {
+  if (!parsed.success || !isGiphyMediaUrl(parsed.data.gifUrl)) {
     return fail("GIF invalide.");
   }
 
