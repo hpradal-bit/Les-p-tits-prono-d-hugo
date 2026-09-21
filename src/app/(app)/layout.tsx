@@ -9,6 +9,8 @@
 
 import type { ReactNode } from "react";
 import { getViewer } from "@/lib/auth/session";
+import { createClient } from "@/lib/supabase/server";
+import { loadMyLeagues } from "@/lib/leagues/queries.ts";
 import { ServiceWorkerRegistrar } from "./_components/service-worker";
 import { BottomNav } from "./_components/bottom-nav";
 
@@ -26,6 +28,17 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const viewer = await getViewer();
   const isAdmin = viewer?.role === "admin";
 
+  // Audit P2, point 8 : les ligues du joueur, pour que la barre de navigation
+  // puisse s'abonner au temps réel Chambrage (Supabase Realtime) plutôt que
+  // de sonder /api/chambrage/unread toutes les 60 secondes pour tout le
+  // monde connecté, indépendamment de toute activité réelle.
+  let leagueIds: string[] = [];
+  if (viewer) {
+    const sb = await createClient();
+    const leagues = await loadMyLeagues(sb, viewer.id);
+    leagueIds = leagues.map((l) => l.leagueId);
+  }
+
   return (
     <div className="mx-auto flex flex-1 w-full max-w-2xl flex-col">
       {/* La barre de navigation ne doit jamais masquer le contenu : on réserve
@@ -37,7 +50,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
       <ServiceWorkerRegistrar />
-      <BottomNav isAdmin={isAdmin} />
+      <BottomNav isAdmin={isAdmin} leagueIds={leagueIds} />
     </div>
   );
 }

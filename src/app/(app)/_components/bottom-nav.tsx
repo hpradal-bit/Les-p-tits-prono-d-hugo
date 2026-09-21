@@ -9,10 +9,11 @@
  * réelle est côté serveur et dans les politiques RLS.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { createClient } from "@/lib/supabase/client";
 import { CHAMBRAGE_READ_EVENT } from "../vestiaire/_components/chambrage/chat";
 
 interface Tab {
@@ -25,20 +26,34 @@ interface Tab {
   badge?: "chambrage";
 }
 
-/** Rythme du sondage : assez lent pour être invisible, assez vif pour animer. */
-const UNREAD_POLL_MS = 60_000;
+/**
+ * Rythme du sondage de secours. Audit P2, point 8 : c'était le SEUL mécanisme
+ * de mise à jour du badge (une requête par joueur connecté, par minute,
+ * indépendamment de toute activité réelle — un coût qui grandit avec le
+ * nombre de joueurs, sans plafond). Le temps réel Supabase (ci-dessous) fait
+ * désormais le travail ; ce sondage ne reste qu'en filet de sécurité, pour le
+ * cas où le canal WebSocket serait coupé (réseau instable, extension du
+ * navigateur qui bloque les WebSockets) — d'où l'intervalle nettement élargi.
+ */
+const UNREAD_POLL_MS = 5 * 60_000;
 
 /**
  * Le badge numérique des messages non lus de Chambrage.
  *
- * Sondage plutôt qu'état rendu par le serveur : un layout partagé n'est pas
- * rechargé à chaque navigation, le badge serait resté figé dans l'état du
- * premier chargement. Ici il se remet à jour à chaque changement d'écran, à
- * l'ouverture de Chambrage, et une fois par minute.
+ * Mis à jour par Supabase Realtime (`postgres_changes` sur `messages` et
+ * `message_reads`, déjà publiées côté base — migrations 0052 et 0055) dès
+ * qu'un message arrive dans une ligue du joueur, ou qu'une lecture est
+ * enregistrée (y compris depuis un autre onglet/appareil). Le sondage
+ * périodique ne sert plus que de filet de sécurité (voir UNREAD_POLL_MS) —
+ * il n'est plus le mécanisme principal de mise à jour.
  */
-function useUnreadChambrage(): number {
+function useUnreadChambrage(leagueIds: readonly string[]): number {
   const [count, setCount] = useState(0);
   const pathname = usePathname() ?? "";
+  const sb = useMemo(() => createClient(), []);
+  // Une chaîne stable pour la dépendance d'effet : un nouveau tableau à
+  // chaque rendu ne doit pas rouvrir les canaux temps réel.
+  const leagueKey = leagueIds.join(",");
 
   const refresh = useCallback(async () => {
     try {
@@ -66,6 +81,35 @@ function useUnreadChambrage(): number {
       window.removeEventListener(CHAMBRAGE_READ_EVENT, onRead);
     };
   }, [refresh, pathname]);
+
+  useEffect(() => {
+    const ids = leagueKey === "" ? [] : leagueKey.split(",");
+    if (ids.length === 0) return;
+
+    // Un canal par ligue, même filtre que dans le fil Chambrage lui-même
+    // (`src/app/(app)/vestiaire/_components/chambrage/chat.tsx`) : chaque
+    // nouveau message ou changement de lecture déclenche un nouveau sondage
+    // immédiat plutôt que d'attendre jusqu'à 5 minutes.
+    const channels = ids.map((leagueId) =>
+      sb
+        .channel(`bottom-nav-unread-${leagueId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "messages", filter: `league_id=eq.${leagueId}` },
+          () => refresh(),
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "message_reads", filter: `league_id=eq.${leagueId}` },
+          () => refresh(),
+        )
+        .subscribe(),
+    );
+
+    return () => {
+      for (const channel of channels) sb.removeChannel(channel);
+    };
+  }, [sb, leagueKey, refresh]);
 
   return count;
 }
@@ -182,10 +226,17 @@ function isActive(pathname: string, tab: Tab) {
   return tab.matches.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
+export function BottomNav({
+  isAdmin,
+  leagueIds = [],
+}: {
+  isAdmin: boolean;
+  /** Les ligues du joueur — pour l'abonnement temps réel du badge Chambrage. */
+  leagueIds?: readonly string[];
+}) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
-  const unreadChambrage = useUnreadChambrage();
+  const unreadChambrage = useUnreadChambrage(leagueIds);
   const tabs = isAdmin ? [...PLAYER_TABS, ADMIN_TAB] : PLAYER_TABS;
 
   // Chambrage, en mode conversation, occupe l'écran entier (`fixed inset-0`,
