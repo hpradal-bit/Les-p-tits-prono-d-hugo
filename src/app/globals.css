@@ -260,11 +260,19 @@ h1, h2, h3, .font-display {
 }
 
 /* Entrée d'un écran (via `template.tsx`, § navigation entre onglets) : un
-   fondu léger avec une légère montée, façon Instagram/Facebook — jamais un
-   glissement large qui donnerait le mal de mer sur un changement d'onglet. */
+   fondu, façon Instagram/Facebook.
+   ⚠️ Opacité seule, jamais `transform` : une valeur de `transform` autre que
+   `none` sur cet ancêtre — même `translateY(0)`, tenue en place par
+   `fill-mode: both` bien après la fin de l'animation — devient le nouveau
+   bloc englobant de tout descendant `position: fixed`. Or Chambrage
+   (`fixed inset-0`, § conversation plein écran) est un descendant direct de
+   ce fondu : sa zone de messages (`flex-1`, tributaire d'une hauteur reçue
+   d'un ancêtre dimensionné par le vrai viewport) s'effondrait à zéro pixel,
+   quand bien même les messages, eux, étaient bien chargés — panne réelle
+   du 21 septembre 2026, découverte à l'aide de la console du navigateur. */
 @keyframes screen-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .animate-screen-enter {
   animation: screen-enter 220ms ease-out both;
