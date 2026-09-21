@@ -21,9 +21,10 @@ import {
   type StandingsSnapshot,
 } from "@/lib/push/standings";
 import { flushDue } from "@/lib/push/notify";
-import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
+import { loadLeaguesForCompetition } from "@/lib/leagues/queries.ts";
 import { loadStandingsData } from "@/lib/standings/queries";
 import { computeStandings } from "@/lib/standings/engine";
+import { logger } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,19 +70,33 @@ export async function POST(request: Request) {
   try {
     const sb = createAdminClient();
     const ctx = await createSyncContext(sb, { seasonId: body.value.seasonId });
-    // Simplification documentée (docs/05-ETAT.md) : une seule ligue par
-    // compétition pour l'instant, comme à la clôture de journée.
-    const leagueId = await resolveLeagueForSeason(sb, ctx.season.id);
 
-    let snapshotBefore: StandingsSnapshot[] = [];
-    let namesById = new Map<string, string>();
-    if (leagueId) {
+    // Audit P0, point 3 : une compétition peut être jouée par plusieurs
+    // ligues indépendantes (`leagues.competition_id` n'est pas unique,
+    // migration 0033) — on prend donc un instantané AVANT/APRÈS et on
+    // notifie pour CHAQUE ligue active de cette compétition, jamais
+    // seulement la première créée (`resolveLeagueForSeason` ne convient
+    // plus ici : il ne renvoie qu'une seule ligue arbitraire).
+    const leagues = await loadLeaguesForCompetition(sb, ctx.season.competitionId);
+
+    const snapshotsBefore = new Map<
+      string,
+      { snapshot: StandingsSnapshot[]; namesById: Map<string, string> }
+    >();
+    for (const league of leagues) {
       try {
-        const snap = await takeStandingsSnapshot(sb, ctx.season.id, leagueId);
-        snapshotBefore = snap.snapshot;
-        namesById = snap.namesById;
-      } catch {
-        // un classement illisible ne doit pas bloquer la synchro
+        snapshotsBefore.set(
+          league.leagueId,
+          await takeStandingsSnapshot(sb, ctx.season.id, league.leagueId),
+        );
+      } catch (err) {
+        // un classement illisible pour une ligue ne doit pas bloquer la
+        // synchro, ni empêcher les autres ligues d'être notifiées.
+        logger.error("sync.live.snapshot_before_failed", {
+          leagueId: league.leagueId,
+          seasonId: ctx.season.id,
+          error: err,
+        });
       }
     }
 
@@ -100,32 +115,41 @@ export async function POST(request: Request) {
         );
         await queueExactScoreNotifications(sb, exactNotifs);
 
-        if (snapshotBefore.length > 0 && leagueId) {
+        for (const league of leagues) {
+          const before = snapshotsBefore.get(league.leagueId);
+          if (!before || before.snapshot.length === 0) continue;
           try {
-            const snapAfter = await takeStandingsSnapshot(sb, ctx.season.id, leagueId);
+            const after = await takeStandingsSnapshot(sb, ctx.season.id, league.leagueId);
             await emitAndNotifyStandingsChanges(
               sb,
               ctx.season.id,
-              leagueId,
-              snapshotBefore,
-              snapAfter.snapshot,
-              namesById,
+              league.leagueId,
+              before.snapshot,
+              after.snapshot,
+              before.namesById,
             );
           } catch (standingsErr) {
-            console.error("[sync/live] standings notifications :", standingsErr);
+            logger.error("sync.live.standings_notifications_failed", {
+              leagueId: league.leagueId,
+              seasonId: ctx.season.id,
+              error: standingsErr,
+            });
           }
         }
 
         await flushDue(sb);
       } catch (error) {
-        console.error("[sync/live] notifications :", error);
+        logger.error("sync.live.notifications_failed", {
+          seasonId: ctx.season.id,
+          error,
+        });
       }
     }
 
     return NextResponse.json(report, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[sync/live]", message);
+    logger.error("sync.live.failed", { message, error });
     return NextResponse.json({ error: message, status: "failed" }, { status: 500 });
   }
 }
