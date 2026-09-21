@@ -432,15 +432,23 @@ export function ChambrageChat({
     stickToBottomRef.current = true;
     requestAnimationFrame(() => scrollToBottom(true));
 
-    const result = await sendTextMessage({ leagueId, body, replyToId: optimistic.replyToId });
-    if (result.ok) {
-      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
-      setPendingStatus((p) => {
-        const next = { ...p };
-        delete next[tempId];
-        return next;
-      });
-    } else {
+    // `try/catch` : un rejet imprévu (réseau coupé, exception non attrapée
+    // côté serveur) ne doit jamais laisser le message bloqué en « envoi… »
+    // pour toujours — c'est aussi un échec, juste un que l'action n'a pas
+    // renvoyé proprement.
+    try {
+      const result = await sendTextMessage({ leagueId, body, replyToId: optimistic.replyToId });
+      if (result.ok) {
+        setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+        setPendingStatus((p) => {
+          const next = { ...p };
+          delete next[tempId];
+          return next;
+        });
+      } else {
+        setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+      }
+    } catch {
       setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
     }
   }
@@ -473,15 +481,19 @@ export function ChambrageChat({
     if (caption) formData.set("caption", caption);
     if (optimistic.replyToId) formData.set("replyToId", optimistic.replyToId);
 
-    const result = await sendImageMessage(formData);
-    if (result.ok) {
-      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
-      setPendingStatus((p) => {
-        const next = { ...p };
-        delete next[tempId];
-        return next;
-      });
-    } else {
+    try {
+      const result = await sendImageMessage(formData);
+      if (result.ok) {
+        setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+        setPendingStatus((p) => {
+          const next = { ...p };
+          delete next[tempId];
+          return next;
+        });
+      } else {
+        setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+      }
+    } catch {
       setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
     }
   }
@@ -508,15 +520,19 @@ export function ChambrageChat({
     stickToBottomRef.current = true;
     requestAnimationFrame(() => scrollToBottom(true));
 
-    const result = await sendGifMessage({ leagueId, gifUrl, replyToId: optimistic.replyToId });
-    if (result.ok) {
-      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
-      setPendingStatus((p) => {
-        const next = { ...p };
-        delete next[tempId];
-        return next;
-      });
-    } else {
+    try {
+      const result = await sendGifMessage({ leagueId, gifUrl, replyToId: optimistic.replyToId });
+      if (result.ok) {
+        setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+        setPendingStatus((p) => {
+          const next = { ...p };
+          delete next[tempId];
+          return next;
+        });
+      } else {
+        setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+      }
+    } catch {
       setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
     }
   }
@@ -549,35 +565,43 @@ export function ChambrageChat({
     formData.set("durationSeconds", String(durationSeconds));
     if (optimistic.replyToId) formData.set("replyToId", optimistic.replyToId);
 
-    const result = await sendVoiceMessage(formData);
-    if (result.ok) {
-      setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
-      setPendingStatus((p) => {
-        const next = { ...p };
-        delete next[tempId];
-        return next;
-      });
-    } else {
+    try {
+      const result = await sendVoiceMessage(formData);
+      if (result.ok) {
+        setMessages((prev) => mergeMessages(prev.filter((m) => m.id !== tempId), [result.data]));
+        setPendingStatus((p) => {
+          const next = { ...p };
+          delete next[tempId];
+          return next;
+        });
+      } else {
+        setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
+      }
+    } catch {
       setPendingStatus((p) => ({ ...p, [tempId]: "error" }));
     }
   }
 
   async function handleSendPoll(question: string, options: string[], allowsMultiple: boolean): Promise<boolean> {
-    const result = await sendPollMessage({
-      leagueId,
-      question,
-      options,
-      allowsMultiple,
-      replyToId: replyTo?.id ?? null,
-    });
-    if (!result.ok) return false;
+    try {
+      const result = await sendPollMessage({
+        leagueId,
+        question,
+        options,
+        allowsMultiple,
+        replyToId: replyTo?.id ?? null,
+      });
+      if (!result.ok) return false;
 
-    setMessages((prev) => mergeMessages(prev, [result.data.message]));
-    setPollOptions((prev) => mergePollOptions(prev, result.data.options));
-    setReplyTo(null);
-    stickToBottomRef.current = true;
-    requestAnimationFrame(() => scrollToBottom(true));
-    return true;
+      setMessages((prev) => mergeMessages(prev, [result.data.message]));
+      setPollOptions((prev) => mergePollOptions(prev, result.data.options));
+      setReplyTo(null);
+      stickToBottomRef.current = true;
+      requestAnimationFrame(() => scrollToBottom(true));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function handleVote(optionId: string, allowsMultiple: boolean) {

@@ -74,6 +74,10 @@ export function Composer({
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string; caption: string } | null>(
     null,
   );
+  // Regroupe photo/sondage/GIF derrière un seul bouton « + », comme WhatsApp :
+  // cinq icônes toujours visibles + le champ + le bouton d'envoi ne tenaient
+  // plus sur un petit écran, ce qui poussait « Envoyer » hors de l'écran.
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   // Position du « @ » qui ouvre l'autocomplétion en cours, et ce qui a été
   // tapé après — `null` quand aucune mention n'est en train de s'écrire.
   const [mentionStart, setMentionStart] = useState<number | null>(null);
@@ -418,7 +422,7 @@ export function Composer({
         <p className="px-3.5 pb-1.5 text-[12px] font-semibold text-wrong">{recorder.error}</p>
       )}
 
-      <div className="flex items-end gap-2 px-3 py-2.5">
+      <div className="relative flex items-end gap-2 px-3 py-2.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -436,36 +440,53 @@ export function Composer({
         </button>
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
-          aria-label="Envoyer une photo"
+          onClick={() => setAttachMenuOpen((v) => !v)}
+          className={cn(
+            "grid size-9 shrink-0 place-items-center rounded-full text-[20px] font-bold transition",
+            attachMenuOpen ? "bg-clay text-surface" : "text-ink-muted",
+          )}
+          aria-label="Photo, sondage ou GIF"
         >
-          📷
+          +
         </button>
-        <button
-          type="button"
-          onClick={() => setPollDraft(EMPTY_POLL_DRAFT)}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
-          aria-label="Créer un sondage"
-        >
-          📊
-        </button>
-        <button
-          type="button"
-          onClick={() => setGifPickerOpen(true)}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-[11px] font-black text-ink-muted"
-          aria-label="Envoyer un GIF"
-        >
-          GIF
-        </button>
-        <button
-          type="button"
-          onClick={recorder.start}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
-          aria-label="Enregistrer un vocal"
-        >
-          🎤
-        </button>
+
+        {attachMenuOpen && (
+          <div className="absolute bottom-[calc(100%+0.5rem)] left-3 z-10 flex gap-1.5 rounded-2xl border border-line bg-surface p-1.5 shadow-[var(--shadow-card)]">
+            <button
+              type="button"
+              onClick={() => {
+                setAttachMenuOpen(false);
+                fileInputRef.current?.click();
+              }}
+              className="grid size-11 place-items-center rounded-full text-[20px] text-ink-muted"
+              aria-label="Envoyer une photo"
+            >
+              📷
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAttachMenuOpen(false);
+                setPollDraft(EMPTY_POLL_DRAFT);
+              }}
+              className="grid size-11 place-items-center rounded-full text-[20px] text-ink-muted"
+              aria-label="Créer un sondage"
+            >
+              📊
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAttachMenuOpen(false);
+                setGifPickerOpen(true);
+              }}
+              className="grid size-11 place-items-center rounded-full text-[12px] font-black text-ink-muted"
+              aria-label="Envoyer un GIF"
+            >
+              GIF
+            </button>
+          </div>
+        )}
 
         <textarea
           ref={textareaRef}
@@ -501,21 +522,30 @@ export function Composer({
           placeholder="Écrire un message…"
           rows={1}
           disabled={disabled}
-          className="max-h-28 min-h-[38px] flex-1 resize-none rounded-[20px] border border-line bg-surface-sunk px-3.5 py-2 text-[14.5px] text-ink outline-none"
+          className="min-w-0 max-h-28 min-h-[38px] flex-1 resize-none rounded-[20px] border border-line bg-surface-sunk px-3.5 py-2 text-[14.5px] text-ink outline-none"
         />
 
-        <button
-          type="button"
-          onClick={submitText}
-          disabled={!canSendText || disabled}
-          className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-full text-[16px] font-bold transition",
-            canSendText && !disabled ? "bg-clay text-surface" : "bg-surface-sunk text-ink-faint",
-          )}
-          aria-label="Envoyer"
-        >
-          ➤
-        </button>
+        {canSendText ? (
+          <button
+            type="button"
+            onClick={submitText}
+            disabled={disabled}
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-clay text-[16px] font-bold text-surface transition"
+            aria-label="Envoyer"
+          >
+            ➤
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={recorder.start}
+            disabled={disabled}
+            className="grid size-9 shrink-0 place-items-center rounded-full text-[19px] text-ink-muted"
+            aria-label="Enregistrer un vocal"
+          >
+            🎤
+          </button>
+        )}
       </div>
 
       {pollDraft && (
