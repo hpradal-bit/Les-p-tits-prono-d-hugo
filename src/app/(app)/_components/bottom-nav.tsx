@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { CHAMBRAGE_READ_EVENT } from "../vestiaire/_components/chambrage/chat";
 
@@ -184,8 +184,18 @@ function isActive(pathname: string, tab: Tab) {
 
 export function BottomNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
   const unreadChambrage = useUnreadChambrage();
   const tabs = isAdmin ? [...PLAYER_TABS, ADMIN_TAB] : PLAYER_TABS;
+
+  // Chambrage, en mode conversation, occupe l'écran entier (`fixed inset-0`,
+  // § refonte plein écran) : la barre ne doit pas juste être recouverte, elle
+  // ne doit pas exister. La laisser montée provoquait une vraie panne — la
+  // promotion sur sa propre couche graphique (`transform`/`will-change`
+  // ci-dessous, ajoutée pour Safari iOS) la faisait parfois passer devant le
+  // composer malgré un z-index inférieur, cachant le champ de saisie.
+  const isChambrageChat = pathname === "/vestiaire" && (searchParams.get("filtre") ?? "chambrage") === "chambrage";
+  if (isChambrageChat) return null;
 
   return (
     <nav
