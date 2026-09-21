@@ -198,6 +198,10 @@ export async function resolveRoundPowers(
   const seasonId = round?.season_id as string | undefined;
   if (!seasonId) return { status: "error", message: "Journée introuvable." };
 
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, seasonId)) ?? undefined);
+
   const usages = await loadRoundUsages(admin, roundId);
   const active = usages.filter((u) => u.state === "declared" || u.state === "accepted");
 

@@ -60,11 +60,45 @@ export async function getViewerContext(): Promise<AdminContext | null> {
   };
 }
 
-/** Le contexte, à condition d'être administrateur. Lève sinon. */
-export async function requireAdmin(): Promise<AdminContext> {
+/**
+ * Le contexte, à condition d'être administrateur.
+ *
+ * Historiquement, le rôle admin était global (`group_members`) : n'importe
+ * quel administrateur pouvait agir sur n'importe quelle ligue. C'est une
+ * escalade de privilèges horizontale dès qu'une deuxième ligue existe avec un
+ * admin différent (audit technique, point 2, priorité P0).
+ *
+ * `leagueId`, quand il est fourni, ajoute une **deuxième** vérification, en
+ * plus de la vérification globale existante (jamais à sa place, pour ne rien
+ * casser du fonctionnement actuel — l'unique vrai groupe d'aujourd'hui est
+ * déjà administrateur des deux ligues réelles, migration `0033_leagues.sql`) :
+ * l'appelant doit aussi être `admin` dans `league_members` pour CETTE ligue
+ * précise. Un admin de la ligue A qui n'est pas admin de la ligue B échoue
+ * désormais cette deuxième vérification, même s'il reste admin « global ».
+ *
+ * Appeler `requireAdmin()` sans argument préserve exactement le comportement
+ * d'avant (compatibilité ascendante) : c'est encore le bon choix pour les
+ * actions qui ne portent sur aucune ligue précise (réglages globaux, gestion
+ * des joueurs, synchronisation).
+ */
+export async function requireAdmin(leagueId?: string): Promise<AdminContext> {
   const ctx = await getViewerContext();
   if (!ctx) throw new AdminError("Connexion requise.");
   if (!ctx.isAdmin) throw new AdminError("Action réservée à l'administration.");
+
+  if (leagueId) {
+    const service = createAdminClient();
+    const { data: membership } = await service
+      .from("league_members")
+      .select("role")
+      .eq("league_id", leagueId)
+      .eq("user_id", ctx.userId)
+      .maybeSingle();
+    if (!membership || membership.role !== "admin") {
+      throw new AdminError("Action réservée à l'administration de cette ligue.");
+    }
+  }
+
   return ctx;
 }
 

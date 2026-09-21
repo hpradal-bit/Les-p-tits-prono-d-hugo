@@ -24,6 +24,8 @@ import {
   type ReminderSlotInput,
 } from "@/lib/push/lock-reminder-settings";
 import { requireAdmin, AdminError } from "./auth";
+import { resolveLeagueForRound, resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
+import { logger } from "@/lib/log";
 import { logAdminAction, MissingReasonError } from "./log";
 import { adminFail, adminOk, type AdminActionState } from "./types";
 import { loadActiveSeason } from "@/lib/standings/queries";
@@ -69,7 +71,7 @@ function handle(error: unknown): AdminActionState {
     return adminFail("La raison est obligatoire.", { fieldErrors: { reason: [error.message] } });
   }
   if (error instanceof AdminError) return adminFail(error.message);
-  console.error("[admin]", error);
+  logger.error("admin.action_failed", { error });
   return adminFail("L'action a échoué. Réessaie dans un instant.");
 }
 
@@ -125,6 +127,11 @@ export async function recordResult(
       .eq("id", fixtureId)
       .single();
     if (bErr) throw bErr;
+
+    // Deuxième vérification, par ligue cette fois (audit P0, point 2) : un
+    // admin de la ligue A ne doit pas pouvoir saisir le résultat d'un match
+    // d'une ligue B dont il n'est pas administrateur.
+    await requireAdmin(await resolveLeagueForRound(admin, before.round_id as string) ?? undefined);
 
     const { error: uErr } = await admin
       .from("fixtures")
@@ -188,6 +195,9 @@ async function clearFixtureResult(
     .select("id, round_id, home_score, away_score, status")
     .eq("id", fixtureId).single();
   if (bErr) throw bErr;
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+  await requireAdmin(await resolveLeagueForRound(admin, before.round_id as string) ?? undefined);
 
   const { error: uErr } = await admin
     .from("fixtures")
@@ -263,6 +273,9 @@ export async function changeKickoff(
       .from("fixtures").select("id, round_id, kickoff_at, locks_at").eq("id", fixtureId).single();
     if (bErr) throw bErr;
 
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(await resolveLeagueForRound(admin, before.round_id as string) ?? undefined);
+
     const { data: setting } = await admin
       .from("app_settings").select("value").eq("key", "lock.minutes_before_kickoff").maybeSingle();
     const lockMinutes = Number(setting?.value ?? 120);
@@ -321,6 +334,8 @@ export async function applyRoundDefaultsAction(
     const { roundId } = parsed.data;
 
     const admin = createAdminClient();
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(await resolveLeagueForRound(admin, roundId) ?? undefined);
     const report = await applyDefaultPredictionsForRound(admin, roundId);
 
     await logAdminAction(admin, {
@@ -386,6 +401,8 @@ export async function recomputeRoundAction(
     const { roundId } = parsed.data;
 
     const admin = createAdminClient();
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(await resolveLeagueForRound(admin, roundId) ?? undefined);
     const summary = await recomputeRound(admin, roundId);
 
     await logAdminAction(admin, {
@@ -683,6 +700,8 @@ export async function updatePoints(
       return adminFail("Valeurs invalides.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
     const { leagueId, wrong, winner, winnerAndMargin, exactScore, scope } = parsed.data;
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(leagueId);
 
     // La cascade doit rester croissante, sinon viser juste ferait perdre des points.
     if (!(wrong <= winner && winner <= winnerAndMargin && winnerAndMargin <= exactScore)) {
@@ -748,6 +767,8 @@ export async function updateLockDelay(
       return adminFail("Délai invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
     const { leagueId, minutesBeforeKickoff } = parsed.data;
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(leagueId);
 
     const admin = createAdminClient();
     const season = await loadActiveSeason(admin, leagueId);
@@ -841,6 +862,8 @@ export async function updateExactScoreQuota(
       return adminFail("Quota invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
     const { leagueId, quota: rawQuota, period, scope } = parsed.data;
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(leagueId);
 
     // Champ vide = illimité. On le distingue de zéro, qui interdit tout.
     const quota = rawQuota.trim() === "" ? null : Number(rawQuota);
@@ -907,6 +930,8 @@ export async function updateMarginBucket(
       return adminFail("Tranche invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
     const { leagueId, bucketId, label, minPoints, maxPoints: rawMax, scope } = parsed.data;
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(leagueId);
 
     // Champ vide = borne haute ouverte (la dernière tranche, « 41 et + »).
     const maxPoints = rawMax.trim() === "" ? null : Number(rawMax);
@@ -1131,6 +1156,8 @@ export async function adjustPoints(
       return adminFail("Ajustement invalide.", { fieldErrors: fieldErrorsOf(parsed.error) });
     }
     const { leagueId, userId, delta, roundId: rawRound } = parsed.data;
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(leagueId);
     const reason = parsed.data.reason && parsed.data.reason.length > 0
       ? parsed.data.reason
       : "Ajustement manuel depuis l'espace admin.";
@@ -1213,6 +1240,11 @@ export async function revertAdjustment(
     if (original.source_id) {
       return adminFail("Cet ajustement en annule déjà un autre.");
     }
+
+    // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult.
+    await requireAdmin(
+      (await resolveLeagueForSeason(admin, original.season_id as string)) ?? undefined,
+    );
 
     const { error: iErr } = await admin.from("point_adjustments").insert({
       user_id: original.user_id,

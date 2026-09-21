@@ -211,6 +211,44 @@ export async function resolveLeagueForSeason(
 }
 
 /**
+ * La ligue d'une journée (`rounds.id`), par la même route que
+ * `resolveLeagueForSeason` : journée → saison → compétition → première ligue.
+ * Utilisée pour vérifier une autorisation d'administration par ligue
+ * (`requireAdmin(leagueId)`, `src/lib/admin/auth.ts`) sur une action qui ne
+ * porte, dans son formulaire, qu'un `roundId`.
+ */
+export async function resolveLeagueForRound(
+  sb: SupabaseClient,
+  roundId: Uuid,
+): Promise<Uuid | null> {
+  const { data: round } = await sb
+    .from("rounds")
+    .select("season_id")
+    .eq("id", roundId)
+    .maybeSingle();
+  if (!round) return null;
+  return resolveLeagueForSeason(sb, round.season_id as string);
+}
+
+/**
+ * La ligue d'un match (`fixtures.id`) : match → journée → saison →
+ * compétition → première ligue. Même usage que `resolveLeagueForRound`, pour
+ * les actions d'administration qui ne portent qu'un `fixtureId`.
+ */
+export async function resolveLeagueForFixture(
+  sb: SupabaseClient,
+  fixtureId: Uuid,
+): Promise<Uuid | null> {
+  const { data: fixture } = await sb
+    .from("fixtures")
+    .select("round_id")
+    .eq("id", fixtureId)
+    .maybeSingle();
+  if (!fixture) return null;
+  return resolveLeagueForRound(sb, fixture.round_id as string);
+}
+
+/**
  * Résout la ligue à afficher : celle demandée en paramètre si le joueur en est
  * membre, sinon sa plus ancienne ligue. `null` s'il n'est dans aucune —
  * à l'appelant de rediriger vers `/accueil`.

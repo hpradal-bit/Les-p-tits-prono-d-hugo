@@ -45,6 +45,10 @@ export async function awardRoundBadges(roundId: string): Promise<AdminActionStat
   const leagueId = await resolveLeagueForSeason(admin, seasonId);
   if (!leagueId) return { status: "error", message: "Aucune ligue pour cette compétition." };
 
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin(leagueId);
+
   const [data, settings, badges, alreadyEarned] = await Promise.all([
     loadStandingsData(admin, season, leagueId),
     loadSettings(admin),

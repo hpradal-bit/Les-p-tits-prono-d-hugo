@@ -36,6 +36,11 @@ export async function settleRound(
   // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
   const seasonId = round.season_id as string;
 
+  // Deuxième vérification, par ligue (audit P0, point 2) : un admin de la
+  // ligue A ne doit pas pouvoir clôturer une journée d'une ligue B dont il
+  // n'est pas administrateur.
+  await requireAdmin((await resolveLeagueForSeason(admin, seasonId)) ?? undefined);
+
   const { data: fixtureRows } = await admin
     .from("fixtures")
     .select("id, status")

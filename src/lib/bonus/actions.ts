@@ -53,6 +53,9 @@ export async function createBonusQuestion(
   const ctx = await requireAdmin();
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Données invalides." };
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin(parsed.data.leagueId);
 
   const kd = requireKind(parsed.data.kind);
   const config = parsed.data.config ?? kd.configExample;
@@ -122,10 +125,14 @@ export async function updateBonusQuestion(
   const admin = createAdminClient();
   const { data: q } = await admin
     .from("bonus_questions")
-    .select("id, kind, status, config")
+    .select("id, kind, status, config, season_id")
     .eq("id", questionId)
     .single();
   if (!q) return { status: "error", message: "Question introuvable." };
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
 
   const kd = requireKind(q.kind as string);
   const update: Record<string, unknown> = { prompt };
@@ -205,10 +212,14 @@ export async function deleteBonusQuestion(
   const admin = createAdminClient();
   const { data: q } = await admin
     .from("bonus_questions")
-    .select("id, prompt, status")
+    .select("id, prompt, status, season_id")
     .eq("id", parsed.data.questionId)
     .single();
   if (!q) return { status: "error", message: "Question introuvable." };
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
 
   await admin.from("admin_actions").insert({
     admin_id: ctx.userId,
@@ -242,6 +253,10 @@ export async function openBonusQuestion(
 
   if (!q) return { status: "error", message: "Question introuvable." };
   if (q.status !== "draft") return { status: "error", message: "Seul un brouillon peut être ouvert." };
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
 
   const now = new Date();
   const cfg = q.config as Record<string, unknown> | null;
@@ -307,6 +322,17 @@ export async function closeBonusQuestion(
   const ctx = await requireAdmin();
   const admin = createAdminClient();
 
+  const { data: q } = await admin
+    .from("bonus_questions")
+    .select("season_id")
+    .eq("id", questionId)
+    .single();
+  if (!q) return { status: "error", message: "Question introuvable." };
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
+
   const { error } = await admin
     .from("bonus_questions")
     .update({ status: "closed", closes_at: new Date().toISOString() })
@@ -338,7 +364,7 @@ export async function settleBonusQuestion(
 
   const { data: q } = await admin
     .from("bonus_questions")
-    .select("id, kind, config, scoring, status, prompt")
+    .select("id, kind, config, scoring, status, prompt, season_id")
     .eq("id", parsed.data.questionId)
     .single();
 
@@ -346,6 +372,10 @@ export async function settleBonusQuestion(
   if (q.status !== "open" && q.status !== "closed") {
     return { status: "error", message: "La question doit être ouverte ou fermée pour être réglée." };
   }
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
 
   const kd = requireKind(q.kind as string);
 
@@ -480,6 +510,10 @@ export async function settleBonusFromStandings(
   if (q.status !== "open" && q.status !== "closed") {
     return { status: "error", message: "La question doit être ouverte ou fermée." };
   }
+
+  // Deuxième vérification, par ligue (audit P0, point 2) : voir recordResult
+  // dans src/lib/admin/actions.ts.
+  await requireAdmin((await resolveLeagueForSeason(admin, q.season_id as string)) ?? undefined);
 
   const config = q.config as { options: { value: string; label: string }[]; count: number; rankFrom?: "top" | "bottom" };
   const count = config.count ?? 3;
