@@ -13,6 +13,16 @@ const nextConfig: NextConfig = {
      * restent visibles tout de suite.
      */
     staleTimes: { dynamic: 20, static: 300 },
+    /**
+     * Par défaut, Next.js refuse tout appel de Server Action au-delà d'1 Mo —
+     * bien en dessous d'une photo de téléphone (jusqu'à 8 Mo, `MAX_IMAGE_BYTES`)
+     * ou d'un vocal (jusqu'à 6 Mo, `MAX_AUDIO_BYTES`). Confirmé en production :
+     * `Error: Body exceeded 1 MB limit.` sur /vestiaire, plusieurs joueurs,
+     * chaque envoi de photo. Next.js compte les octets de `multipart/form-data`
+     * lui-même (limites, en-têtes de partie) en plus du fichier — marge au-delà
+     * du plus gros fichier accepté.
+     */
+    serverActions: { bodySizeLimit: "10mb" },
   },
 };
 
