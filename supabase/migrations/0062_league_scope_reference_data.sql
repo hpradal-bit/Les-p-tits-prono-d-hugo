@@ -80,6 +80,35 @@ revoke all on function public.is_admin_of_league(uuid) from public;
 grant execute on function public.is_admin_of_league(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- 0bis. Réparation : la ligue Pro D2 prévue en 0033 n'existe pas
+-- ---------------------------------------------------------------------------
+-- 0033 prévoyait de créer DEUX ligues à partir de l'unique groupe historique
+-- ('COPAINS' pour le Top 14, 'PRODTEST' pour la Pro D2). Seule 'COPAINS'
+-- existe en base aujourd'hui — 'PRODTEST' n'a jamais été créée (vérifié :
+-- `select * from leagues` ne renvoie qu'une seule ligne). La saison Pro D2
+-- 2026/2027 est pourtant active avec 15 matchs déjà synchronisés. Sans ce
+-- correctif, resserrer seasons/rounds/fixtures sur `is_league_member` (section
+-- 1 ci-dessous) rendrait TOUTE la Pro D2 invisible pour tout le monde dès
+-- l'application de cette migration — un vrai incident de production, pas une
+-- hypothèse. On recrée cette ligue manquante avec les mêmes membres/rôles que
+-- 'COPAINS' (c'est exactement ce qu'ils voient déjà aujourd'hui via
+-- `is_member()`), avant de resserrer quoi que ce soit.
+insert into leagues (competition_id, name, join_key, created_by)
+select c.id, 'Prono des copains — Pro D2', 'PRODTEST', l.created_by
+from competitions c
+join leagues l on l.join_key = 'COPAINS'
+where c.code = 'prod2'
+on conflict (join_key) do nothing;
+
+insert into league_members (league_id, user_id, role)
+select pd2.id, lm.user_id, lm.role
+from leagues pd2
+join leagues copains on copains.join_key = 'COPAINS'
+join league_members lm on lm.league_id = copains.id
+where pd2.join_key = 'PRODTEST'
+on conflict (league_id, user_id) do nothing;
+
+-- ---------------------------------------------------------------------------
 -- 1. Le référentiel sportif partagé — via league_of_season / league_of_round
 -- ---------------------------------------------------------------------------
 
