@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRulesetAt } from "../settings/index.ts";
 import { computeScore } from "./index.ts";
 import { resolveFixturePowers } from "../powers/resolve.ts";
+import { loadLeaguesForCompetition } from "../leagues/queries.ts";
+import { logger } from "../log.ts";
 import type { FixtureResult, Prediction, Ruleset, Uuid } from "../types.ts";
 
 /**
@@ -101,6 +103,53 @@ export interface RecomputeSummary {
  *
  * @param admin client de service — seul le serveur écrit des points.
  */
+/**
+ * Rafraîchit `league_standings_cache` (migration 0064) pour TOUTES les ligues
+ * actives d'une saison donnée — jamais une seule ligue arbitraire, même
+ * pattern que les notifications de classement (`sync/live/route.ts`) : une
+ * compétition peut être jouée par plusieurs ligues indépendantes.
+ *
+ * Best-effort : une ligue dont le rafraîchissement échoue ne doit ni bloquer
+ * le recalcul des scores (déjà écrit à ce stade) ni empêcher les autres
+ * ligues d'être rafraîchies.
+ */
+async function refreshStandingsCacheForSeasons(
+  admin: SupabaseClient,
+  seasonIds: Iterable<Uuid>,
+): Promise<void> {
+  for (const seasonId of new Set(seasonIds)) {
+    const { data: seasonRow, error: seasonErr } = await admin
+      .from("seasons")
+      .select("competition_id")
+      .eq("id", seasonId)
+      .maybeSingle();
+    if (seasonErr || !seasonRow) continue;
+
+    let leagues: Array<{ leagueId: Uuid }> = [];
+    try {
+      leagues = await loadLeaguesForCompetition(admin, seasonRow.competition_id as string);
+    } catch {
+      continue;
+    }
+
+    for (const league of leagues) {
+      const { error: rpcErr } = await admin.rpc("refresh_league_standings_cache", {
+        p_league_id: league.leagueId,
+        p_season_id: seasonId,
+      });
+      if (rpcErr) {
+        // Le cache n'est qu'un accélérateur secondaire — `loadStandingsData`
+        // reste la source de vérité si son rafraîchissement échoue.
+        logger.error("scoring.persist.refresh_standings_cache_failed", {
+          leagueId: league.leagueId,
+          seasonId,
+          error: rpcErr,
+        });
+      }
+    }
+  }
+}
+
 export async function recomputeFixtures(
   admin: SupabaseClient,
   fixtureIds: Uuid[],
@@ -109,6 +158,8 @@ export async function recomputeFixtures(
     fixtures: 0, predictions: 0, exactScores: 0, points: 0, cleared: 0,
   };
   if (fixtureIds.length === 0) return summary;
+
+  const touchedSeasonIds = new Set<Uuid>();
 
   const { data: fixtures, error } = await admin
     .from("fixtures")
@@ -132,6 +183,11 @@ export async function recomputeFixtures(
     const predictions = (predictionRows ?? []).map(toPrediction);
     if (predictions.length === 0) continue;
 
+    const { data: round, error: rErr } = await admin
+      .from("rounds").select("season_id").eq("id", fixture.round_id).single();
+    if (rErr) throw rErr;
+    touchedSeasonIds.add(round.season_id as Uuid);
+
     // Pas de résultat : on efface, on ne laisse pas de points orphelins.
     if (fixture.home_score === null || fixture.away_score === null) {
       const { error: dErr } = await admin
@@ -142,10 +198,6 @@ export async function recomputeFixtures(
       summary.cleared += predictions.length;
       continue;
     }
-
-    const { data: round, error: rErr } = await admin
-      .from("rounds").select("season_id").eq("id", fixture.round_id).single();
-    if (rErr) throw rErr;
 
     const key = `${round.season_id}@${fixture.locks_at}`;
     let ruleset = rulesetByKey.get(key);
@@ -185,6 +237,12 @@ export async function recomputeFixtures(
     summary.exactScores += plan.exactScorers.length;
     summary.points += plan.totalPoints;
   }
+
+  // Point de passage unique de tout recalcul de scores (route de synchro
+  // live, clôture de journée, actions d'admin) : c'est ici, et nulle part
+  // ailleurs, que `league_standings_cache` (migration 0064) doit être tenu à
+  // jour, pour toutes les ligues actives des saisons touchées.
+  await refreshStandingsCacheForSeasons(admin, touchedSeasonIds);
 
   return summary;
 }

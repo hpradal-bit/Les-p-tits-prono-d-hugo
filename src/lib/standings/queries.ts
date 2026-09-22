@@ -232,28 +232,48 @@ export async function loadStandingsData(
 
   const roundIds = roundsDetail.map((r) => r.id);
 
-  const [fixturesRes, scoresRes, bonusRes] = await Promise.all([
+  // `fixtures` d'abord : `prediction_scores` n'a pas de colonne saison en
+  // propre (elle passe par `predictions.fixture_id → fixtures.round_id →
+  // rounds.season_id`), donc le seul filtre fiable côté base est de borner
+  // aux matchs de CETTE saison, obtenus ici. Avant ce correctif, la requête
+  // ci-dessous n'avait AUCUN filtre au niveau base : elle lisait
+  // `prediction_scores` en entier, pour toutes les saisons et ligues jamais
+  // jouées, et ne filtrait qu'ensuite en JavaScript (`fixtures.get(...)`).
+  const fixturesRes =
     roundIds.length === 0
-      ? Promise.resolve({ data: [], error: null })
-      : sb.from("fixtures").select("id, round_id, status, kickoff_at").in("round_id", roundIds),
-    sb
-      .from("prediction_scores")
-      .select(
-        "prediction_id, points, breakdown, is_official, predictions!inner(user_id, fixture_id)",
-      ),
-    sb
-      .from("bonus_scores")
-      .select("user_id, points, bonus_questions!inner(season_id, round_id)"),
-  ]);
-
+      ? { data: [], error: null }
+      : await sb
+          .from("fixtures")
+          .select("id, round_id, status, kickoff_at")
+          .in("round_id", roundIds);
   if (fixturesRes.error) throw fixturesRes.error;
-  if (scoresRes.error) throw scoresRes.error;
-  if (bonusRes.error) throw bonusRes.error;
 
   const fixtures = new Map<string, RawFixtureRow>();
   for (const f of (fixturesRes.data ?? []) as unknown as RawFixtureRow[]) {
     fixtures.set(f.id, f);
   }
+  const fixtureIds = [...fixtures.keys()];
+
+  const [scoresRes, bonusRes] = await Promise.all([
+    fixtureIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : sb
+          .from("prediction_scores")
+          .select(
+            "prediction_id, points, breakdown, is_official, predictions!inner(user_id, fixture_id)",
+          )
+          .in("predictions.fixture_id", fixtureIds),
+    // Même logique côté bonus : `bonus_questions.season_id` est filtrable
+    // directement (une jointure, pas trois) — plus besoin du filtre JS
+    // `question.season_id !== season.id` pour écarter les autres saisons.
+    sb
+      .from("bonus_scores")
+      .select("user_id, points, bonus_questions!inner(season_id, round_id)")
+      .eq("bonus_questions.season_id", season.id),
+  ]);
+
+  if (scoresRes.error) throw scoresRes.error;
+  if (bonusRes.error) throw bonusRes.error;
 
   const entries: ScoreEntry[] = [];
   for (const row of (scoresRes.data ?? []) as unknown as RawScoreRow[]) {
