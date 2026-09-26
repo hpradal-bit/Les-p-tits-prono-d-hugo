@@ -60,7 +60,6 @@ import {
 } from "./fixtures-repo.ts";
 import { closeRun, lastSuccessfulRun, openRun, recordProviderUsage, type SyncRunResult } from "./runs.ts";
 import { logger } from "../../log.ts";
-import { logHighlightlyLeaguesOnce } from "../diag-highlightly.ts";
 
 export interface LiveSyncOptions {
   /** Date à interroger (`YYYY-MM-DD`). Par défaut : aujourd'hui, heure de Paris. */
@@ -116,10 +115,6 @@ export async function syncLive(
 ): Promise<LiveSyncReport> {
   const { sb } = ctx;
   const now = options.now ?? new Date();
-
-  // DIAGNOSTIC TEMPORAIRE (voir diag-highlightly.ts) : n'agit que si
-  // DIAG_SECRET est posé côté Vercel, et ne coûte rien sinon (retour immédiat).
-  await logHighlightlyLeaguesOnce();
 
   const windowSettings = {
     liveIntervalMinutes: setting(ctx.settings, "sync.live_interval_minutes", 5),
