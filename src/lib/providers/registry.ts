@@ -1,9 +1,11 @@
 /**
  * La chaîne de fournisseurs et sa règle de bascule.
  *
- * TheSportsDB en premier (gratuit, 30 req/min). En cas d'échec, Highlightly
- * (100 req/jour). Puis ESPN (gratuit, sans quota, mais API non documentée).
- * Enfin API-Sports (100 req/jour, ne couvre que 2022-2024 en gratuit).
+ * `createProviderChain` ne fait qu'assembler le VIVIER de fournisseurs
+ * disponibles (TheSportsDB, puis Highlightly/ESPN/API-Sports selon les clés
+ * posées et les quotas restants) — l'ORDRE final, spécifique à chaque nature
+ * de synchro (`calendar`/`live`/`standings`), est décidé ensuite par
+ * `orderChain`/`readProviderOrder` (voir `DEFAULT_PROVIDER_ORDER` ci-dessous).
  *
  * Si tous échouent, on ne casse rien : l'appelant garde la dernière donnée
  * connue en base et la panne est journalisée dans `sync_runs`.
@@ -104,18 +106,34 @@ export type SyncKind = "calendar" | "live" | "standings";
 /**
  * L'ordre de préférence par nature de synchronisation.
  *
- * TheSportsDB en tête partout : 30 req/min, pas de quota journalier, données
- * décalées de 5-10 min (acceptable pour des pronostics). Highlightly en second
- * (100 req/jour, mais API structurée et fiable). ESPN en troisième (gratuit
- * mais non documenté). API-Sports en dernier (100 req/jour, saisons limitées
- * en gratuit).
+ * TheSportsDB en tête pour `calendar` et `standings` : 30 req/min, pas de
+ * quota journalier, et son tiers gratuit (`eventsseason.php`,
+ * `lookuptable.php`) donne bien un calendrier et un classement de saison —
+ * un léger décalage de 5-10 min y est sans conséquence.
  *
- * Ces valeurs vivent dans `app_settings` (`sync.provider_order`) : les changer
- * ne demande pas de redéploiement.
+ * PAS pour `live` : contrairement à ce qu'affirmait ce commentaire avant le
+ * 26 septembre, le tiers gratuit de TheSportsDB n'a AUCUN score en direct —
+ * `livescore.php` (le vrai temps réel) est réservé aux abonnés Patreon, et
+ * l'endpoint gratuit qu'utilise `getLiveScores` (`eventsseason.php`, encore
+ * lui) reste le calendrier de saison, limité à 15 requêtes/jour. Il répond
+ * toujours sans erreur — un match qu'il ne sait qu'annoncer « scheduled »
+ * n'y change rien — donc `runWithFallback` ne bascule jamais vers un
+ * fournisseur qui, lui, sait dire qu'un match est terminé. C'est ce qui a
+ * laissé des matchs entiers bloqués `scheduled` des heures après leur coup
+ * d'envoi. Highlightly (live réel, 100 req/jour) et API-Sports (codes de
+ * statut FT/HT/2H documentés, saison Top 14 déjà référencée) passent donc
+ * devant pour `live`. TheSportsDB reste dans la chaîne — gratuit et sans
+ * quota, il peut occasionnellement avoir la donnée — mais en dernier recours.
+ *
+ * Ces valeurs vivent dans `app_settings` (`sync.provider_order`), lu par
+ * `readProviderOrder`/`createSyncContext.chainFor` : c'est CE réglage qui
+ * fait foi en production, pas ces valeurs par défaut (repli si la ligne
+ * `app_settings` est absente ou vide). Les changer ne demande pas de
+ * redéploiement.
  */
 export const DEFAULT_PROVIDER_ORDER: Record<SyncKind, string[]> = {
   calendar: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
-  live: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
+  live: [HIGHLIGHTLY, APISPORTS, ESPN, THESPORTSDB],
   standings: [THESPORTSDB, HIGHLIGHTLY, ESPN, APISPORTS],
 };
 

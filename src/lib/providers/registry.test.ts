@@ -230,11 +230,16 @@ test("un objet impossible à sérialiser ne fait pas tomber la synchronisation",
 /**
  * Ordre de préférence par nature de synchronisation.
  *
- * TheSportsDB en tête partout (30 req/min, pas de quota journalier),
- * Highlightly en second (100 req/jour, API structurée), ESPN en troisième
- * (gratuit mais non documenté), API-Sports en dernier (saisons limitées).
+ * `calendar`/`standings` : TheSportsDB en tête (30 req/min, pas de quota
+ * journalier, son tiers gratuit sait faire un calendrier/classement de
+ * saison), Highlightly en second, ESPN en troisième, API-Sports en dernier.
+ *
+ * `live` : PAS TheSportsDB en tête — son tiers gratuit n'a aucun score en
+ * direct (voir le commentaire de `DEFAULT_PROVIDER_ORDER`). Highlightly
+ * (live réel) puis API-Sports (statuts documentés) passent devant ; ESPN
+ * ensuite ; TheSportsDB en dernier recours seulement.
  */
-test("TheSportsDB en tête, puis Highlightly, ESPN, API-Sports", () => {
+test("calendar/standings : TheSportsDB en tête ; live : Highlightly puis API-Sports en tête", () => {
   const chain = {
     providers: [
       fake("thesportsdb", "ok"),
@@ -245,13 +250,19 @@ test("TheSportsDB en tête, puis Highlightly, ESPN, API-Sports", () => {
     skipped: [],
   };
 
-  for (const kind of ["calendar", "live", "standings"] as const) {
+  for (const kind of ["calendar", "standings"] as const) {
     assert.deepEqual(
       orderChain(chain, readProviderOrder(null, kind)).providers.map((p) => p.name),
       ["thesportsdb", "highlightly", "espn", "apisports"],
       kind,
     );
   }
+
+  assert.deepEqual(
+    orderChain(chain, readProviderOrder(null, "live")).providers.map((p) => p.name),
+    ["highlightly", "apisports", "espn", "thesportsdb"],
+    "live",
+  );
 });
 
 test("un ordre venu de la base l'emporte sur les valeurs par défaut", () => {

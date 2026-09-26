@@ -1,9 +1,23 @@
 /**
- * Fournisseur principal : TheSportsDB (v1, gratuit).
+ * Fournisseur pour `calendar`/`standings` : TheSportsDB (v1, gratuit).
  *
- * 30 requêtes par minute, pas de quota journalier. Les scores en direct sont
- * décalés de 5 à 10 minutes sur l'offre gratuite — acceptable pour des
- * pronostics entre amis, pas pour du trading sportif.
+ * 30 requêtes par minute, pas de quota journalier — confortable pour un
+ * calendrier de saison ou un classement, que `getFixtures`/`getStandings`
+ * lisent via `eventsseason.php`/`lookuptable.php`, bien dans le tiers gratuit.
+ *
+ * CORRECTION (26 septembre) : le commentaire précédent affirmait que « les
+ * scores en direct sont décalés de 5 à 10 minutes sur l'offre gratuite » —
+ * c'est faux, et ça a coûté des matchs entiers restés `scheduled` des heures
+ * après leur coup d'envoi (voir le commentaire de `DEFAULT_PROVIDER_ORDER`
+ * dans `registry.ts`). TheSportsDB documente lui-même que le vrai temps réel
+ * (`livescore.php`) est réservé aux abonnés Patreon. `getLiveScores` ci-dessous
+ * réutilise `eventsseason.php` — le calendrier de saison, PAS un flux en
+ * direct — parce que c'est tout ce que le tiers gratuit offre ; il répond
+ * sans erreur mais peut très bien renvoyer un match encore « scheduled » bien
+ * après son coup d'envoi réel. C'est pourquoi TheSportsDB est classé en
+ * dernier recours pour `live` (`DEFAULT_PROVIDER_ORDER`/`app_settings.sync.
+ * provider_order`), même s'il reste dans la chaîne — gratuit, sans quota, il
+ * peut occasionnellement avoir la donnée à jour.
  *
  * L'identifiant de ligue (4430 pour le Top 14, 5172 pour la Pro D2) vit dans
  * `external_refs` : rien n'est écrit en dur ici.
