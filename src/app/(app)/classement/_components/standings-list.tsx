@@ -15,10 +15,17 @@ export function StandingsList({
   rows,
   viewerId,
   clubs = [],
+  livePreviewByUser,
 }: {
   rows: StandingsRow[];
   viewerId: string | null;
   clubs?: readonly ClubAvatar[];
+  /**
+   * Points d'aperçu en direct déjà inclus dans `row.points`, par joueur — sert
+   * seulement à afficher le détail (« dont +3 en direct »), jamais à les
+   * recalculer. `undefined` ou objet vide : aucun calque en direct ici.
+   */
+  livePreviewByUser?: Record<string, number>;
 }) {
   if (rows.length === 0) {
     return (
@@ -70,9 +77,20 @@ export function StandingsList({
                 <Movement value={row.movement} />
               </div>
 
-              <span className="tabular w-12 shrink-0 text-right font-mono text-lg font-bold text-ink">
-                {row.points}
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className="tabular w-12 text-right font-mono text-lg font-bold text-ink">
+                  {row.points}
+                </span>
+                {!!livePreviewByUser?.[row.player.userId] && (
+                  <span
+                    className="tabular flex items-center gap-1 rounded-full border border-dashed border-live px-1.5 py-0.5 font-mono text-[10px] font-bold text-live"
+                    title="Aperçu en direct, non officiel — se confirmera à la fin du match"
+                  >
+                    <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden />
+                    +{livePreviewByUser[row.player.userId]} live
+                  </span>
+                )}
+              </div>
               </Link>
             </li>
           );

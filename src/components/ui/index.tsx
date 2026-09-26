@@ -81,6 +81,28 @@ export function ScorePill({ level, points }: { level: ScoreLevel; points: number
   );
 }
 
+/**
+ * Aperçu de points EN DIRECT, non officiel — volontairement distinct de
+ * `ScorePill` (bord en pointillés, point qui clignote, texte « direct ») pour
+ * qu'on ne le confonde jamais avec une vraie note posée par le barème.
+ * Recalculé à chaque lecture, jamais persisté (voir `scoring/live-preview.ts`).
+ */
+export function LivePreviewPill({ points }: { points: number }) {
+  return (
+    <span
+      title="Aperçu en direct, non officiel — se confirmera à la fin du match"
+      className={cn(
+        "tabular inline-flex items-center gap-1.5 rounded-full border border-dashed border-live px-2.5 py-0.5",
+        "font-mono text-xs font-semibold text-live",
+      )}
+    >
+      <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden />
+      {points > 0 ? `+${points}` : points}
+      <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">direct</span>
+    </span>
+  );
+}
+
 /** Logo du club, avec repli en monogramme aux couleurs du club. */
 export function TeamLogo({ team, size = 32 }: { team: Team; size?: number }) {
   if (team.logoUrl) {

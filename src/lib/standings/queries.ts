@@ -30,6 +30,9 @@ import {
   type PlayedFixture,
 } from "./competition-table";
 import { loadPowerUses } from "@/lib/predictions/breakdowns";
+import { loadRulesetAt } from "@/lib/settings";
+import { computeLivePreview } from "@/lib/scoring/live-preview";
+import type { Prediction as ScoringPrediction, Ruleset } from "@/lib/types";
 
 export interface SeasonRef {
   id: Uuid;
@@ -491,6 +494,122 @@ export async function loadRoundFixtures(
     }));
 }
 
+/**
+ * Les points que chaque joueur gagnerait, EN CE MOMENT, sur TOUS les matchs
+ * `live`/`halftime` de la saison — si leurs scores actuels devenaient
+ * définitifs. Purement calculé à la lecture (voir `scoring/live-preview.ts`),
+ * rien n'est écrit. Sans match en direct, renvoie un tableau vide.
+ *
+ * À l'échelle de la saison plutôt que d'une seule journée précise : un match
+ * qui vient de démarrer appartient à une journée qui n'a encore AUCUN résultat
+ * officiel, donc qui n'existe pas encore pour `playedRounds`/`computeStandings`
+ * (voir `engine.ts`) — la contraindre à une journée déjà « jouée » manquerait
+ * justement le cas qui nous intéresse. En pratique, une seule journée a des
+ * matchs en direct à un instant donné.
+ *
+ * Ne considère que les pronostics pas encore notés officiellement — en
+ * pratique, un match `live`/`halftime` n'en a jamais (`recomputeFixtures` ne
+ * note qu'un match `official`), mais le filtre coûte une requête et évite
+ * toute ambiguïté si l'invariant changeait un jour.
+ */
+export async function loadSeasonLivePreview(
+  sb: SupabaseClient,
+  seasonId: Uuid,
+): Promise<{ userId: Uuid; fixtureId: Uuid; points: number }[]> {
+  const { data: roundRows, error: roundsError } = await sb
+    .from("rounds")
+    .select("id")
+    .eq("season_id", seasonId);
+  if (roundsError) throw roundsError;
+  const roundIds = (roundRows ?? []).map((r) => (r as { id: string }).id);
+  if (roundIds.length === 0) return [];
+
+  const { data: fixtureRows, error } = await sb
+    .from("fixtures")
+    .select("id, home_score, away_score, status, locks_at")
+    .in("round_id", roundIds)
+    .in("status", ["live", "halftime"]);
+  if (error) throw error;
+
+  const liveFixtures = (fixtureRows ?? []) as Array<{
+    id: string;
+    home_score: number | null;
+    away_score: number | null;
+    status: FixtureStatus;
+    locks_at: string;
+  }>;
+  const scored = liveFixtures.filter((f) => f.home_score !== null && f.away_score !== null);
+  if (scored.length === 0) return [];
+
+  const fixtureIds = scored.map((f) => f.id);
+  const predictionsRes = await sb
+    .from("predictions")
+    .select(
+      "id, user_id, fixture_id, outcome, margin_bucket_id, margin_value, exact_home_score, exact_away_score, is_auto",
+    )
+    .in("fixture_id", fixtureIds);
+  if (predictionsRes.error) throw predictionsRes.error;
+
+  const predictionRows = (predictionsRes.data ?? []) as Array<{
+    id: string;
+    user_id: string;
+    fixture_id: string;
+    outcome: MatchOutcome;
+    margin_bucket_id: string | null;
+    margin_value: number | null;
+    exact_home_score: number | null;
+    exact_away_score: number | null;
+    is_auto: boolean;
+  }>;
+  if (predictionRows.length === 0) return [];
+
+  const { data: alreadyScoredRows, error: scoredError } = await sb
+    .from("prediction_scores")
+    .select("prediction_id")
+    .in("prediction_id", predictionRows.map((p) => p.id));
+  if (scoredError) throw scoredError;
+  const alreadyScored = new Set(
+    ((alreadyScoredRows ?? []) as Array<{ prediction_id: string }>).map((r) => r.prediction_id),
+  );
+
+  const rulesetByFixture = new Map<string, Ruleset>();
+  const results: { userId: Uuid; fixtureId: Uuid; points: number }[] = [];
+
+  for (const fixture of scored) {
+    const predictions = predictionRows.filter(
+      (p) => p.fixture_id === fixture.id && !alreadyScored.has(p.id),
+    );
+    if (predictions.length === 0) continue;
+
+    let ruleset = rulesetByFixture.get(fixture.id);
+    if (!ruleset) {
+      ruleset = await loadRulesetAt(sb, seasonId, new Date(fixture.locks_at));
+      rulesetByFixture.set(fixture.id, ruleset);
+    }
+
+    for (const p of predictions) {
+      const preview = computeLivePreview(
+        {
+          id: p.id,
+          userId: p.user_id,
+          fixtureId: p.fixture_id,
+          outcome: p.outcome,
+          marginBucketId: p.margin_bucket_id,
+          marginValue: p.margin_value,
+          exactHomeScore: p.exact_home_score,
+          exactAwayScore: p.exact_away_score,
+          isAuto: p.is_auto,
+        } satisfies ScoringPrediction,
+        { homeScore: fixture.home_score!, awayScore: fixture.away_score! },
+        ruleset,
+      );
+      results.push({ userId: p.user_id, fixtureId: fixture.id, points: preview.points });
+    }
+  }
+
+  return results;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Match Center                                                               */
 /* -------------------------------------------------------------------------- */
@@ -538,6 +657,14 @@ export interface MatchPrediction {
    * que le pouvoir n'a rien changé.
    */
   pointAdjustment: number;
+  /**
+   * Aperçu NON OFFICIEL : ce que ce pronostic vaudrait si le score en direct
+   * (celui affiché à l'écran, pas encore corroboré/officialisé) devenait le
+   * score final. Recalculé à chaque lecture de la page, jamais stocké.
+   * `null` sauf quand le match est `live`/`halftime` avec un score connu ET
+   * que le pronostic n'a pas encore été noté officiellement (`score === null`).
+   */
+  livePreview: { points: number; level: ScoreLevel } | null;
 }
 
 export interface MatchCenterData {
@@ -658,6 +785,17 @@ export async function loadMatchCenter(
     lastSyncedAt: raw.last_synced_at,
   };
 
+  // Aperçu en direct : uniquement pendant que le match tourne, avec un score
+  // à afficher. Le barème est celui qui s'appliquera réellement à ce match une
+  // fois officialisé — le même que lirait `recomputeFixtures` — pour que
+  // l'aperçu et la vraie note, plus tard, ne se contredisent jamais.
+  const isLiveNow = raw.status === "live" || raw.status === "halftime";
+  const hasLiveScore = raw.home_score !== null && raw.away_score !== null;
+  const liveRuleset =
+    isLiveNow && hasLiveScore && round?.season_id
+      ? await loadRulesetAt(sb, round.season_id, new Date(raw.locks_at)).catch(() => null)
+      : null;
+
   const predictionRows = (predictionsRes.data ?? []) as Array<{
     id: string;
     user_id: string;
@@ -735,6 +873,30 @@ export async function loadMatchCenter(
   const predictions: MatchPrediction[] = predictionRows.map((p) => {
     const rawScore = scores.get(p.id);
     const breakdown = rawScore ? parseBreakdown(rawScore.breakdown) : null;
+
+    // Pas encore noté officiellement (`rawScore` absent) et le match tourne :
+    // on calcule l'aperçu, jamais l'inverse — un match déjà noté garde sa
+    // vraie note, jamais un aperçu à côté qui pourrait laisser croire qu'elle
+    // pourrait encore changer.
+    const livePreview =
+      !rawScore && liveRuleset && raw.home_score !== null && raw.away_score !== null
+        ? computeLivePreview(
+            {
+              id: p.id,
+              userId: p.user_id,
+              fixtureId: raw.id,
+              outcome: p.outcome,
+              marginBucketId: p.margin_bucket_id,
+              marginValue: p.margin_value,
+              exactHomeScore: p.exact_home_score,
+              exactAwayScore: p.exact_away_score,
+              isAuto: p.is_auto,
+            } satisfies ScoringPrediction,
+            { homeScore: raw.home_score, awayScore: raw.away_score },
+            liveRuleset,
+          )
+        : null;
+
     return {
       player: profiles.get(p.user_id) ?? {
         userId: p.user_id,
@@ -759,6 +921,7 @@ export async function loadMatchCenter(
           : null,
       missing: false,
       pointAdjustment: adjustmentByUser.get(p.user_id) ?? 0,
+      livePreview: livePreview ? { points: livePreview.points, level: livePreview.level } : null,
     };
   });
 
@@ -784,6 +947,7 @@ export async function loadMatchCenter(
       score: null,
       missing: true,
       pointAdjustment: 0,
+      livePreview: null,
     }));
 
   const allPredictions = [...scoped, ...missing];

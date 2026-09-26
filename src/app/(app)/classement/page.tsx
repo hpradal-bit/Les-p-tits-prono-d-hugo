@@ -24,10 +24,12 @@ import {
 import {
   loadActiveSeason,
   loadRoundFixtures,
+  loadSeasonLivePreview,
   loadStandingsData,
   loadStandingsHistory,
   type RoundFixture,
 } from "@/lib/standings/queries";
+import { applyLivePreview } from "@/lib/standings/live-preview";
 import { loadPointsHistory } from "@/lib/standings/points-history";
 import { loadActivePowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries.ts";
 import { buildPowerCounters } from "@/lib/powers/counters.ts";
@@ -154,6 +156,13 @@ export default async function ClassementPage({
     roundId: askedRound,
   });
 
+  // Calque « en direct » : purement calculé à la lecture, jamais persisté (voir
+  // `standings/live-preview.ts`). Sans match en cours, `liveTable` est
+  // identique à `table`, avec `hasLivePreview: false` — l'écran ne doit alors
+  // montrer aucun badge « provisoire ».
+  const livePreviewContributions = await loadSeasonLivePreview(sb, season.id);
+  const liveTable = applyLivePreview(table, livePreviewContributions);
+
   const referenceIndex = played.findIndex((r) => r.id === table.referenceRoundId);
   const referenceRound = referenceIndex >= 0 ? played[referenceIndex] : null;
   const countedRounds = data.rounds.filter((r) => table.roundIds.includes(r.id));
@@ -256,6 +265,30 @@ export default async function ClassementPage({
           qui vient de se créer doit voir ses membres, à 0 point, plutôt qu'un
           écran vide qui laisserait croire à une panne. */}
       <StandingsList rows={table.rows} viewerId={viewer.id} clubs={clubs} />
+
+      {liveTable.hasLivePreview && (
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden />
+            <Label className="text-live">Classement en direct</Label>
+          </div>
+          <p className="font-mono text-[11px] leading-relaxed text-ink-faint">
+            Non officiel, se confirmera à la fin du match — inclut les points que
+            chacun gagnerait si le score en direct des matchs en cours devenait
+            définitif.
+          </p>
+          <StandingsList
+            rows={liveTable.rows}
+            viewerId={viewer.id}
+            clubs={clubs}
+            livePreviewByUser={Object.fromEntries(
+              liveTable.rows
+                .filter((r) => r.livePreviewPoints !== 0)
+                .map((r) => [r.player.userId, r.livePreviewPoints]),
+            )}
+          />
+        </section>
+      )}
       {table.referenceRoundId === null ? (
         <Card className="p-5 text-sm leading-relaxed text-ink-muted">
           {effectivePortee === "officiel"

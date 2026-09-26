@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PlayerAvatar } from "../../_components/player-avatar";
-import { ScorePill } from "@/components/ui";
+import { LivePreviewPill, ScorePill } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { MatchPrediction } from "@/lib/standings/queries";
@@ -91,6 +91,8 @@ export function RevealRow({
           )}
           <ScorePill level={score.level} points={score.points + prediction.pointAdjustment} />
         </span>
+      ) : prediction.livePreview ? (
+        <LivePreviewPill points={prediction.livePreview.points} />
       ) : prediction.exactHomeScore !== null ? (
         <span className="shrink-0 rounded-full bg-clay-soft px-2.5 py-1 text-[11px] font-bold text-clay">
           exact
