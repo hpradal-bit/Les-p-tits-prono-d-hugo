@@ -60,6 +60,7 @@ import {
 } from "./fixtures-repo.ts";
 import { closeRun, lastSuccessfulRun, openRun, recordProviderUsage, type SyncRunResult } from "./runs.ts";
 import { logger } from "../../log.ts";
+import { logHighlightlyLeaguesOnce } from "../diag-highlightly.ts";
 
 export interface LiveSyncOptions {
   /** Date à interroger (`YYYY-MM-DD`). Par défaut : aujourd'hui, heure de Paris. */
@@ -115,6 +116,10 @@ export async function syncLive(
 ): Promise<LiveSyncReport> {
   const { sb } = ctx;
   const now = options.now ?? new Date();
+
+  // DIAGNOSTIC TEMPORAIRE (voir diag-highlightly.ts) : n'agit que si
+  // DIAG_SECRET est posé côté Vercel, et ne coûte rien sinon (retour immédiat).
+  await logHighlightlyLeaguesOnce();
 
   const windowSettings = {
     liveIntervalMinutes: setting(ctx.settings, "sync.live_interval_minutes", 5),
@@ -282,10 +287,20 @@ export async function syncLive(
 
   // --- Rattrapage des matchs abandonnés par la fenêtre ----------------------
   //
-  // La passe normale n'interroge que les matchs du jour. Un match dont le
-  // fournisseur n'a jamais annoncé la fin sort de sa fenêtre et n'est plus
-  // jamais redemandé : il reste `live` avec un score figé en cours de match.
-  // Ce second passage va rechercher ces matchs à *leur* date.
+  // La passe normale n'interroge que les matchs du jour, et seulement le
+  // premier fournisseur de la chaîne qui répond sans erreur (`runWithFallback`
+  // s'arrête là). Un fournisseur dont le tiers gratuit ne sait tout simplement
+  // pas dire qu'un match est terminé — TheSportsDB, notamment, cf. son fichier
+  // — répond quand même, sans erreur, avec un match toujours « scheduled » :
+  // la bascule vers un fournisseur capable de mieux ne se déclenche jamais.
+  // Ce second passage va donc rechercher CE fournisseur, à *leur* date — y
+  // compris celle du jour : un match du jour resté bloqué a autant besoin
+  // d'interroger tous les fournisseurs qu'un match d'un jour précédent.
+  //
+  // C'était le bug du 26 septembre : le match Perpignan–UBB de 12h30 restait
+  // `scheduled` des heures après le coup d'envoi parce que sa date (celle
+  // d'aujourd'hui) était explicitement exclue de ce rattrapage — seul le
+  // premier passage, limité à TheSportsDB, le voyait.
   const staleSettings = {
     matchWindowMinutes: windowSettings.matchWindowMinutes,
     lookbackDays: setting(ctx.settings, "sync.catchup_lookback_days", 14),
@@ -293,7 +308,7 @@ export async function syncLive(
   const maxCatchupDates = setting(ctx.settings, "sync.catchup_max_dates_per_run", 2);
 
   const stale = findStaleFixtures(now, seasonFixtures, staleSettings);
-  const catchupDates = staleDatesToQuery(stale, maxCatchupDates).filter((d) => d !== date);
+  const catchupDates = staleDatesToQuery(stale, maxCatchupDates);
 
   for (const staleDate of catchupDates) {
     const dayStart = new Date(`${staleDate}T00:00:00.000Z`);

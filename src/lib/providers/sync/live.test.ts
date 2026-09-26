@@ -291,3 +291,122 @@ describe("rattrapage d'un jour resté bloqué : couverture partielle d'un fourni
     );
   });
 });
+
+/**
+ * Le bug réel du 26 septembre : un match du JOUR MÊME (pas d'un jour
+ * précédent) reste `scheduled` des heures après son coup d'envoi parce que le
+ * premier fournisseur de la chaîne (celui dont le tiers gratuit ne sait pas
+ * annoncer une fin de match) répond quand même, sans erreur — et parce que le
+ * rattrapage excluait explicitement la date du jour, jamais rejouée avec les
+ * autres fournisseurs de la chaîne.
+ */
+describe("rattrapage d'un match resté bloqué LE JOUR MÊME de son coup d'envoi", () => {
+  const KICKOFF_TODAY = "2026-09-26T12:30:00.000Z";
+  /** Bien après la fenêtre de 135 min, mais toujours le même jour calendaire. */
+  const SAME_DAY_LATER = new Date("2026-09-26T16:43:00.000Z");
+
+  function namedProvider(name: string, fixtures: ProviderFixture[]): SportsDataProvider {
+    return {
+      name,
+      dailyQuota: null,
+      getFixtures: async () => ({ provider: name, data: [], requestsUsed: 1, warnings: [] }),
+      getLiveScores: async () => ({ provider: name, data: fixtures, requestsUsed: 1, warnings: [] }),
+      getStandings: async () => ({ provider: name, data: [], requestsUsed: 1, warnings: [] }),
+    };
+  }
+
+  function seedStuckFixture() {
+    return {
+      seasons: [{ id: SEASON, label: "2026/2027", competition_id: "c1", starts_on: "2026-09-01", status: "active" }],
+      rounds: [{ id: "r1", season_id: SEASON, number: 4, name: "J4" }],
+      fixtures: [{
+        id: "stuck-fixture", round_id: "r1", season_id: SEASON,
+        home_team_id: "t-home", away_team_id: "t-away",
+        kickoff_at: KICKOFF_TODAY, kickoff_confirmed: true, locks_at: "2026-09-26T10:30:00.000Z",
+        status: "scheduled", home_score: null, away_score: null, minute: null,
+        venue: null, data_source: "alpha", updated_at: null, last_synced_at: null,
+      }],
+      external_refs: [
+        { provider: "alpha", entity_type: "season", entity_id: SEASON, external_id: "s-alpha" },
+        { provider: "beta", entity_type: "season", entity_id: SEASON, external_id: "s-beta" },
+      ],
+      sync_runs: [],
+      events: [],
+    };
+  }
+
+  function twoProviderContext(sb: unknown, aFixtures: ProviderFixture[], bFixtures: ProviderFixture[]): SyncContext {
+    const chain = { providers: [namedProvider("alpha", aFixtures), namedProvider("beta", bFixtures)], skipped: [] };
+    return {
+      sb,
+      season: { id: SEASON, label: "2026/2027", competitionId: "c1", startsOn: "2026-09-01", endsOn: null },
+      settings: [],
+      teams: [
+        { id: "t-home", name: "Perpignan", shortName: "USAP", code: "USAP" },
+        { id: "t-away", name: "Union Bordeaux Begles", shortName: "UBB", code: "UBB" },
+      ],
+      aliases: {},
+      chain,
+      chainFor: () => chain,
+      lockMinutes: 120,
+      apisportsUsedToday: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  test("un second fournisseur rattrape le score AUJOURD'HUI, sans attendre le lendemain", async () => {
+    const fake = fakeSupabase(seedStuckFixture());
+
+    // Le fournisseur principal répond — sans erreur — que le match n'a
+    // toujours pas commencé (exactement ce que fait le tiers gratuit de
+    // TheSportsDB pour un match terminé depuis longtemps).
+    const alphaStillScheduled = providerFixture({
+      externalId: "a-stuck",
+      kickoffAt: KICKOFF_TODAY,
+      status: "scheduled",
+      homeTeam: { externalId: "e-home", name: "Perpignan", aliases: [] },
+      awayTeam: { externalId: "e-away", name: "Union Bordeaux Begles", aliases: [] },
+      homeScore: null,
+      awayScore: null,
+    });
+    // Le second fournisseur, lui, sait que le match est terminé.
+    const betaFinished = providerFixture({
+      externalId: "b-stuck",
+      kickoffAt: KICKOFF_TODAY,
+      status: "finished",
+      homeTeam: { externalId: "e-home", name: "Perpignan", aliases: [] },
+      awayTeam: { externalId: "e-away", name: "Union Bordeaux Begles", aliases: [] },
+      homeScore: 27,
+      awayScore: 19,
+    });
+
+    const report = await syncLive(
+      twoProviderContext(fake.client, [alphaStillScheduled], [betaFinished]),
+      {
+        now: SAME_DAY_LATER,
+        recompute: async (_sb, ids) => ({ fixtures: ids.length, predictions: 0 }),
+      },
+    );
+
+    const fixture = fake.db.fixtures.find((f) => f.id === "stuck-fixture") as {
+      status: string;
+      home_score: number | null;
+      away_score: number | null;
+    };
+    // Le match a kické il y a 253 min (> officialAfterMinutes = 180), et le
+    // second fournisseur confirme le même score dans la même passe : le
+    // recoupement (`corroborateAndPromote`, toujours actif) l'officialise
+    // aussitôt — le pronostic est donc noté dès ce cycle, pas au suivant.
+    assert.equal(
+      fixture.status,
+      "official",
+      "le second fournisseur doit rattraper puis officialiser le score le jour même, sans attendre le lendemain",
+    );
+    assert.equal(fixture.home_score, 27);
+    assert.equal(fixture.away_score, 19);
+    assert.ok(
+      report.finished.includes("stuck-fixture"),
+      "le match doit être signalé comme terminé dans le rapport de synchro",
+    );
+  });
+});
