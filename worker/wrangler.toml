@@ -1,11 +1,44 @@
 # ============================================================================
 # Planificateur de synchronisation — Cloudflare Worker
 # ----------------------------------------------------------------------------
-# Offre gratuite : 100 000 requêtes par jour, cron compris. On en consomme 288
-# (un réveil toutes les 5 minutes). Chaque réveil appelle au moins
-# /api/push/dispatch (rappels avant verrouillage — une simple requête
-# Postgres, sans quota) ; les appels aux fournisseurs de données sportives,
-# eux, restent throttlés hors fenêtre de match.
+# Offre gratuite : 100 000 requêtes par jour, cron compris — largement de quoi
+# se réveiller toutes les 2 minutes (720 réveils/jour, contre 288 à */5 avant
+# ce changement) ; Cloudflare autorise même la minute (vérifié sur la
+# documentation Workers, septembre 2026 : jusqu'à 5 déclencheurs cron sur
+# l'offre gratuite, granularité d'une minute). La limite qui compte n'est PAS
+# celle-ci : c'est le quota gratuit d'Highlightly, 100 requêtes/jour
+# (`app_settings.sync.highlightly_daily_quota`), le fournisseur de direct
+# préféré (voir `sync.provider_order`) — chaque appel couvre TOUTE la journée
+# de matchs en une requête (`getLiveScores`, dans
+# `src/lib/providers/highlightly.ts`), donc le coût dépend de la fenêtre de
+# match, pas du nombre de matchs.
+#
+# Calcul, journée la plus chargée : un samedi de Top 14 avec plusieurs coups
+# d'envoi à ~14h30 puis un à ~19h (`sync.match_window_minutes` = 135 minutes
+# chacun) s'enchaînent SANS creux — la fenêtre en direct dure alors environ
+# 6h50 en continu (14h25 → 21h15). En resserrant `sync.live_interval_minutes`
+# de 10 à 6 (voir la migration/mise à jour de `app_settings` associée à ce
+# commit) : 410 min / 6 ≈ 69 requêtes Highlightly, + une marge de ~6 pour le
+# passage quotidien (calendrier/classement, généralement servi par TheSportsDB,
+# pas Highlightly) et le rattrapage borné (`sync.catchup_max_dates_per_run` = 2,
+# `sync.corroboration_max_dates_per_run` = 1) → ~75/100, soit ~25 requêtes de
+# marge. La Pro D2 (`EXTRA_SYNC_SEASON_IDS` ci-dessous) est incluse dans ce
+# calcul par prudence, mais son calendrier est vide au-delà du 4 septembre
+# 2026 (banc d'essai terminé) : elle ne consomme donc rien tant qu'aucun match
+# n'y est programmé.
+#
+# Filet de sécurité, INDÉPENDANT de ce calcul : si Highlightly est quand même
+# épuisé un jour (100/100), `createProviderChain`
+# (`src/lib/providers/registry.ts`) l'exclut purement et simplement de la
+# chaîne pour le reste de la journée — la synchro retombe sur ESPN (gratuit,
+# sans quota), jamais sur une erreur ni un dépassement. Resserrer la cadence
+# ne peut donc, au pire, que faire basculer plus tôt sur ce filet — jamais
+# casser l'application.
+#
+# Chaque réveil appelle au moins /api/push/dispatch (rappels avant
+# verrouillage — une simple requête Postgres, sans quota) ; les appels aux
+# fournisseurs de données sportives, eux, restent throttlés hors fenêtre de
+# match (cadence lente `sync.idle_interval_minutes`, inchangée par ce commit).
 #
 # Déploiement : par GitHub Actions — voir
 # `.github/workflows/deploy-worker.yml`. Toute modification de `worker/`
@@ -26,10 +59,15 @@ compatibility_date = "2026-08-01"
 # d'administrateur — bien mieux qu'une adresse devinable.
 workers_dev = false
 
-# Réveil toutes les 5 minutes. Le Worker décide ensuite s'il y a lieu d'appeler
-# quoi que ce soit : hors fenêtre de match, il ne fait rien.
+# Réveil toutes les 2 minutes (était toutes les 5) : c'est ce qui permet à
+# `sync.live_interval_minutes` (resserré à 6 minutes en base, voir le calcul de
+# quota ci-dessus) de se traduire en cadence RÉELLE — avec un cron à 5 minutes,
+# le Worker ne pouvait constater qu'un passage était « dû » qu'à son prochain
+# réveil, ajoutant jusqu'à 5 minutes de retard. Le Worker décide toujours
+# lui-même s'il y a lieu d'appeler quoi que ce soit : hors fenêtre de match, il
+# ne fait rien.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/2 * * * *"]
 
 [vars]
 # L'application déployée. L'adresse *stable* du projet, jamais celle d'un
