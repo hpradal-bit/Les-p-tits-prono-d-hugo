@@ -94,6 +94,81 @@ test("parseHighlightlyMatches : réponse vide → erreur", () => {
   assert.throws(() => parseHighlightlyMatches({}), /aucune clé/);
 });
 
+// --- Forme réelle observée en production (26/09, Pau–La Rochelle) -----------
+//
+// Highlightly ne renvoie ni un `status` plat ni un `score` en objet : les
+// deux sont nichés sous `state`, et le score est une chaîne unique
+// « home - away ». `mapHighlightlyStatus` recevait donc l'OBJET `state`
+// lui-même (jamais une chaîne), retombait systématiquement sur "scheduled",
+// et le score ne se lisait jamais — pour un match en direct comme pour un
+// match terminé. C'est ce qui laissait ce match "scheduled" en base alors
+// que Highlightly le donnait 20-3, première mi-temps.
+test("parseHighlightlyMatches : forme réelle en direct (state.description + state.score)", () => {
+  const payload = {
+    data: [
+      {
+        id: 46044990,
+        date: "2026-09-26T19:00:00.000Z",
+        state: { score: "20 - 3", description: "First half" },
+        homeTeam: { id: 90139, name: "Section Paloise" },
+        awayTeam: { id: 85884, name: "Stade Rochelais" },
+      },
+    ],
+  };
+  const { fixtures, warnings } = parseHighlightlyMatches(payload);
+  assert.equal(warnings.length, 0);
+  const f = fixtures[0];
+  assert.equal(f.status, "live");
+  assert.equal(f.homeScore, 20);
+  assert.equal(f.awayScore, 3);
+});
+
+test("parseHighlightlyMatches : forme réelle, match terminé (state.description = Finished)", () => {
+  const payload = {
+    data: [
+      {
+        id: 46043288,
+        date: "2026-09-26T14:35:00.000Z",
+        state: { score: "21 - 10", description: "Finished" },
+        homeTeam: { id: 88437, name: "RC Toulon" },
+        awayTeam: { id: 105457, name: "Vannes" },
+      },
+    ],
+  };
+  const { fixtures } = parseHighlightlyMatches(payload);
+  assert.equal(fixtures[0].status, "finished");
+  assert.equal(fixtures[0].homeScore, 21);
+  assert.equal(fixtures[0].awayScore, 10);
+});
+
+test("parseHighlightlyMatches : forme réelle, seconde mi-temps et mi-temps", () => {
+  const second = parseHighlightlyMatches({
+    data: [
+      {
+        id: "1",
+        date: "2026-09-26T19:00:00.000Z",
+        state: { score: "20 - 10", description: "Second half" },
+        homeTeam: { id: "1", name: "A" },
+        awayTeam: { id: "2", name: "B" },
+      },
+    ],
+  }).fixtures[0];
+  assert.equal(second.status, "live");
+
+  const ht = parseHighlightlyMatches({
+    data: [
+      {
+        id: "2",
+        date: "2026-09-26T19:00:00.000Z",
+        state: { score: "10 - 3", description: "Half Time" },
+        homeTeam: { id: "1", name: "A" },
+        awayTeam: { id: "2", name: "B" },
+      },
+    ],
+  }).fixtures[0];
+  assert.equal(ht.status, "halftime");
+});
+
 // --- Parsing du classement ---------------------------------------------------
 
 test("parseHighlightlyStandings : format tableau direct", () => {

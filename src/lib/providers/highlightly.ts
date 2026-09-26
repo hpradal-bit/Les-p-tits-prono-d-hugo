@@ -28,7 +28,6 @@ import {
   type SportsDataProvider,
 } from "./types.ts";
 import type { FixtureStatus } from "@/lib/types";
-import { logger } from "../log.ts";
 
 export const HIGHLIGHTLY = "highlightly";
 export const HIGHLIGHTLY_FREE_QUOTA = 100;
@@ -60,11 +59,37 @@ function mapHighlightlyStatus(raw: unknown): FixtureStatus {
   const s = (asString(raw) ?? "").toLowerCase().trim();
   if (!s || s === "not started" || s === "ns" || s === "scheduled" || s === "tbd") return "scheduled";
   if (s === "ht" || s === "half time" || s === "halftime") return "halftime";
-  if (s.includes("live") || s === "1h" || s === "2h" || s === "in progress" || s === "ongoing") return "live";
+  if (
+    s.includes("live") ||
+    s === "1h" ||
+    s === "2h" ||
+    s === "in progress" ||
+    s === "ongoing" ||
+    // Forme réelle de `state.description` en direct : « First half »,
+    // « Second half » — jamais un simple "live", ce que la liste ci-dessus
+    // supposait à tort (bug du 26/09, Pau–La Rochelle).
+    s.includes("half")
+  ) {
+    return "live";
+  }
   if (s.includes("finished") || s === "ft" || s === "ended" || s === "completed" || s === "full time") return "finished";
   if (s.includes("postponed") || s === "pst") return "postponed";
   if (s.includes("cancel") || s.includes("abandon") || s === "canc" || s === "abd") return "cancelled";
   return "scheduled";
+}
+
+/**
+ * Le score en direct de Highlightly n'est pas `{home, away}` mais une chaîne
+ * unique « 20 - 3 » sous `state.score`. C'était la seconde moitié du bug du
+ * 26 septembre : `dig(m, "score", "home")` ne trouvait jamais rien, `score`
+ * n'étant pas un objet à cet endroit de la réponse.
+ */
+function parseHighlightlyScoreString(raw: unknown): { home: number | null; away: number | null } {
+  const s = asString(raw);
+  if (!s) return { home: null, away: null };
+  const match = s.match(/(-?\d+)\s*[-–]\s*(-?\d+)/);
+  if (!match) return { home: null, away: null };
+  return { home: Number(match[1]), away: Number(match[2]) };
 }
 
 function parseHighlightlyTeam(raw: unknown): ProviderTeam | null {
@@ -137,14 +162,29 @@ export function parseHighlightlyMatches(payload: unknown): {
       continue;
     }
 
-    const status = mapHighlightlyStatus(
-      m.status ?? m.state ?? dig(m, "fixture", "status", "short"),
-    );
+    // La forme réelle observée en production (26/09) place le statut et le
+    // score sous un objet `state` : `{ description: "First half", score:
+    // "20 - 3" }` — jamais la chaîne plate que `mapHighlightlyStatus`
+    // attendait, ni l'objet `{home, away}` que `dig(m, "score", ...)`
+    // cherchait. On garde les anciennes formes en repli (documentées par les
+    // tests), et on ajoute la forme réelle.
+    const stateObj = asRecord(m.state);
+    const statusRaw =
+      asString(m.status) ??
+      asString(stateObj?.description) ??
+      asString(stateObj?.status) ??
+      asString(dig(m, "fixture", "status", "short"));
+    const status = mapHighlightlyStatus(statusRaw);
 
-    const homeScore =
+    let homeScore =
       asNumber(m.homeScore ?? m.home_score ?? dig(m, "score", "home") ?? dig(m, "goals", "home"));
-    const awayScore =
+    let awayScore =
       asNumber(m.awayScore ?? m.away_score ?? dig(m, "score", "away") ?? dig(m, "goals", "away"));
+    if (homeScore === null || awayScore === null) {
+      const fromState = parseHighlightlyScoreString(stateObj?.score ?? m.score);
+      homeScore = homeScore ?? fromState.home;
+      awayScore = awayScore ?? fromState.away;
+    }
     const scoresKnown = status !== "scheduled" && homeScore !== null && awayScore !== null;
 
     const minute = status === "live" ? (asNumber(m.minute) ?? asNumber(m.elapsed) ?? null) : null;
@@ -274,17 +314,6 @@ export function createHighlightlyProvider(options: HighlightlyOptions): SportsDa
         season,
         date,
       });
-      // DIAGNOSTIC TEMPORAIRE — À SUPPRIMER une fois la panne du direct
-      // Pau–La Rochelle (26/09, 19h00) comprise. Ne log que la ligue Top 14
-      // (14400) pour ne pas polluer les autres championnats.
-      if (leagueId === "14400") {
-        logger.info("diag.highlightly.live.raw", {
-          leagueId,
-          season,
-          date,
-          payload: JSON.stringify(payload).slice(0, 6000),
-        });
-      }
       const { fixtures, warnings } = parseHighlightlyMatches(payload);
       return { provider: HIGHLIGHTLY, data: fixtures, requestsUsed: 1, warnings };
     },
