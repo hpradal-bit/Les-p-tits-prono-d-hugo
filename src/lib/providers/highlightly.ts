@@ -28,6 +28,7 @@ import {
   type SportsDataProvider,
 } from "./types.ts";
 import type { FixtureStatus } from "@/lib/types";
+import { logger } from "../log.ts";
 
 export const HIGHLIGHTLY = "highlightly";
 export const HIGHLIGHTLY_FREE_QUOTA = 100;
@@ -273,6 +274,17 @@ export function createHighlightlyProvider(options: HighlightlyOptions): SportsDa
         season,
         date,
       });
+      // DIAGNOSTIC TEMPORAIRE — À SUPPRIMER une fois la panne du direct
+      // Pau–La Rochelle (26/09, 19h00) comprise. Ne log que la ligue Top 14
+      // (14400) pour ne pas polluer les autres championnats.
+      if (leagueId === "14400") {
+        logger.info("diag.highlightly.live.raw", {
+          leagueId,
+          season,
+          date,
+          payload: JSON.stringify(payload).slice(0, 6000),
+        });
+      }
       const { fixtures, warnings } = parseHighlightlyMatches(payload);
       return { provider: HIGHLIGHTLY, data: fixtures, requestsUsed: 1, warnings };
     },
