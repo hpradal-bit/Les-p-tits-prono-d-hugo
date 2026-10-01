@@ -10,12 +10,25 @@ import { PlayerAvatar } from "../../_components/player-avatar";
 import { Movement, RowStats } from "./bits";
 import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { StandingsRow } from "@/lib/standings/engine";
+import { seasonRewardFor, seasonZoneFor, SEASON_ZONE_LABEL } from "@/lib/standings/season-rewards";
+
+const ZONE_BORDER_CLASS: Record<"demi" | "barrages", string> = {
+  demi: "border-l-winner",
+  barrages: "border-l-clay",
+};
+
+const REWARD_TONE_CLASS: Record<"gain" | "due" | "neutral", string> = {
+  gain: "border-winner/40 bg-winner-soft/60 text-winner",
+  due: "border-wrong/40 bg-wrong-soft/60 text-wrong",
+  neutral: "border-line bg-surface-sunk text-ink-faint",
+};
 
 export function StandingsList({
   rows,
   viewerId,
   clubs = [],
   livePreviewByUser,
+  seasonRewards = false,
 }: {
   rows: StandingsRow[];
   viewerId: string | null;
@@ -26,6 +39,11 @@ export function StandingsList({
    * recalculer. `undefined` ou objet vide : aucun calque en direct ici.
    */
   livePreviewByUser?: Record<string, number>;
+  /**
+   * Règle maison de "Prono des copains" (gages de fin de saison + zones façon
+   * Top 14) — n'affiche jamais rien ailleurs. Voir `lib/standings/season-rewards.ts`.
+   */
+  seasonRewards?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -40,13 +58,29 @@ export function StandingsList({
       <ol className="divide-y divide-line">
         {rows.map((row) => {
           const isViewer = row.player.userId === viewerId;
+          const zone = seasonRewards ? seasonZoneFor(row.position, rows.length) : null;
+          const reward = seasonRewards ? seasonRewardFor(row.position, rows.length) : null;
+          // La frontière de zone façon Top 14 (1-2 demi-finale, 3-6 barrages
+          // pour une ligue à 6 joueurs) : un bandeau juste avant la première
+          // ligne d'une nouvelle zone, jamais répété ensuite.
+          const previousZone =
+            seasonRewards && row.position > 1
+              ? seasonZoneFor(row.position - 1, rows.length)
+              : null;
+          const isZoneStart = zone !== null && zone !== previousZone;
           return (
             <li key={row.player.userId}>
+              {isZoneStart && zone && (
+                <p className="bg-surface-sunk px-3.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint sm:px-4">
+                  {SEASON_ZONE_LABEL[zone]}
+                </p>
+              )}
               <Link
                 href={isViewer ? "/profil" : `/profil/${row.player.userId}`}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-3 transition hover:bg-surface-sunk sm:px-4",
+                  "flex items-center gap-3 border-l-4 border-l-transparent px-3 py-3 transition hover:bg-surface-sunk sm:px-4",
                   isViewer && "bg-clay-soft/60",
+                  zone && ZONE_BORDER_CLASS[zone],
                 )}
               >
               <span
@@ -71,6 +105,17 @@ export function StandingsList({
                   )}
                 </p>
                 <RowStats row={row} />
+                {reward && (
+                  <span
+                    className={cn(
+                      "mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold leading-tight",
+                      REWARD_TONE_CLASS[reward.tone],
+                    )}
+                  >
+                    <span aria-hidden>{reward.emoji}</span>
+                    {reward.label}
+                  </span>
+                )}
               </div>
 
               <div className="flex w-8 shrink-0 justify-center">

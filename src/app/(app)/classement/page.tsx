@@ -30,6 +30,7 @@ import {
   type RoundFixture,
 } from "@/lib/standings/queries";
 import { applyLivePreview } from "@/lib/standings/live-preview";
+import { FUN_REWARDS_LEAGUE_ID } from "@/lib/standings/season-rewards";
 import { loadPointsHistory } from "@/lib/standings/points-history";
 import { loadActivePowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries.ts";
 import { buildPowerCounters } from "@/lib/powers/counters.ts";
@@ -264,7 +265,12 @@ export default async function ClassementPage({
       {/* Le classement reste visible même sans le moindre résultat : une ligue
           qui vient de se créer doit voir ses membres, à 0 point, plutôt qu'un
           écran vide qui laisserait croire à une panne. */}
-      <StandingsList rows={table.rows} viewerId={viewer.id} clubs={clubs} />
+      <StandingsList
+        rows={table.rows}
+        viewerId={viewer.id}
+        clubs={clubs}
+        seasonRewards={leagueId === FUN_REWARDS_LEAGUE_ID && effectiveVue === "general"}
+      />
 
       {liveTable.hasLivePreview && (
         <section className="flex flex-col gap-2">
