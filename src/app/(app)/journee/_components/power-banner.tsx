@@ -100,11 +100,21 @@ function PowerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 sm:items-center"
+      // La barre de navigation (`BottomNav`) reste montée derrière cette
+      // fenêtre — contrairement aux fiches plein écran de Chambrage, qui la
+      // démontent. Sur mobile, `items-end` colle sinon le panneau au tout bas
+      // du viewport, exactement dans l'empreinte de la barre : sur iOS Safari,
+      // la promotion de la barre sur sa propre couche graphique (voir le
+      // commentaire dans `bottom-nav.tsx`) peut la faire passer devant malgré
+      // son z-index inférieur, rendant le select et le bouton « Utiliser »
+      // visibles mais intouchables. On réserve donc la même marge que `<main>`
+      // (chantier D, `layout.tsx`) pour que le panneau ne touche jamais cette
+      // zone, plutôt que de compter sur l'empilement pour gagner ce conflit.
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:items-center sm:pb-4"
       onClick={onClose}
     >
       <div
-        className="flex w-full max-w-sm flex-col gap-3 rounded-[28px] bg-surface p-5 shadow-[var(--shadow-lift)]"
+        className="flex max-h-[70vh] w-full max-w-sm flex-col gap-3 overflow-y-auto rounded-[28px] bg-surface p-5 shadow-[var(--shadow-lift)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3">
