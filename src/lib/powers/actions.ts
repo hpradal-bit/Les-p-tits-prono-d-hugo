@@ -21,6 +21,8 @@ import { applyResolution } from "./resolve.ts";
 import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES, quotaResetAt, QUOTA_RESET_KEY } from "./quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { isLockedAt } from "@/lib/predictions/lock";
+import { enqueue } from "@/lib/push/notify.ts";
+import { buildPowerDeclaredNotification } from "@/lib/push/powers.ts";
 import type { AdminActionState } from "@/lib/admin/types";
 
 const declareSchema = z.object({
@@ -136,16 +138,20 @@ export async function declarePower(
   if (parsed.data.fixtureId) snapshotBefore.fixtureId = parsed.data.fixtureId;
   if (parsed.data.targetId) snapshotBefore.targetId = parsed.data.targetId;
 
-  const { error: usageErr } = await admin.from("power_usages").insert({
-    // Plus de jeton : c'est le nombre d'utilisations qui fait foi (quota).
-    token_id: null,
-    power_id: power.id,
-    initiator_id: user.id,
-    target_id: parsed.data.targetId ?? null,
-    round_id: parsed.data.roundId,
-    state: "declared",
-    snapshot_before: snapshotBefore,
-  });
+  const { data: insertedUsage, error: usageErr } = await admin
+    .from("power_usages")
+    .insert({
+      // Plus de jeton : c'est le nombre d'utilisations qui fait foi (quota).
+      token_id: null,
+      power_id: power.id,
+      initiator_id: user.id,
+      target_id: parsed.data.targetId ?? null,
+      round_id: parsed.data.roundId,
+      state: "declared",
+      snapshot_before: snapshotBefore,
+    })
+    .select("id")
+    .single();
 
   if (usageErr) {
     // Violation de l'index unique "une utilisation active par joueur et par
@@ -185,6 +191,32 @@ export async function declarePower(
       fixture_id: parsed.data.fixtureId ?? null,
     },
   });
+
+  // La cible reçoit une vraie notification poussée — jusqu'ici, rien ne la
+  // prévenait qu'un pouvoir avait été déclaré contre elle (cf. rapport de
+  // l'hôte : ni Pierre ni personne ne pouvait savoir). Uniquement pour les
+  // pouvoirs qui visent réellement un joueur (`needsTarget`) : Duel, Espion,
+  // Sabotage — jamais Oracle/Joker, qui ne visent personne.
+  if (pk.needsTarget && parsed.data.targetId) {
+    const { data: initiatorProfile } = await admin
+      .from("profiles")
+      .select("display_name, first_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    const initiatorName =
+      initiatorProfile?.display_name || initiatorProfile?.first_name || "Quelqu'un";
+
+    await enqueue(
+      admin,
+      buildPowerDeclaredNotification(parsed.data.targetId, {
+        usageId: insertedUsage.id as string,
+        powerEmoji: power.emoji,
+        powerName: power.name,
+        powerEffect: effect,
+        initiatorName,
+      }),
+    );
+  }
 
   revalidatePath("/journee");
   revalidatePath("/classement");
