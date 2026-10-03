@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import { declarePower } from "@/lib/powers/actions";
+import { DuelBattleModal } from "./duel-battle-modal";
 
 interface PowerOption {
   id: string;
@@ -48,11 +49,15 @@ interface ActiveUsage {
   powerCode: string;
   powerEmoji: string;
   powerName: string;
-  targetName: string | null;
+  /** Qui regarde ce pouvoir : celui qui l'a déclaré, ou celui qui le reçoit. */
+  role: "initiator" | "target";
+  /** La cible si `role === "initiator"`, l'auteur si `role === "target"`. */
+  otherName: string | null;
   fixtureName: string | null;
-  /** « 2ᵉ sur 3 » : le rang figé au moment de la déclaration. */
+  /** « 2ᵉ sur 3 » : le rang figé au moment de la déclaration — vide côté cible. */
   useIndex: number | null;
   maxUses: number | null;
+  /** Jamais rempli côté cible : l'Espion ne révèle qu'à son auteur (secret du pouvoir). */
   spyReveal?: SpyReveal | null;
 }
 
@@ -223,44 +228,60 @@ export function PowerBanner({
   viewerId: string;
 }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
+  const [battleOpen, setBattleOpen] = useState(false);
 
   // Les pouvoirs restent visibles même sans crédit : c'est une vitrine autant
   // qu'un outil. Seule l'activation est bloquée.
   if (powers.length === 0) return null;
 
   if (activeUsage) {
-    return (
-      <div className="flex flex-col gap-1.5 rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5">
+    const isTarget = activeUsage.role === "target";
+    // Le Duel est le seul pouvoir à offrir un vrai « match en direct » — voir
+    // `DuelBattleModal`. Cliquable des deux côtés : la cible en a au moins
+    // autant besoin que l'auteur pour juger si elle est menée.
+    const isDuel = activeUsage.powerCode === "duel" && activeUsage.otherName !== null;
+    const headline = isTarget
+      ? `${activeUsage.otherName ?? "Quelqu'un"} a activé ${activeUsage.powerName} contre toi`
+      : `Tu as activé ${activeUsage.powerName}${activeUsage.otherName ? ` contre ${activeUsage.otherName}` : ""}`;
+
+    const content = (
+      <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-3">
           <span className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-ink">
             <span className="text-lg">{activeUsage.powerEmoji}</span>
             <span className="truncate">{activeUsage.powerName}</span>
-            <span className="shrink-0 rounded-full bg-clay px-2 py-0.5 text-[10px] font-bold text-surface">
-              ACTIF
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                isTarget ? "bg-wrong text-surface" : "bg-clay text-surface",
+              )}
+            >
+              {isTarget ? "CONTRE TOI" : "ACTIF"}
             </span>
           </span>
           {/* Un pouvoir acheté est définitif : pas de bouton "Annuler", pour
               qu'aucun joueur ne puisse regarder puis se retirer selon ce qu'il
               a vu (l'Espion, en particulier). */}
         </div>
-        {(activeUsage.targetName || activeUsage.fixtureName) && (
-          <p className="text-[11.5px] text-ink-muted">
-            {[activeUsage.targetName && `vs ${activeUsage.targetName}`, activeUsage.fixtureName]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+
+        <p className="text-[11.5px] text-ink-muted">
+          {[headline, activeUsage.fixtureName].filter(Boolean).join(" · ")}
+        </p>
+
+        {isDuel && (
+          <p className="text-[11px] font-semibold text-clay">Voir le match en direct →</p>
         )}
 
-        {activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
+        {!isTarget && activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
           <div className="rounded-xl bg-surface/70 px-3 py-2 text-[12.5px] leading-snug text-ink">
             {!activeUsage.spyReveal.hasAnswered ? (
               <p className="text-ink-faint">
-                {activeUsage.targetName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
+                {activeUsage.otherName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
               </p>
             ) : (
               <div className="flex flex-col gap-0.5">
                 <p className="font-semibold">
-                  {activeUsage.targetName} → {activeUsage.spyReveal.outcomeLabel}
+                  {activeUsage.otherName} → {activeUsage.spyReveal.outcomeLabel}
                 </p>
                 {activeUsage.spyReveal.exactScoreLabel && (
                   <p className="text-ink-muted">
@@ -277,6 +298,27 @@ export function PowerBanner({
           </div>
         )}
       </div>
+    );
+
+    return (
+      <>
+        {isDuel ? (
+          <button
+            type="button"
+            onClick={() => setBattleOpen(true)}
+            className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5 text-left"
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5">
+            {content}
+          </div>
+        )}
+        {isDuel && battleOpen && (
+          <DuelBattleModal usageId={activeUsage.id} onClose={() => setBattleOpen(false)} />
+        )}
+      </>
     );
   }
 

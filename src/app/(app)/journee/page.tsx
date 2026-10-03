@@ -35,6 +35,8 @@ import { MatchBreakdown } from "../resultats/_components/match-breakdown";
 import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
+import { PowerDigestBanner } from "./_components/power-digest-banner";
+import { buildPowerDigest } from "@/lib/powers/digest";
 import { RoundNav } from "./_components/round-nav";
 import { RoundBanner } from "../_components/round-banner";
 import { RoundSection } from "./_components/round-section";
@@ -132,9 +134,22 @@ export default async function JourneePage({
     (b) => !b.question.roundId || b.question.roundId === currentRoundId,
   );
 
+  // Avant ce correctif, seul l'auteur d'un pouvoir le voyait dans son propre
+  // bandeau — la cible (Pierre, visé par le Duel de Hugo) n'avait absolument
+  // rien pour savoir qu'elle était engagée, ni où elle en était. On regarde
+  // donc aussi les pouvoirs dont le viewer est la CIBLE, avec une exception :
+  // l'Espion reste réservé à son auteur (c'est tout l'intérêt du secret —
+  // une cible qui saurait qu'elle est observée changerait son comportement),
+  // alors que le Duel et le Sabotage n'ont rien à cacher une fois déclarés.
   const myUsage = roundUsages.find(
-    (u) => u.initiatorId === viewer.id && (u.state === "declared" || u.state === "accepted"),
+    (u) =>
+      (u.state === "declared" || u.state === "accepted") &&
+      (u.initiatorId === viewer.id || (u.targetId === viewer.id && u.powerCode !== "spy")),
   );
+  const myRole: "initiator" | "target" =
+    myUsage && myUsage.targetId === viewer.id && myUsage.initiatorId !== viewer.id
+      ? "target"
+      : "initiator";
 
   // Classement général en direct : c'est celui que le joueur voit sur
   // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
@@ -217,6 +232,39 @@ export default async function JourneePage({
     position: r.position,
   }));
 
+  // « Ce qui s'est passé sur cette journée » : un résumé graphique de chaque
+  // pouvoir déclaré sur CETTE journée, pour tous les joueurs — mêmes données
+  // que `roundUsages` (symétrie initiateur/cible ci-dessus) et mêmes règles de
+  // visibilité que le Fil (`buildPowerDigest` ≡ `isPowerPublic`), jamais un
+  // second chemin de lecture.
+  const powersById = new Map(
+    activePowers.map((p) => [p.id, { emoji: p.emoji, name: p.name, effect: powerEffect(p) }]),
+  );
+  const playersById = new Map(standingsData.players.map((p) => [p.userId, p]));
+  const fixturesById = new Map(
+    board.fixtures.map((f) => [
+      f.fixture.id,
+      {
+        kickoffAt: f.fixture.kickoffAt,
+        label: `${f.fixture.homeTeam.shortName} - ${f.fixture.awayTeam.shortName}`,
+      },
+    ]),
+  );
+  const roundFirstKickoffAt =
+    board.fixtures.length > 0
+      ? board.fixtures.reduce(
+          (earliest, f) => (f.fixture.kickoffAt < earliest ? f.fixture.kickoffAt : earliest),
+          board.fixtures[0].fixture.kickoffAt,
+        )
+      : null;
+  const digestItems = buildPowerDigest({
+    usages: roundUsages,
+    powersById,
+    playersById,
+    fixturesById,
+    roundFirstKickoffAt,
+  });
+
   // L'Espion révèle le pronostic — même encore provisoire — de sa cible dès
   // l'instant où il est acheté, et jusqu'au verrouillage du match (où tout le
   // monde le voit de toute façon gratuitement) : c'est tout l'intérêt du
@@ -269,19 +317,27 @@ export default async function JourneePage({
         powerCode: myUsage.powerCode,
         powerEmoji: activePowers.find((p) => p.id === myUsage.powerId)?.emoji ?? "⚡",
         powerName: activePowers.find((p) => p.id === myUsage.powerId)?.name ?? myUsage.powerCode,
-        targetName: myUsage.targetId ? displayNameById.get(myUsage.targetId) ?? null : null,
+        role: myRole,
+        // La cible si je suis l'auteur, l'auteur si je suis la cible.
+        otherName:
+          myRole === "initiator"
+            ? myUsage.targetId
+              ? displayNameById.get(myUsage.targetId) ?? null
+              : null
+            : displayNameById.get(myUsage.initiatorId) ?? null,
         fixtureName: myUsage.snapshotBefore.fixtureId
           ? fixtureOptions.find((f) => f.id === myUsage.snapshotBefore.fixtureId)?.label ?? null
           : null,
+        // Le rang figé n'a de sens que pour l'auteur — il compte SES utilisations.
         useIndex:
-          typeof myUsage.snapshotBefore.useIndex === "number"
+          myRole === "initiator" && typeof myUsage.snapshotBefore.useIndex === "number"
             ? myUsage.snapshotBefore.useIndex
             : null,
         maxUses:
-          typeof myUsage.snapshotBefore.maxUses === "number"
+          myRole === "initiator" && typeof myUsage.snapshotBefore.maxUses === "number"
             ? myUsage.snapshotBefore.maxUses
             : null,
-        spyReveal,
+        spyReveal: myRole === "initiator" ? spyReveal : null,
       }
     : null;
 
@@ -298,6 +354,8 @@ export default async function JourneePage({
       {isTop14 && <CelebrationOverlay leagueId={leagueId} />}
 
       <LeagueSwitcher options={ligueOptions} current={leagueId} />
+
+      <PowerDigestBanner roundId={currentRoundId} items={digestItems} />
 
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
