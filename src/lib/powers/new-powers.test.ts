@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spy } from "./kinds/spy.ts";
-import { mirror } from "./kinds/mirror.ts";
+import { oracle } from "./kinds/oracle.ts";
 import { sabotage } from "./kinds/sabotage.ts";
 import { getPower } from "./registry.ts";
 import { powerEffect, powerRules } from "./credits.ts";
@@ -41,8 +41,8 @@ describe("registre des pouvoirs", () => {
     }
   });
 
-  it("expose l'Oracle sous le code oracle, pas mirror", () => {
-    assert.equal(mirror.code, "oracle");
+  it("expose l'Oracle sous le code oracle", () => {
+    assert.equal(oracle.code, "oracle");
     assert.equal(getPower("mirror"), undefined);
   });
 });
@@ -110,7 +110,7 @@ describe("oracle", () => {
       fixtureScores: new Map([["fix-1", new Map([["alice", 3]])]]),
       roundTotals: new Map([["alice", 3]]),
     };
-    const res = mirror.resolve(ctx);
+    const res = oracle.resolve(ctx);
     assert.equal(res.adjustments.length, 1);
     assert.equal(res.adjustments[0].userId, "alice");
     assert.equal(res.adjustments[0].delta, 2);
@@ -124,7 +124,7 @@ describe("oracle", () => {
       fixtureScores: new Map([["fix-1", new Map([["alice", 0]])]]),
       roundTotals: new Map([["alice", 0]]),
     };
-    const res = mirror.resolve(ctx);
+    const res = oracle.resolve(ctx);
     assert.equal(res.adjustments.length, 0);
     assert.equal(res.outcome.bonus, 0);
   });
@@ -136,7 +136,7 @@ describe("oracle", () => {
       fixtureScores: new Map([["fix-1", new Map([["alice", 1]])]]),
       roundTotals: new Map([["alice", 1]]),
     };
-    assert.equal(mirror.resolve(ctx).adjustments[0].delta, 5);
+    assert.equal(oracle.resolve(ctx).adjustments[0].delta, 5);
   });
 
   it("ne casse pas sans match choisi", () => {
@@ -146,7 +146,7 @@ describe("oracle", () => {
       fixtureScores: new Map(),
       roundTotals: new Map(),
     };
-    const res = mirror.resolve(ctx);
+    const res = oracle.resolve(ctx);
     assert.equal(res.adjustments.length, 0);
     assert.equal(res.outcome.error, "no_fixture");
   });

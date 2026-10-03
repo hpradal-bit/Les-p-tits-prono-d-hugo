@@ -1,7 +1,7 @@
 import type { PowerKind } from "../power.ts";
 import type { ResolveContext, ResolveResult } from "../types.ts";
 
-export const mirror: PowerKind = {
+export const oracle: PowerKind = {
   code: "oracle",
   name: "Oracle",
   emoji: "🔮",
