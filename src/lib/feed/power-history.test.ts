@@ -47,6 +47,57 @@ test("déclaration : le joueur, le pouvoir, le match et le coût", () => {
   assert.match(r!.text, /5 cr\./);
 });
 
+// --- Déclaration : l'effet du pouvoir, explicite --------------------------
+//
+// Le vrai sujet du signalement d'Hugo : sans `power_effect`, un joueur voit
+// qu'un pouvoir a été activé sur tel match ou contre tel adversaire, mais
+// jamais ce que ce pouvoir lui fait courir. Un cas par pouvoir ciblant un
+// match (Oracle) et un cas par pouvoir ciblant un joueur (Duel) : les deux
+// formes de ciblage que `power_declared` doit également rendre explicites.
+
+test("déclaration d'un pouvoir ciblant un match (Oracle) : le match ET l'effet apparaissent", () => {
+  const r = renderEvent(
+    ev(
+      {
+        power_emoji: "🔮",
+        power_name: "Oracle",
+        power_effect: "Si tu marques au moins un point sur ce match, tu gagnes 2 points de plus.",
+      },
+      { kind: "power_declared", actorName: "L'express", fixtureLabel: "Clermont - Castres" },
+    ),
+  );
+  assert.match(r!.text, /L'express/);
+  assert.match(r!.text, /Oracle/);
+  assert.match(r!.text, /Clermont - Castres/);
+  assert.match(r!.text, /gagnes 2 points de plus/);
+});
+
+test("déclaration d'un pouvoir ciblant un joueur (Duel) : l'adversaire ET l'effet apparaissent", () => {
+  const r = renderEvent(
+    ev(
+      {
+        power_emoji: "⚔️",
+        power_name: "Duel",
+        power_effect: "Si tu marques plus que ta cible sur la journée, tu prends ses points. Sinon elle prend les tiens.",
+      },
+      { kind: "power_declared", actorName: "Hugo", targetName: "Marc" },
+    ),
+  );
+  assert.match(r!.text, /Hugo/);
+  assert.match(r!.text, /Duel/);
+  assert.match(r!.text, /contre Marc/);
+  assert.match(r!.text, /tu prends ses points/);
+});
+
+test("déclaration sans power_effect (événement historique) reste lisible, sans trou", () => {
+  const r = renderEvent(
+    ev({ power_emoji: "🕵️", power_name: "Espion" }, { kind: "power_declared", targetName: "Bob" }),
+  );
+  assert.ok(r);
+  assert.ok(!r!.text.includes("undefined") && !r!.text.includes("null"));
+  assert.doesNotMatch(r!.text, /: !$/);
+});
+
 // --- Joker et Oracle : gagné ou perdu ---------------------------------------
 
 test("joker gagnant : le bonus et le match apparaissent", () => {

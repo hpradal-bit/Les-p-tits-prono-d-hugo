@@ -10,6 +10,7 @@ import { loadStandingsData } from "@/lib/standings/queries";
 import { computeStandings } from "@/lib/standings/engine";
 import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { getPower, requirePower } from "./registry.ts";
+import { powerEffect } from "./credits.ts";
 import {
   loadActivePowers,
   loadUsageCounts,
@@ -156,6 +157,16 @@ export async function declarePower(
     return { ok: false, message: usageErr.message };
   }
 
+  // L'effet est recopié ici, au moment même de la déclaration, plutôt que
+  // relu en direct depuis `powers.config` au moment de l'affichage : c'est la
+  // même convention que `bonus_question` avec son `prompt` (cf.
+  // `src/lib/bonus/actions.ts`). Aucun écran d'admin ne permet aujourd'hui de
+  // modifier ce texte après coup (`setPowerMaxUses` ne touche que
+  // `max_uses_per_player`), mais si ça change un jour, le fil continuera de
+  // raconter l'effet tel qu'il se lisait au moment où le pouvoir a vraiment
+  // été joué — jamais réécrit après coup.
+  const effect = powerEffect(power);
+
   await admin.from("events").insert({
     kind: "power_declared",
     season_id: seasonId,
@@ -166,6 +177,7 @@ export async function declarePower(
       power_code: power.code,
       power_emoji: power.emoji,
       power_name: power.name,
+      ...(effect ? { power_effect: effect } : {}),
       use_index: (quota?.used ?? 0) + 1,
       max_uses: quota?.max ?? fallbackMax,
       // Le match visé voyage avec l'événement : c'est lui qui décide du moment

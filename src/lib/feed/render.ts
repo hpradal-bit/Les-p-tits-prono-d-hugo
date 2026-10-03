@@ -159,6 +159,14 @@ const RENDERERS: Record<string, Renderer> = {
     };
   },
 
+  /**
+   * La déclaration d'un pouvoir, en clair : qui, quel pouvoir, sur quel match
+   * ou contre qui, et CE QUE ÇA FAIT — pas seulement son nom. Sans l'effet
+   * (`power_effect`, snapshotté depuis `powers.config.effect` au moment même
+   * de la déclaration — même convention que `bonus_question` avec `prompt`),
+   * les autres joueurs voient qu'un pouvoir a été joué sans jamais savoir ce
+   * qu'il leur fait courir.
+   */
   power_declared: (e) => {
     const emoji = str(e.payload, "power_emoji") ?? "⚡";
     const name = str(e.payload, "power_name") ?? "un pouvoir";
@@ -166,10 +174,17 @@ const RENDERERS: Record<string, Renderer> = {
     const match = e.fixtureLabel ? ` sur ${e.fixtureLabel}` : "";
     const cost = num(e.payload, "credit_cost");
     const price = cost ? ` (${cost} cr.)` : "";
+    const effect = str(e.payload, "power_effect");
+    const detail = effect ? ` : ${effect}` : "";
+    // Avec l'effet, la phrase se termine par son propre point — un « ! »
+    // derrière serait une double ponctuation. Sans effet (événement
+    // historique, avant ce correctif), on garde le point d'exclamation
+    // d'origine.
+    const closing = effect ? "" : " !";
     return {
       emoji,
       tone: "neutral",
-      text: `${e.actorName ?? "Quelqu'un"} active ${name}${target}${match}${price} !`,
+      text: `${e.actorName ?? "Quelqu'un"} active ${name}${target}${match}${price}${detail}${closing}`,
     };
   },
 
