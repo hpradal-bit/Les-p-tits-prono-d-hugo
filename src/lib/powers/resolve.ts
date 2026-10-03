@@ -166,6 +166,31 @@ export async function resolveFixturePowers(
     if (outcome.changed) resolved++;
   }
 
+  // Un Duel déjà résolu dépend désormais du total de la journée AU SENS
+  // LARGE (`loadRoundTotals` : pronostics + ajustements `power:*` de la
+  // journée — bonus Oracle, pénalité Sabotage). Si une correction de score
+  // tardive vient de changer l'un de ces ajustements ci-dessus (recalculé
+  // par la boucle précédente), un Duel déjà "resolved" sur cette même
+  // journée est désormais périmé : son transfert de points a été calculé
+  // avec l'ancien total. On le re-résout ici — `applyResolution` est
+  // rejouable (règle n° 2) et ne réécrit rien si le résultat ne change pas.
+  // Ça ne couvre que le cas où un AUTRE pouvoir a changé ; une correction de
+  // score qui ne touche aucun pouvoir (juste `prediction_scores`) laisse
+  // encore un Duel déjà clôturé périmé — gap préexistant, pas aggravé ici,
+  // documenté dans le rapport de session.
+  if (resolved > 0) {
+    const roundSettledUsages = usages.filter((u) => {
+      if (u.state !== "resolved") return false;
+      const p = powerMap.get(u.powerId);
+      return p?.config.resolves_at === "round_settled";
+    });
+    for (const usage of roundSettledUsages) {
+      const power = powerMap.get(usage.powerId);
+      if (!power) continue;
+      await applyResolution(admin, seasonId, roundId, usage, power, null);
+    }
+  }
+
   return { resolved };
 }
 

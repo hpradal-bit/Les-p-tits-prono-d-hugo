@@ -5,9 +5,12 @@
  * `computeDuelBattle` est une fonction pure, volontairement calquée sur
  * `duel.ts#resolve` : à la clôture de la journée, `resolve` compare
  * `ctx.roundTotals.get(initiatorId)` à `ctx.roundTotals.get(targetId)` — deux
- * sommes venues de `loadRoundTotals` (`prediction_scores`, donc uniquement
- * des matchs `official`). Tant que la journée tourne, cette fonction ajoute
- * PAR-DESSUS les mêmes totaux officiels un aperçu en direct
+ * sommes venues de `loadRoundTotals` (`prediction_scores` des matchs
+ * `official`, PLUS tout ajustement `power:*` de la journée — bonus Oracle,
+ * pénalité Sabotage — à l'exclusion des ajustements `power:duel` eux-mêmes ;
+ * voir le commentaire de `loadRoundTotals`, `queries.ts`). Tant que la
+ * journée tourne, cette fonction ajoute PAR-DESSUS les mêmes totaux officiels
+ * un aperçu en direct
  * (`computeLivePreview`, déjà utilisé par le Match Center et le classement
  * live) pour les matchs `live`/`halftime` pas encore notés — jamais l'inverse.
  * Résultat : une fois le dernier match officialisé, cette fonction et

@@ -244,6 +244,29 @@ export async function loadFixtureScoresForRound(
   return result;
 }
 
+/**
+ * Le total de points d'un joueur sur une journée : pronostics notés
+ * (`prediction_scores`) **plus** tout ajustement d'origine pouvoir pour
+ * cette même journée (`point_adjustments`, source `power:*`) — un bonus
+ * Oracle ou une pénalité Sabotage comptent dans "combien j'ai marqué
+ * aujourd'hui" au même titre qu'un pronostic juste.
+ *
+ * Seule exception : les ajustements `power:duel` eux-mêmes sont exclus de
+ * la somme. Deux raisons : (1) c'est ce total qui sert à calculer le
+ * transfert d'UN Duel (`duel.ts#resolve`) — y inclure son propre ajustement
+ * (pas encore écrit au moment du calcul, de toute façon) ou celui d'un AUTRE
+ * Duel déjà résolu sur la même journée ferait double compte un transfert de
+ * points entre joueurs dans le total qui décide d'un autre transfert ; (2)
+ * la vue "en direct" (`battle.ts#computeDuelBattle`, via `battle-queries.ts`)
+ * doit retomber EXACTEMENT sur ce même nombre une fois tous les matchs
+ * officiels (`battle.test.ts`) — elle appelle cette fonction aussi, jamais
+ * un calcul séparé.
+ *
+ * Utilisée aussi bien par `resolve.ts` (résolution réelle, à la clôture ou
+ * match par match) que par `battle-queries.ts` (aperçu en direct) : un seul
+ * endroit décide de ce qu'est "le total de la journée", jamais deux calculs
+ * qui pourraient diverger.
+ */
 export async function loadRoundTotals(
   sb: SupabaseClient,
   roundId: string,
@@ -255,6 +278,26 @@ export async function loadRoundTotals(
       totals.set(userId, (totals.get(userId) ?? 0) + pts);
     }
   }
+
+  const { data: adjustments, error } = await sb
+    .from("point_adjustments")
+    .select("user_id, delta, source")
+    .eq("round_id", roundId)
+    .like("source", "power:%");
+  if (error) throw error;
+
+  for (const row of (adjustments ?? []) as Array<{
+    user_id: string;
+    delta: number;
+    source: string;
+  }>) {
+    // Cf. commentaire ci-dessus : jamais le transfert d'un Duel (le sien,
+    // pas encore écrit — ou celui d'un autre Duel déjà résolu) dans le total
+    // qui sert justement à calculer un transfert de Duel.
+    if (row.source === "power:duel") continue;
+    totals.set(row.user_id, (totals.get(row.user_id) ?? 0) + row.delta);
+  }
+
   return totals;
 }
 

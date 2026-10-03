@@ -29,7 +29,7 @@ export interface FakeWrites {
 }
 
 interface Filter {
-  op: "eq" | "neq" | "in" | "gte" | "lte" | "not" | "is";
+  op: "eq" | "neq" | "in" | "gte" | "lte" | "not" | "is" | "like";
   column: string;
   value: unknown;
 }
@@ -54,6 +54,13 @@ function matches(row: Row, filters: Filter[]): boolean {
       case "is": return actual === f.value;
       // `.not(col, "is", null)` : la seule négation employée par le code.
       case "not": return actual !== null && actual !== undefined;
+      // Un seul motif réellement utilisé par le code appelant : un préfixe
+      // suivi de `%` (`"power:%"`) — inutile de réimplémenter LIKE en entier.
+      case "like": {
+        const pattern = String(f.value);
+        if (pattern.endsWith("%")) return String(actual ?? "").startsWith(pattern.slice(0, -1));
+        return actual === pattern;
+      }
     }
   });
 }
@@ -89,6 +96,7 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
   lte(column: string, value: unknown) { this.filters.push({ op: "lte", column, value }); return this; }
   is(column: string, value: unknown) { this.filters.push({ op: "is", column, value }); return this; }
   not(column: string, _op: string, _value: unknown) { this.filters.push({ op: "not", column, value: null }); return this; }
+  like(column: string, value: unknown) { this.filters.push({ op: "like", column, value }); return this; }
   order(column: string, opts?: { ascending?: boolean }) {
     this.orderBy = { column, ascending: opts?.ascending !== false };
     return this;
