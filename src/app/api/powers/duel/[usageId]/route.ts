@@ -35,6 +35,30 @@ export async function GET(
   if (!limited.ok) return rateLimitResponse(limited);
 
   const { usageId } = await params;
+
+  // Toute erreur inattendue plus bas (requête Supabase en échec, pouvoir mal
+  // formé...) était jusqu'ici relancée telle quelle : Next.js la transforme
+  // alors en page d'erreur générique (HTML, pas JSON), que `DuelBattleModal`
+  // ne sait pas lire (`res.json()` échoue, `body` reste `null`) — la fenêtre
+  // affiche juste "Impossible de charger le Duel.", sans aucun point ni
+  // indice sur la cause réelle. On encadre donc tout le corps de la route
+  // pour toujours répondre en JSON et logguer la vraie erreur côté serveur.
+  try {
+    return await loadAndRespond(usageId, viewer.id);
+  } catch (error) {
+    console.error("[api/powers/duel] échec du chargement du Duel en direct", {
+      usageId,
+      viewerId: viewer.id,
+      error,
+    });
+    return NextResponse.json(
+      { error: "Impossible de charger le Duel." },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+}
+
+async function loadAndRespond(usageId: string, viewerId: string) {
   const admin = createAdminClient();
 
   const { data: usageRow, error: usageError } = await admin
@@ -57,7 +81,7 @@ export async function GET(
   // Seuls les deux belligérants peuvent consulter leur propre match — jamais
   // un troisième joueur, qui lirait sinon les points d'autrui sans y être
   // partie (même garde-fou que pour `loadSpyReveal`).
-  if (viewer.id !== initiatorId && viewer.id !== targetId) {
+  if (viewerId !== initiatorId && viewerId !== targetId) {
     return NextResponse.json({ error: "Ce Duel ne te concerne pas." }, { status: 403 });
   }
 
