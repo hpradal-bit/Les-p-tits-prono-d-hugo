@@ -283,7 +283,15 @@ export async function loadFeed(leagueId: Uuid, filter: FeedFilter = "tout"): Pro
     const raw = one<{ payload: unknown }>(p.event);
     const payload = (raw?.payload ?? {}) as Record<string, unknown>;
     const outcome = (payload.outcome ?? {}) as Record<string, unknown>;
-    const id = (outcome.fixtureId ?? payload.fixtureId) as string | undefined;
+    // `power_resolved` écrit `outcome.fixtureId` (camelCase, posé par
+    // `resolve.ts`) ; `power_declared` écrit `payload.fixture_id` (snake_case,
+    // posé par `declarePower`). Avant ce correctif, seul `payload.fixtureId`
+    // (camelCase, qui n'existe nulle part) était lu en second repli : le match
+    // d'un pouvoir déclaré — Oracle en particulier — n'était donc jamais
+    // résolu dans le fil, et son post ne disait jamais « sur quel match ».
+    const id = (outcome.fixtureId ?? payload.fixtureId ?? payload.fixture_id) as
+      | string
+      | undefined;
     if (typeof id === "string") fixtureIds.add(id);
   }
 
