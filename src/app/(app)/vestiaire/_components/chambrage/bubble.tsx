@@ -158,7 +158,16 @@ export function MessageBubble({
         </div>
       )}
 
-      <div className={cn("flex max-w-[78%] min-w-0 flex-col gap-1", isMine ? "items-end" : "items-start")}>
+      <div
+        className={cn(
+          "flex max-w-[78%] min-w-0 flex-col gap-1",
+          isMine ? "items-end" : "items-start",
+          // La pastille de réaction chevauche le coin bas de la bulle (§Messenger) :
+          // il lui faut de la place sous la bulle pour ne pas être recouverte par le
+          // prochain message de la rafale (espacement serré, `tight`).
+          reactions.length > 0 && "mb-2.5",
+        )}
+      >
         {!isMine && showName && (
           <span className="px-1 text-[11.5px] font-semibold text-ink-muted">
             {sender?.displayName ?? "Un joueur"}
@@ -286,7 +295,10 @@ export function MessageBubble({
                     segment.mentionUserId ? (
                       <strong
                         key={i}
-                        className={cn("font-bold", isMine ? "text-surface" : "text-clay")}
+                        className={cn(
+                          "rounded-[4px] px-0.5 font-bold",
+                          isMine ? "bg-surface/20 text-surface" : "bg-clay-soft text-clay",
+                        )}
                       >
                         {segment.text}
                       </strong>
@@ -305,40 +317,51 @@ export function MessageBubble({
             </>
           )}
 
-          <div
-            className={cn(
-              "mt-1 flex items-center gap-1 text-[10px]",
-              isMine ? "justify-end text-surface/70" : "justify-end text-ink-faint",
-            )}
-          >
-            <span>{timeLabel(message.createdAt)}</span>
-            {isMine && !deleted && vm.pending !== "error" && <ReadTicks state={vm.readState} />}
-            {vm.pending === "sending" && <span aria-hidden>⏳</span>}
-          </div>
+          {/* Horodatage discret : seulement sur la dernière bulle d'une rafale
+              (même repère que l'avatar), jamais répété à chaque message — comme
+              Messenger. Une erreur/envoi en cours reste visible à tout moment. */}
+          {(showAvatar || vm.pending) && (
+            <div
+              className={cn(
+                "mt-1 flex items-center gap-1 text-[10px]",
+                isMine ? "justify-end text-surface/70" : "justify-end text-ink-faint",
+              )}
+            >
+              {showAvatar && <span>{timeLabel(message.createdAt)}</span>}
+              {isMine && !deleted && vm.pending !== "error" && showAvatar && <ReadTicks state={vm.readState} />}
+              {vm.pending === "sending" && <span aria-hidden>⏳</span>}
+            </div>
+          )}
+
+          {/* Pastille de réaction : chevauche le coin bas de la bulle, côté
+              intérieur (vers le centre), plutôt qu'une rangée séparée — comme
+              Messenger. */}
+          {reactions.length > 0 && (
+            <button
+              type="button"
+              onClick={onOpenReactionDetail}
+              className={cn(
+                "absolute -bottom-2.5 z-10 flex flex-wrap gap-0.5 rounded-full bg-surface px-1.5 py-0.5 shadow-[var(--shadow-card)] ring-2 ring-surface-sunk",
+                isMine ? "left-1" : "right-1",
+              )}
+            >
+              {reactions.map((r) => (
+                <span
+                  key={r.emoji}
+                  className={cn(
+                    "flex items-center gap-0.5 rounded-full px-1 text-[11px]",
+                    r.mine ? "text-clay" : "text-ink-muted",
+                  )}
+                >
+                  {r.emoji} {r.count}
+                </span>
+              ))}
+            </button>
+          )}
         </div>
 
         {vm.pending === "error" && (
           <span className="px-1 text-[11px] font-semibold text-wrong">⚠️ Échec de l&apos;envoi</span>
-        )}
-
-        {reactions.length > 0 && (
-          <button
-            type="button"
-            onClick={onOpenReactionDetail}
-            className="flex flex-wrap gap-1 rounded-full bg-surface px-1.5 py-1 shadow-[var(--shadow-card)]"
-          >
-            {reactions.map((r) => (
-              <span
-                key={r.emoji}
-                className={cn(
-                  "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px]",
-                  r.mine ? "bg-clay-soft text-clay" : "bg-surface-sunk text-ink-muted",
-                )}
-              >
-                {r.emoji} {r.count}
-              </span>
-            ))}
-          </button>
         )}
       </div>
 
