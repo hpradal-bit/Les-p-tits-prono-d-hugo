@@ -37,6 +37,7 @@ import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { PowerDigestBanner } from "./_components/power-digest-banner";
 import { buildPowerDigest } from "@/lib/powers/digest";
+import { loadDuelBattle } from "@/lib/powers/battle-queries";
 import { RoundNav } from "./_components/round-nav";
 import { RoundBanner } from "../_components/round-banner";
 import { RoundSection } from "./_components/round-section";
@@ -257,12 +258,42 @@ export default async function JourneePage({
           board.fixtures[0].fixture.kickoffAt,
         )
       : null;
-  const digestItems = buildPowerDigest({
+  const digestItemsWithoutScore = buildPowerDigest({
     usages: roundUsages,
     powersById,
     playersById,
     fixturesById,
     roundFirstKickoffAt,
+  });
+
+  // Hugo a demandé que le score d'un Duel encore en cours apparaisse en
+  // direct, pas seulement derrière un clic : "pour que chacun puisse savoir
+  // qui va gagner... adapter sa stratégie". Un Duel RÉSOLU n'a plus de score
+  // "en direct" à montrer (son issue est déjà racontée par le Fil) — on ne
+  // calcule donc que pour les Duels encore `declared`/`accepted`, et jamais
+  // plus d'un ou deux par journée pour une ligue à 6 joueurs.
+  const activeDuelUsages = roundUsages.filter(
+    (u) => u.powerCode === "duel" && (u.state === "declared" || u.state === "accepted") && u.targetId,
+  );
+  const duelBattles = await Promise.all(
+    activeDuelUsages.map((u) =>
+      loadDuelBattle(admin, seasonId, currentRoundId, u.initiatorId, u.targetId as string),
+    ),
+  );
+  const battleByUsageId = new Map(activeDuelUsages.map((u, i) => [u.id, duelBattles[i]]));
+  const digestItems = digestItemsWithoutScore.map((item) => {
+    const battle = battleByUsageId.get(item.usageId);
+    if (!battle) return item;
+    return {
+      ...item,
+      liveDuel: {
+        initiatorPoints: battle.initiatorPoints,
+        targetPoints: battle.targetPoints,
+        remainingFixtures: battle.remainingFixtures,
+        tie: battle.tie,
+        leaderId: battle.leaderId,
+      },
+    };
   });
 
   // L'Espion révèle le pronostic — même encore provisoire — de sa cible dès

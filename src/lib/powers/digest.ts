@@ -28,6 +28,22 @@ export interface DigestFixtureInfo {
   label: string;
 }
 
+/**
+ * Le score en direct d'un Duel encore actif — attaché après coup par
+ * `journee/page.tsx` (`loadDuelBattle`, qui a besoin de la base, donc hors de
+ * cette fonction pure). `null` pour tout pouvoir autre qu'un Duel, ou pour un
+ * Duel déjà résolu : son issue est alors racontée par le Fil, pas par un
+ * score "en direct" qui n'existe plus.
+ */
+export interface DigestDuelScore {
+  initiatorPoints: number;
+  targetPoints: number;
+  remainingFixtures: number;
+  tie: boolean;
+  /** `null` à égalité. */
+  leaderId: Uuid | null;
+}
+
 export interface PowerDigestItem {
   usageId: string;
   powerEmoji: string;
@@ -38,6 +54,7 @@ export interface PowerDigestItem {
   fixtureLabel: string | null;
   effect: string | null;
   caption: string;
+  liveDuel: DigestDuelScore | null;
 }
 
 export function buildPowerDigest(input: {
@@ -78,6 +95,7 @@ export function buildPowerDigest(input: {
       fixtureLabel: fixture?.label ?? null,
       effect: power.effect,
       caption,
+      liveDuel: null,
     });
   }
 
