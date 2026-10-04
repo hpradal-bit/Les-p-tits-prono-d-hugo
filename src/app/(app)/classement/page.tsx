@@ -358,7 +358,12 @@ export default async function ClassementPage({
       {fixtures.length > 0 && (
         <section className="flex flex-col gap-2">
           <Label>Les matchs de la journée</Label>
-          <RoundFixtures fixtures={fixtures} breakdowns={fixtureBreakdowns} />
+          <RoundFixtures
+            fixtures={fixtures}
+            breakdowns={fixtureBreakdowns}
+            players={data.players}
+            clubs={clubs}
+          />
         </section>
       )}
 
