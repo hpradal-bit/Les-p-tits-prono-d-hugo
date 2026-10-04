@@ -133,7 +133,7 @@ function seed(db: ReturnType<typeof makeDb>) {
   });
 }
 
-describe("sweepPowerDeclaredNotifications — différé, round-safe, jamais pour l'Espion", () => {
+describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous les pouvoirs", () => {
   let db: ReturnType<typeof makeDb>;
 
   beforeEach(() => {
@@ -184,7 +184,7 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, jamais pour
     assert.equal(db.notifications.length, 1);
   });
 
-  it("l'Espion n'est JAMAIS balayé ni notifié, même journée entièrement verrouillée", async () => {
+  it("l'Espion est balayé et notifié comme n'importe quel pouvoir, une fois la journée verrouillée", async () => {
     db.power_usages.push({
       id: "usage-3", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
       state: "declared", power_id: "power-spy", target_notified_at: null,
@@ -195,10 +195,28 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, jamais pour
     const sb = fakeClient(db);
     const sent = await sweepPowerDeclaredNotifications(sb);
 
+    // Après le coup d'envoi, savoir qu'on a été espionné est amusant, pas un
+    // risque — demande explicite de l'hôte : plus d'exception pour l'Espion.
+    assert.equal(sent, 1);
+    assert.equal(db.notifications.length, 1);
+    assert.notEqual(db.power_usages[0].target_notified_at, null);
+  });
+
+  it("l'Espion n'est PAS balayé tant que la journée n'a pas entièrement verrouillé", async () => {
+    db.power_usages.push({
+      id: "usage-3b", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
+      state: "declared", power_id: "power-spy", target_notified_at: null,
+    });
+    db.fixtures.push(
+      { round_id: "round-1", locks_at: PAST },
+      { round_id: "round-1", locks_at: FAR_FUTURE },
+    );
+
+    const sb = fakeClient(db);
+    const sent = await sweepPowerDeclaredNotifications(sb);
+
     assert.equal(sent, 0);
     assert.equal(db.notifications.length, 0);
-    // Jamais réclamé non plus : la cible ne doit jamais apprendre qu'elle a
-    // été observée, pas même via la marque technique de notification.
     assert.equal(db.power_usages[0].target_notified_at, null);
   });
 

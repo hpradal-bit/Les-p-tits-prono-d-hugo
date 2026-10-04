@@ -9,12 +9,14 @@
  * couru le moindre risque (rapport de l'hôte, cf. migration 0067). Ce
  * balayage, appelé par `/api/push/dispatch` au même rythme que les rappels de
  * verrouillage (cron Cloudflare toutes les 2 minutes, `worker/wrangler.toml`),
- * rattrape l'envoi :
+ * rattrape l'envoi, TOUJOURS, pour TOUS les pouvoirs sans exception (y
+ * compris l'Espion — demande explicite de l'hôte : après coup, savoir qu'on a
+ * été observé est amusant, pas un risque, puisque le pronostic visé est déjà
+ * public une fois son match verrouillé) :
  *
  *   - jamais avant que TOUS les matchs de la journée (`round_id`) aient
  *     verrouillé (`round-lock.ts`, pas seulement le match visé) ;
- *   - jamais pour l'Espion (`spy`) : secret permanent, personne ne doit
- *     jamais savoir qu'il a été observé.
+ *   - toujours une fois ce moment passé — aucun pouvoir ne reste muet.
  *
  * Idempotent et rejouable sans effet de bord : chaque ligne est RÉCLAMÉE par
  * un `UPDATE ... WHERE target_notified_at IS NULL` avant l'envoi — si deux
@@ -30,9 +32,6 @@ import { buildPowerDeclaredNotification } from "./powers.ts";
 // par `node --test` seul (sans résolution de bundler), comme ses voisins.
 import { isPowerPublic } from "../powers/visibility.ts";
 import { loadRoundRevealTimes } from "../powers/round-lock.ts";
-
-/** Jamais notifié pour ce pouvoir — secret permanent (cf. en-tête du fichier). */
-const NEVER_NOTIFY_CODES = new Set(["spy"]);
 
 interface CandidateRow {
   id: string;
@@ -61,13 +60,7 @@ export async function sweepPowerDeclaredNotifications(admin: SupabaseClient): Pr
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as CandidateRow[];
-  // Jamais pour l'Espion : filtré avant même de regarder le verrouillage —
-  // un Espion dont la journée est verrouillée ne devient pas notifiable pour
-  // autant.
-  const eligible = rows.filter((r) => {
-    const power = one(r.powers);
-    return power !== null && !NEVER_NOTIFY_CODES.has(power.code);
-  });
+  const eligible = rows.filter((r) => one(r.powers) !== null);
   if (eligible.length === 0) return 0;
 
   const roundIds = [...new Set(eligible.map((r) => r.round_id))];

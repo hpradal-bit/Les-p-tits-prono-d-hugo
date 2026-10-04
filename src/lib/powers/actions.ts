@@ -207,18 +207,20 @@ export async function declarePower(
   // fenêtre de riposte (rapport de l'hôte : Sabotage de Hugo contre Pierre,
   // puis riposte de Pierre contre Hugo le même soir, bien avant que les
   // autres matchs de la journée ne ferment) et, pour l'Espion, cassait tout
-  // bonnement le secret du pouvoir (la cible ne doit JAMAIS savoir qu'elle
-  // est observée).
+  // bonnement le secret du pouvoir AVANT le coup d'envoi.
   //
   // Elle est désormais différée : `power_usages.target_notified_at` reste
   // `null` à la déclaration (posé implicitement, pas de colonne à remplir
   // ici), et c'est le balayage périodique (`sweepPowerDeclaredNotifications`,
   // `src/lib/push/power-sweep.ts`, appelé par `/api/push/dispatch` au même
-  // rythme que les rappels de verrouillage) qui l'enverra — une fois, jamais
-  // avant que TOUTE la journée (`round_id`) ait verrouillé, et jamais pour
-  // l'Espion (`spy`), qui reste secret pour toujours. Tout ce qu'il faut
-  // pour cet envoi différé (qui, quel pouvoir, quelle journée) vit déjà dans
-  // la ligne `power_usages` qu'on vient d'insérer : rien n'est perdu.
+  // rythme que les rappels de verrouillage) qui l'enverra — jamais avant que
+  // TOUTE la journée (`round_id`) ait verrouillé, mais TOUJOURS une fois ce
+  // moment passé, pour tous les pouvoirs sans exception, Espion compris :
+  // demande explicite de l'hôte, après coup savoir qu'on a été observé est
+  // amusant, pas un risque, puisque le pronostic visé est déjà public une
+  // fois son match verrouillé. Tout ce qu'il faut pour cet envoi différé
+  // (qui, quel pouvoir, quelle journée) vit déjà dans la ligne `power_usages`
+  // qu'on vient d'insérer : rien n'est perdu.
 
   revalidatePath("/journee");
   revalidatePath("/classement");
