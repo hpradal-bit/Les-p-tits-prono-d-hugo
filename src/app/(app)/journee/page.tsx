@@ -142,15 +142,18 @@ export default async function JourneePage({
   // l'Espion reste réservé à son auteur (c'est tout l'intérêt du secret —
   // une cible qui saurait qu'elle est observée changerait son comportement),
   // alors que le Duel et le Sabotage n'ont rien à cacher une fois déclarés.
-  const myUsage = roundUsages.find(
+  //
+  // Un joueur peut désormais avoir PLUSIEURS usages actifs à la fois sur la
+  // même journée (plus de plafond "un seul pouvoir actif par journée", voir
+  // `declarePower`) : `find` (singulier) devient `filter` (pluriel), même
+  // logique de visibilité initiateur/cible, appliquée à chaque usage.
+  const myUsages = roundUsages.filter(
     (u) =>
       (u.state === "declared" || u.state === "accepted") &&
       (u.initiatorId === viewer.id || (u.targetId === viewer.id && u.powerCode !== "spy")),
   );
-  const myRole: "initiator" | "target" =
-    myUsage && myUsage.targetId === viewer.id && myUsage.initiatorId !== viewer.id
-      ? "target"
-      : "initiator";
+  const roleOf = (u: (typeof myUsages)[number]): "initiator" | "target" =>
+    u.targetId === viewer.id && u.initiatorId !== viewer.id ? "target" : "initiator";
 
   // Classement général en direct : c'est celui que le joueur voit sur
   // /classement, donc celui contre lequel "mieux classé" doit se vérifier.
@@ -302,6 +305,11 @@ export default async function JourneePage({
   // pouvoir (cahier des charges §32). Le lire à chaque rendu de la page
   // (force-dynamic) suffit à le garder "en direct" tant que la cible peut
   // encore changer d'avis.
+  // Un joueur n'a en pratique jamais plus d'un Espion actif à la fois (c'est
+  // `needsTarget` et pas vraiment ré-utilisable dans l'instant), mais rien
+  // ici ne suppose ça en dur : on cherche l'usage Espion actif, quel que soit
+  // son rang dans `myUsages`.
+  const mySpyUsage = myUsages.find((u) => u.powerCode === "spy" && u.initiatorId === viewer.id);
   let spyReveal:
     | {
         hasAnswered: boolean;
@@ -310,15 +318,15 @@ export default async function JourneePage({
         marginLabel: string | null;
       }
     | null = null;
-  if (myUsage?.powerCode === "spy" && myUsage.targetId && myUsage.snapshotBefore.fixtureId) {
+  if (mySpyUsage?.targetId && mySpyUsage.snapshotBefore.fixtureId) {
     const targetFixture = board.fixtures.find(
-      (f) => f.fixture.id === myUsage.snapshotBefore.fixtureId,
+      (f) => f.fixture.id === mySpyUsage.snapshotBefore.fixtureId,
     );
     if (targetFixture) {
       const reveal = await loadSpyReveal(
         admin,
-        myUsage.targetId,
-        myUsage.snapshotBefore.fixtureId as string,
+        mySpyUsage.targetId,
+        mySpyUsage.snapshotBefore.fixtureId as string,
       );
       const hasExactScore = reveal.exactHomeScore !== null && reveal.exactAwayScore !== null;
       const bucket =
@@ -342,35 +350,38 @@ export default async function JourneePage({
     }
   }
 
-  const activeUsageData = myUsage
-    ? {
-        id: myUsage.id,
-        powerCode: myUsage.powerCode,
-        powerEmoji: activePowers.find((p) => p.id === myUsage.powerId)?.emoji ?? "⚡",
-        powerName: activePowers.find((p) => p.id === myUsage.powerId)?.name ?? myUsage.powerCode,
-        role: myRole,
-        // La cible si je suis l'auteur, l'auteur si je suis la cible.
-        otherName:
-          myRole === "initiator"
-            ? myUsage.targetId
-              ? displayNameById.get(myUsage.targetId) ?? null
-              : null
-            : displayNameById.get(myUsage.initiatorId) ?? null,
-        fixtureName: myUsage.snapshotBefore.fixtureId
-          ? fixtureOptions.find((f) => f.id === myUsage.snapshotBefore.fixtureId)?.label ?? null
+  // Un entrée par usage actif, chacune avec son propre rôle correctement
+  // calculé — plus un seul usage "singleton" qui écrasait tous les autres.
+  const activeUsageData = myUsages.map((usage) => {
+    const role = roleOf(usage);
+    return {
+      id: usage.id,
+      powerCode: usage.powerCode,
+      powerEmoji: activePowers.find((p) => p.id === usage.powerId)?.emoji ?? "⚡",
+      powerName: activePowers.find((p) => p.id === usage.powerId)?.name ?? usage.powerCode,
+      role,
+      // La cible si je suis l'auteur, l'auteur si je suis la cible.
+      otherName:
+        role === "initiator"
+          ? usage.targetId
+            ? displayNameById.get(usage.targetId) ?? null
+            : null
+          : displayNameById.get(usage.initiatorId) ?? null,
+      fixtureName: usage.snapshotBefore.fixtureId
+        ? fixtureOptions.find((f) => f.id === usage.snapshotBefore.fixtureId)?.label ?? null
+        : null,
+      // Le rang figé n'a de sens que pour l'auteur — il compte SES utilisations.
+      useIndex:
+        role === "initiator" && typeof usage.snapshotBefore.useIndex === "number"
+          ? usage.snapshotBefore.useIndex
           : null,
-        // Le rang figé n'a de sens que pour l'auteur — il compte SES utilisations.
-        useIndex:
-          myRole === "initiator" && typeof myUsage.snapshotBefore.useIndex === "number"
-            ? myUsage.snapshotBefore.useIndex
-            : null,
-        maxUses:
-          myRole === "initiator" && typeof myUsage.snapshotBefore.maxUses === "number"
-            ? myUsage.snapshotBefore.maxUses
-            : null,
-        spyReveal: myRole === "initiator" ? spyReveal : null,
-      }
-    : null;
+      maxUses:
+        role === "initiator" && typeof usage.snapshotBefore.maxUses === "number"
+          ? usage.snapshotBefore.maxUses
+          : null,
+      spyReveal: role === "initiator" && usage.id === mySpyUsage?.id ? spyReveal : null,
+    };
+  });
 
   // Uniquement pour les pastilles d'en-tête (points marqués sur la journée
   // courante) — la répartition à jouer/verrouillés/en cours/terminés du
@@ -454,7 +465,7 @@ export default async function JourneePage({
         roundId={currentRoundId}
         fixtures={fixtureOptions}
         players={playerOptions}
-        activeUsage={activeUsageData}
+        activeUsages={activeUsageData}
         viewerId={viewer.id}
       />
 

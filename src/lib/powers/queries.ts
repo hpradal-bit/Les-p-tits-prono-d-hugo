@@ -50,24 +50,6 @@ export async function loadRoundUsages(
   return ((data ?? []) as Array<Record<string, unknown>>).map(mapUsage);
 }
 
-export async function loadUserRoundUsage(
-  sb: SupabaseClient,
-  userId: string,
-  roundId: string,
-): Promise<PowerUsage | null> {
-  const { data, error } = await sb
-    .from("power_usages")
-    .select("id, token_id, power_id, initiator_id, target_id, round_id, state, snapshot_before, result, created_at, resolved_at, powers!inner(code)")
-    .eq("initiator_id", userId)
-    .eq("round_id", roundId)
-    .in("state", ["declared", "accepted"])
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  return mapUsage(data as Record<string, unknown>);
-}
-
 function mapUsage(r: Record<string, unknown>): PowerUsage {
   const powers = r.powers as { code: string } | { code: string }[] | null;
   const powerCode = Array.isArray(powers) ? powers[0]?.code : powers?.code;

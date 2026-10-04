@@ -170,6 +170,41 @@ describe("duel", () => {
     assert.equal(r.valid, true);
   });
 
+  it("deux Duels simultanés du même initiateur, contre deux cibles différentes, se résolvent chacun correctement et indépendamment", () => {
+    // Depuis que le plafond "un seul pouvoir actif par journée" a été retiré
+    // (declarePower), un joueur peut avoir deux Duels actifs à la fois sur la
+    // même journée. Chaque usage est résolu séparément par `applyResolution`
+    // (clé = son propre `usage.id`, jamais dédupliqué par `initiatorId`) et
+    // `loadRoundTotals` exclut déjà les ajustements `power:duel` de son
+    // propre total — donc le total utilisé pour calculer chaque Duel ne
+    // dépend d'aucun AUTRE Duel en cours, qu'il y en ait un ou deux.
+    const roundTotals = new Map([["alice", 12], ["bob", 8], ["chloe", 15]]);
+
+    const duel1 = duel.resolve({
+      usage: makeUsage({ id: "u-1", powerCode: "duel", initiatorId: "alice", targetId: "bob" }),
+      power: makePower("duel", { tie: "no_transfer" }),
+      fixtureScores: new Map(),
+      roundTotals,
+    });
+    assert.equal(duel1.outcome.winnerId, "alice");
+    assert.equal(duel1.adjustments.find((a) => a.userId === "alice")?.delta, 8);
+    assert.equal(duel1.adjustments.find((a) => a.userId === "bob")?.delta, -8);
+
+    const duel2 = duel.resolve({
+      usage: makeUsage({ id: "u-2", powerCode: "duel", initiatorId: "alice", targetId: "chloe" }),
+      power: makePower("duel", { tie: "no_transfer" }),
+      fixtureScores: new Map(),
+      roundTotals,
+    });
+    assert.equal(duel2.outcome.winnerId, "chloe");
+    assert.equal(duel2.adjustments.find((a) => a.userId === "chloe")?.delta, 12);
+    assert.equal(duel2.adjustments.find((a) => a.userId === "alice")?.delta, -12);
+
+    // Le résultat du premier Duel n'a pas changé en calculant le second : les
+    // deux sont bien indépendants, calculés sur le même total de journée.
+    assert.equal(duel1.adjustments.find((a) => a.userId === "alice")?.delta, 8);
+  });
+
   it("\"better_or_equal_ranked\" accepte mieux classé et à égalité, refuse moins bien classé", () => {
     // Décision finale d'Hugo (migration 0040, après un aller-retour) : mieux
     // classé OU à égalité de points, jamais moins bien classé.

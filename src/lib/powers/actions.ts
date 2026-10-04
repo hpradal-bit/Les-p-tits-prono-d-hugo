@@ -14,7 +14,6 @@ import { powerEffect } from "./credits.ts";
 import {
   loadActivePowers,
   loadUsageCounts,
-  loadUserRoundUsage,
   loadRoundUsages,
 } from "./queries.ts";
 import { applyResolution } from "./resolve.ts";
@@ -61,8 +60,15 @@ export async function declarePower(
   // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
   const seasonId = round.season_id as string;
 
-  const existing = await loadUserRoundUsage(admin, user.id, parsed.data.roundId);
-  if (existing) return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
+  // Plus de plafond "un seul pouvoir actif par journée" : un joueur peut
+  // activer autant de pouvoirs DIFFÉRENTS qu'il veut sur la même journée (et
+  // même le même pouvoir plusieurs fois, par ex. Oracle sur deux matchs),
+  // tant qu'il respecte le quota propre à CHAQUE pouvoir (3 crédits par
+  // pouvoir et par saison, vérifié juste après via `loadUsageCounts` /
+  // `buildQuotas` / `quotaRefusal`). Demande explicite de l'hôte : Hugo était
+  // bloqué pour tenter un second pouvoir contre le Duel de Pierre alors qu'il
+  // avait encore du crédit sur un autre pouvoir. L'ancien index unique en
+  // base (migration 0038) est retiré dans la même série (migration 0066).
 
   const settings = await loadSettings(admin);
   const fallbackMax = setting<number>(settings, "powers.max_uses_per_player", FALLBACK_MAX_USES);
@@ -154,11 +160,13 @@ export async function declarePower(
     .single();
 
   if (usageErr) {
-    // Violation de l'index unique "une utilisation active par joueur et par
-    // journée" (cf. migration) : deux clics simultanés ont tenté de déclarer
-    // deux pouvoirs à la fois, la base n'en a laissé passer qu'un seul.
+    // L'ancien index unique "une utilisation active par joueur et par
+    // journée" (migration 0038) a été retiré (migration 0066) : un joueur
+    // peut désormais avoir plusieurs pouvoirs actifs à la fois. Une violation
+    // d'unicité ici ne peut donc plus venir que d'une autre contrainte (ex.
+    // jeton), pas d'un double-clic sur « déclarer un pouvoir ».
     if (usageErr.code === "23505") {
-      return { ok: false, message: "Tu as déjà utilisé un pouvoir sur cette journée." };
+      return { ok: false, message: "Cette déclaration a déjà été enregistrée." };
     }
     return { ok: false, message: usageErr.message };
   }

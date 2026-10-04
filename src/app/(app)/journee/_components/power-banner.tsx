@@ -212,115 +212,127 @@ function PowerModal({
   );
 }
 
+/**
+ * Une carte « pouvoir actif » — avant, elle seule s'affichait, en lieu et
+ * place de toute la grille des pouvoirs disponibles. Un joueur peut
+ * désormais avoir plusieurs usages actifs à la fois (ex. un Duel ET un
+ * Oracle le même jour) : chaque usage obtient sa propre carte, et la grille
+ * reste visible en dessous (cf. `PowerBanner`).
+ */
+function ActiveUsageCard({
+  activeUsage,
+  onOpenBattle,
+}: {
+  activeUsage: ActiveUsage;
+  onOpenBattle: () => void;
+}) {
+  const isTarget = activeUsage.role === "target";
+  // Le Duel est le seul pouvoir à offrir un vrai « match en direct » — voir
+  // `DuelBattleModal`. Cliquable des deux côtés : la cible en a au moins
+  // autant besoin que l'auteur pour juger si elle est menée.
+  const isDuel = activeUsage.powerCode === "duel" && activeUsage.otherName !== null;
+  const headline = isTarget
+    ? `${activeUsage.otherName ?? "Quelqu'un"} a activé ${activeUsage.powerName} contre toi`
+    : `Tu as activé ${activeUsage.powerName}${activeUsage.otherName ? ` contre ${activeUsage.otherName}` : ""}`;
+
+  const content = (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-ink">
+          <span className="text-lg">{activeUsage.powerEmoji}</span>
+          <span className="truncate">{activeUsage.powerName}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+              isTarget ? "bg-wrong text-surface" : "bg-clay text-surface",
+            )}
+          >
+            {isTarget ? "CONTRE TOI" : "ACTIF"}
+          </span>
+        </span>
+        {/* Un pouvoir acheté est définitif : pas de bouton "Annuler", pour
+            qu'aucun joueur ne puisse regarder puis se retirer selon ce qu'il
+            a vu (l'Espion, en particulier). */}
+      </div>
+
+      <p className="text-[11.5px] text-ink-muted">
+        {[headline, activeUsage.fixtureName].filter(Boolean).join(" · ")}
+      </p>
+
+      {isDuel && (
+        <p className="text-[11px] font-semibold text-clay">Voir le match en direct →</p>
+      )}
+
+      {!isTarget && activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
+        <div className="rounded-xl bg-surface/70 px-3 py-2 text-[12.5px] leading-snug text-ink">
+          {!activeUsage.spyReveal.hasAnswered ? (
+            <p className="text-ink-faint">
+              {activeUsage.otherName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <p className="font-semibold">
+                {activeUsage.otherName} → {activeUsage.spyReveal.outcomeLabel}
+              </p>
+              {activeUsage.spyReveal.exactScoreLabel && (
+                <p className="text-ink-muted">
+                  Score exact → {activeUsage.spyReveal.exactScoreLabel}
+                </p>
+              )}
+              {!activeUsage.spyReveal.exactScoreLabel && activeUsage.spyReveal.marginLabel && (
+                <p className="text-ink-muted">
+                  Écart pronostiqué → {activeUsage.spyReveal.marginLabel}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  if (isDuel) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenBattle}
+        className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5 text-left"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5">
+      {content}
+    </div>
+  );
+}
+
 export function PowerBanner({
   powers,
   roundId,
   fixtures,
   players,
-  activeUsage,
+  activeUsages,
   viewerId,
 }: {
   powers: PowerOption[];
   roundId: string;
   fixtures: FixtureOption[];
   players: PlayerOption[];
-  activeUsage: ActiveUsage | null;
+  activeUsages: ActiveUsage[];
   viewerId: string;
 }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
-  const [battleOpen, setBattleOpen] = useState(false);
+  // L'identifiant de l'usage dont on regarde le match en direct — plus un
+  // simple booléen, puisqu'un joueur peut désormais avoir plusieurs Duels
+  // actifs en même temps (chacun avec son propre match en direct).
+  const [battleUsageId, setBattleUsageId] = useState<string | null>(null);
 
   // Les pouvoirs restent visibles même sans crédit : c'est une vitrine autant
   // qu'un outil. Seule l'activation est bloquée.
   if (powers.length === 0) return null;
-
-  if (activeUsage) {
-    const isTarget = activeUsage.role === "target";
-    // Le Duel est le seul pouvoir à offrir un vrai « match en direct » — voir
-    // `DuelBattleModal`. Cliquable des deux côtés : la cible en a au moins
-    // autant besoin que l'auteur pour juger si elle est menée.
-    const isDuel = activeUsage.powerCode === "duel" && activeUsage.otherName !== null;
-    const headline = isTarget
-      ? `${activeUsage.otherName ?? "Quelqu'un"} a activé ${activeUsage.powerName} contre toi`
-      : `Tu as activé ${activeUsage.powerName}${activeUsage.otherName ? ` contre ${activeUsage.otherName}` : ""}`;
-
-    const content = (
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-ink">
-            <span className="text-lg">{activeUsage.powerEmoji}</span>
-            <span className="truncate">{activeUsage.powerName}</span>
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
-                isTarget ? "bg-wrong text-surface" : "bg-clay text-surface",
-              )}
-            >
-              {isTarget ? "CONTRE TOI" : "ACTIF"}
-            </span>
-          </span>
-          {/* Un pouvoir acheté est définitif : pas de bouton "Annuler", pour
-              qu'aucun joueur ne puisse regarder puis se retirer selon ce qu'il
-              a vu (l'Espion, en particulier). */}
-        </div>
-
-        <p className="text-[11.5px] text-ink-muted">
-          {[headline, activeUsage.fixtureName].filter(Boolean).join(" · ")}
-        </p>
-
-        {isDuel && (
-          <p className="text-[11px] font-semibold text-clay">Voir le match en direct →</p>
-        )}
-
-        {!isTarget && activeUsage.powerCode === "spy" && activeUsage.spyReveal && (
-          <div className="rounded-xl bg-surface/70 px-3 py-2 text-[12.5px] leading-snug text-ink">
-            {!activeUsage.spyReveal.hasAnswered ? (
-              <p className="text-ink-faint">
-                {activeUsage.otherName ?? "Ta cible"} n&apos;a pas encore pronostiqué ce match.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                <p className="font-semibold">
-                  {activeUsage.otherName} → {activeUsage.spyReveal.outcomeLabel}
-                </p>
-                {activeUsage.spyReveal.exactScoreLabel && (
-                  <p className="text-ink-muted">
-                    Score exact → {activeUsage.spyReveal.exactScoreLabel}
-                  </p>
-                )}
-                {!activeUsage.spyReveal.exactScoreLabel && activeUsage.spyReveal.marginLabel && (
-                  <p className="text-ink-muted">
-                    Écart pronostiqué → {activeUsage.spyReveal.marginLabel}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-
-    return (
-      <>
-        {isDuel ? (
-          <button
-            type="button"
-            onClick={() => setBattleOpen(true)}
-            className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5 text-left"
-          >
-            {content}
-          </button>
-        ) : (
-          <div className="rounded-2xl border border-clay/30 bg-clay-soft/50 px-3.5 py-2.5">
-            {content}
-          </div>
-        )}
-        {isDuel && battleOpen && (
-          <DuelBattleModal usageId={activeUsage.id} onClose={() => setBattleOpen(false)} />
-        )}
-      </>
-    );
-  }
 
   const openPower = powers.find((p) => p.code === openCode) ?? null;
   const viewerPosition = players.find((x) => x.userId === viewerId)?.position ?? Infinity;
@@ -331,8 +343,25 @@ export function PowerBanner({
     return others;
   };
 
+  const activeUsageForBattle = activeUsages.find((u) => u.id === battleUsageId) ?? null;
+
   return (
     <section className="flex flex-col gap-2">
+      {/* Une carte par usage actif — un joueur peut en avoir plusieurs à la
+          fois (ex. un Duel ET un Oracle le même jour) : plus question de
+          remplacer toute la grille des pouvoirs par une seule carte. */}
+      {activeUsages.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {activeUsages.map((u) => (
+            <ActiveUsageCard
+              key={u.id}
+              activeUsage={u}
+              onOpenBattle={() => setBattleUsageId(u.id)}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-[15px]">⚡</span>
@@ -345,7 +374,9 @@ export function PowerBanner({
       </div>
 
       {/* Une pastille par pouvoir : le détail s'ouvre dans une fenêtre au clic
-          plutôt que de pousser le reste de l'écran. */}
+          plutôt que de pousser le reste de l'écran. La grille reste affichée
+          même avec des usages actifs ci-dessus — seul le quota propre à
+          chaque pouvoir (`remaining`) décide s'il est encore utilisable. */}
       <div className="scrollbar-none -mx-1 flex gap-3 overflow-x-auto px-1 pb-0.5">
         {powers.map((p) => {
           const affordable = p.remaining > 0;
@@ -383,10 +414,17 @@ export function PowerBanner({
       {openPower && (
         <PowerModal
           power={openPower}
-                    fixtures={fixtures}
+          fixtures={fixtures}
           eligibleTargets={eligibleTargets(openPower)}
           roundId={roundId}
           onClose={() => setOpenCode(null)}
+        />
+      )}
+
+      {activeUsageForBattle && (
+        <DuelBattleModal
+          usageId={activeUsageForBattle.id}
+          onClose={() => setBattleUsageId(null)}
         />
       )}
     </section>
