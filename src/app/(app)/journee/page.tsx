@@ -38,6 +38,7 @@ import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { PowerDigestBanner } from "./_components/power-digest-banner";
 import { buildPowerDigest } from "@/lib/powers/digest";
+import { loadRoundRevealTime } from "@/lib/powers/round-lock";
 import { loadDuelBattle } from "@/lib/powers/battle-queries";
 import { RoundNav } from "./_components/round-nav";
 import { RoundBanner } from "../_components/round-banner";
@@ -255,19 +256,16 @@ export default async function JourneePage({
       },
     ]),
   );
-  const roundFirstKickoffAt =
-    board.fixtures.length > 0
-      ? board.fixtures.reduce(
-          (earliest, f) => (f.fixture.kickoffAt < earliest ? f.fixture.kickoffAt : earliest),
-          board.fixtures[0].fixture.kickoffAt,
-        )
-      : null;
+  // Révélé une fois la journée ENTIÈREMENT verrouillée (dernier `locks_at`
+  // parmi tous les matchs de `currentRoundId`), jamais au premier coup
+  // d'envoi ni au seul match visé : cf. `round-lock.ts`.
+  const roundRevealAt = await loadRoundRevealTime(admin, currentRoundId);
   const digestItemsWithoutScore = buildPowerDigest({
     usages: roundUsages,
     powersById,
     playersById,
     fixturesById,
-    roundFirstKickoffAt,
+    roundRevealAt,
   });
 
   // Hugo a demandé que le score d'un Duel encore en cours apparaisse en

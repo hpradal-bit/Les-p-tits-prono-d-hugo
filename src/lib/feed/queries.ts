@@ -4,6 +4,7 @@ import { loadSettings, setting } from "@/lib/settings";
 import { getViewer } from "@/lib/auth/session";
 import { renderEvent, RENDERED_KINDS, type FeedEvent, type RenderedEvent } from "./render";
 import { isPowerPublic } from "@/lib/powers/visibility";
+import { loadRoundRevealTimes } from "@/lib/powers/round-lock";
 import type { Uuid } from "@/lib/types";
 
 export type FeedFilter = "tout" | "jeu" | "pouvoirs" | "messages";
@@ -94,11 +95,18 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
 }
 
 /**
- * Écarte les `power_declared` dont le match n'a pas encore commencé.
+ * Écarte les `power_declared` dont la JOURNÉE ENTIÈRE (tous ses matchs,
+ * `round_id`) n'a pas encore verrouillé.
  *
  * Savoir qu'un joueur a posé un Sabotage sur un match avant que celui-ci se
  * joue renseignerait les autres au moment de pronostiquer : le fil deviendrait
- * un canal de renseignement. Les autres événements passent sans condition.
+ * un canal de renseignement. Pire : révéler un pouvoir dès le coup d'envoi de
+ * SON PROPRE match (ou, pour un pouvoir sans match comme le Duel, dès le
+ * premier coup d'envoi de la journée) laisse une fenêtre de riposte ouverte
+ * sur tout AUTRE match de la même journée pas encore verrouillé — d'où le
+ * passage au dernier verrouillage de la journée (`round-lock.ts`), pour tous
+ * les pouvoirs, qu'ils visent un match précis ou aucun. Les autres
+ * événements passent sans condition.
  */
 async function withoutUnstartedPowers(
   admin: ReturnType<typeof createAdminClient>,
@@ -107,19 +115,6 @@ async function withoutUnstartedPowers(
   const powerEvents = events.filter((e) => e.kind === "power_declared");
   if (powerEvents.length === 0) return events;
 
-  const fixtureOf = (e: Record<string, unknown>): string | null => {
-    const payload = (e.payload as Record<string, unknown> | null) ?? {};
-    // Les premiers événements écrivaient `fixtureId`, les suivants
-    // `fixture_id` : on accepte les deux plutôt que de réécrire le passé.
-    const raw = payload.fixture_id ?? payload.fixtureId;
-    return typeof raw === "string" && raw.length > 0 ? raw : null;
-  };
-
-  const fixtureIds = [
-    ...new Set(powerEvents.map(fixtureOf).filter((id): id is string => id !== null)),
-  ];
-  // Un pouvoir qui ne vise pas un match (le Duel vise un joueur) se révèle au
-  // premier coup d'envoi de sa journée : avant, il renseignerait tout autant.
   const roundIds = [
     ...new Set(
       powerEvents
@@ -128,32 +123,13 @@ async function withoutUnstartedPowers(
     ),
   ];
 
-  const kickoffs = new Map<string, string>();
-  const roundStarts = new Map<string, string>();
-  const [byFixture, byRound] = await Promise.all([
-    fixtureIds.length > 0
-      ? admin.from("fixtures").select("id, kickoff_at").in("id", fixtureIds)
-      : Promise.resolve({ data: [] }),
-    roundIds.length > 0
-      ? admin.from("fixtures").select("round_id, kickoff_at").in("round_id", roundIds)
-      : Promise.resolve({ data: [] }),
-  ]);
-  for (const f of (byFixture.data ?? []) as Array<{ id: string; kickoff_at: string }>) {
-    kickoffs.set(f.id, f.kickoff_at);
-  }
-  for (const f of (byRound.data ?? []) as Array<{ round_id: string; kickoff_at: string }>) {
-    const current = roundStarts.get(f.round_id);
-    if (!current || f.kickoff_at < current) roundStarts.set(f.round_id, f.kickoff_at);
-  }
+  const revealTimes = await loadRoundRevealTimes(admin, roundIds);
 
   const now = new Date();
   return events.filter((e) => {
     if (e.kind !== "power_declared") return true;
-    const fixtureId = fixtureOf(e);
-    const kickoff = fixtureId
-      ? kickoffs.get(fixtureId) ?? null
-      : roundStarts.get(e.round_id as string) ?? null;
-    return isPowerPublic(kickoff, now);
+    const revealAt = revealTimes.get(e.round_id as string) ?? null;
+    return isPowerPublic(revealAt, now);
   });
 }
 
@@ -175,46 +151,23 @@ async function keepStartedPowerPosts(
   );
   if (powerPosts.length === 0) return posts;
 
-  const fixtureIds = new Set<string>();
   const roundIds = new Set<string>();
   for (const p of powerPosts) {
     const event = one<EventShape>(p.event);
-    const payload = (event?.payload ?? {}) as Record<string, unknown>;
-    const fixtureId = payload.fixture_id ?? payload.fixtureId;
-    if (typeof fixtureId === "string" && fixtureId !== "") fixtureIds.add(fixtureId);
-    else if (event?.round_id) roundIds.add(event.round_id);
+    if (event?.round_id) roundIds.add(event.round_id);
   }
 
-  const [fixturesRes, roundsRes] = await Promise.all([
-    fixtureIds.size > 0
-      ? sb.from("fixtures").select("id, kickoff_at").in("id", [...fixtureIds])
-      : Promise.resolve({ data: [] as unknown[] }),
-    roundIds.size > 0
-      ? sb.from("fixtures").select("round_id, kickoff_at").in("round_id", [...roundIds])
-      : Promise.resolve({ data: [] as unknown[] }),
-  ]);
-
-  const kickoffs = new Map<string, string>();
-  for (const f of (fixturesRes.data ?? []) as Array<{ id: string; kickoff_at: string }>) {
-    kickoffs.set(f.id, f.kickoff_at);
-  }
-  const roundStarts = new Map<string, string>();
-  for (const f of (roundsRes.data ?? []) as Array<{ round_id: string; kickoff_at: string }>) {
-    const current = roundStarts.get(f.round_id);
-    if (!current || f.kickoff_at < current) roundStarts.set(f.round_id, f.kickoff_at);
-  }
+  // Révélé par le dernier verrouillage de la journée entière, pas par le
+  // seul match visé ni par le premier coup d'envoi — même règle que
+  // `withoutUnstartedPowers` ci-dessus, cf. `round-lock.ts`.
+  const revealTimes = await loadRoundRevealTimes(sb, [...roundIds]);
 
   const now = new Date();
   return posts.filter((p) => {
     const event = one<EventShape>(p.event);
     if (event?.kind !== "power_declared") return true;
-    const payload = (event.payload ?? {}) as Record<string, unknown>;
-    const fixtureId = payload.fixture_id ?? payload.fixtureId;
-    const kickoff =
-      typeof fixtureId === "string" && fixtureId !== ""
-        ? kickoffs.get(fixtureId) ?? null
-        : roundStarts.get(event.round_id ?? "") ?? null;
-    return isPowerPublic(kickoff, now);
+    const revealAt = revealTimes.get(event.round_id ?? "") ?? null;
+    return isPowerPublic(revealAt, now);
   });
 }
 

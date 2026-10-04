@@ -4,11 +4,13 @@
  * seul pour un pouvoir sans adversaire), au lieu du texte brut du Fil.
  *
  * Même règle de visibilité que le Fil (`src/lib/powers/visibility.ts`,
- * `src/lib/feed/queries.ts`) : un pouvoir reste caché tant que son match n'a
- * pas commencé (ou, pour un pouvoir qui vise un joueur plutôt qu'un match —
- * le Duel —, tant que le premier match de la journée n'a pas commencé) —
- * sinon ce résumé deviendrait lui-même un canal de renseignement. Fonction
- * pure : aucun accès base, entièrement testable.
+ * `src/lib/feed/queries.ts`) : un pouvoir reste caché tant que la JOURNÉE
+ * ENTIÈRE (tous ses matchs, `round_id`) n'a pas verrouillé — jamais
+ * seulement son propre match, ni seulement le premier de la journée, sinon
+ * une riposte reste possible sur un autre match du même week-end encore
+ * ouvert. Fonction pure : aucun accès base, l'appelant calcule
+ * `roundRevealAt` (cf. `src/lib/powers/round-lock.ts`) et le passe ici —
+ * entièrement testable.
  */
 
 import { isPowerPublic } from "./visibility.ts";
@@ -62,8 +64,13 @@ export function buildPowerDigest(input: {
   powersById: ReadonlyMap<Uuid, DigestPowerInfo>;
   playersById: ReadonlyMap<Uuid, PlayerRef>;
   fixturesById: ReadonlyMap<Uuid, DigestFixtureInfo>;
-  /** Le coup d'envoi le plus tôt de la journée — révèle un pouvoir sans match visé. */
-  roundFirstKickoffAt: string | null;
+  /**
+   * Le dernier verrouillage de la journée (`max(fixtures.locks_at)`,
+   * cf. `round-lock.ts`) — révèle TOUS les pouvoirs de cette journée, qu'ils
+   * visent un match précis ou aucun (le Duel). `null` si la journée n'a
+   * aucun match connu (rien à cacher dans ce cas).
+   */
+  roundRevealAt: string | null;
   now?: Date;
 }): PowerDigestItem[] {
   const now = input.now ?? new Date();
@@ -75,8 +82,9 @@ export function buildPowerDigest(input: {
 
     const fixtureId = (usage.snapshotBefore.fixtureId as string | undefined) ?? null;
     const fixture = fixtureId ? input.fixturesById.get(fixtureId) ?? null : null;
-    const kickoff = fixture?.kickoffAt ?? input.roundFirstKickoffAt;
-    if (!isPowerPublic(kickoff, now)) continue;
+    // Révélé par la journée entière, pas par le seul match visé : cf. l'en-tête
+    // de ce fichier et `round-lock.ts`.
+    if (!isPowerPublic(input.roundRevealAt, now)) continue;
 
     const initiator = input.playersById.get(usage.initiatorId);
     if (!initiator) continue;

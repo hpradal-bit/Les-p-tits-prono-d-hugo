@@ -43,7 +43,7 @@ describe("buildPowerDigest", () => {
       powersById,
       playersById,
       fixturesById: new Map(),
-      roundFirstKickoffAt: "2026-09-01T00:00:00Z",
+      roundRevealAt: "2026-09-01T00:00:00Z",
       now: new Date("2026-09-02T00:00:00Z"),
     });
 
@@ -67,7 +67,7 @@ describe("buildPowerDigest", () => {
       powersById,
       playersById,
       fixturesById: new Map([["f1", { kickoffAt: "2026-09-01T00:00:00Z", label: "ST - UBB" }]]),
-      roundFirstKickoffAt: "2026-09-01T00:00:00Z",
+      roundRevealAt: "2026-09-01T00:00:00Z",
       now: new Date("2026-09-02T00:00:00Z"),
     });
 
@@ -78,7 +78,7 @@ describe("buildPowerDigest", () => {
     assert.equal(items[0].effect, "Double tes points si tu trouves le score exact.");
   });
 
-  test("avant le coup d'envoi du match vise, le pouvoir reste cache (meme regle que le Fil)", () => {
+  test("avant le verrouillage de la JOURNEE ENTIERE, le pouvoir reste cache, meme si son propre match a deja commence", () => {
     const items = buildPowerDigest({
       usages: [
         usage({
@@ -91,20 +91,24 @@ describe("buildPowerDigest", () => {
       ],
       powersById,
       playersById,
-      fixturesById: new Map([["f1", { kickoffAt: "2026-09-05T18:00:00Z", label: "ST - UBB" }]]),
-      roundFirstKickoffAt: "2026-09-01T00:00:00Z",
-      now: new Date("2026-09-01T00:00:00Z"),
+      // Le match visé a déjà commencé...
+      fixturesById: new Map([["f1", { kickoffAt: "2026-09-05T13:00:00Z", label: "ST - UBB" }]]),
+      // ... mais un AUTRE match de la même journée ferme plus tard : la
+      // journée entière n'est pas encore verrouillée, donc le pouvoir reste
+      // caché malgré le coup d'envoi déjà passé de son propre match.
+      roundRevealAt: "2026-09-05T21:00:00Z",
+      now: new Date("2026-09-05T18:00:00Z"),
     });
     assert.equal(items.length, 0);
   });
 
-  test("un Duel (sans match propre) se revele au premier coup d'envoi de la journee", () => {
+  test("un Duel (sans match propre) se revele au dernier verrouillage de la journee, pas au premier coup d'envoi", () => {
     const beforeKickoff = buildPowerDigest({
       usages: [usage({})],
       powersById,
       playersById,
       fixturesById: new Map(),
-      roundFirstKickoffAt: "2026-09-05T18:00:00Z",
+      roundRevealAt: "2026-09-05T18:00:00Z",
       now: new Date("2026-09-05T17:00:00Z"),
     });
     assert.equal(beforeKickoff.length, 0);
@@ -114,7 +118,7 @@ describe("buildPowerDigest", () => {
       powersById,
       playersById,
       fixturesById: new Map(),
-      roundFirstKickoffAt: "2026-09-05T18:00:00Z",
+      roundRevealAt: "2026-09-05T18:00:00Z",
       now: new Date("2026-09-05T19:00:00Z"),
     });
     assert.equal(afterKickoff.length, 1);
@@ -126,7 +130,7 @@ describe("buildPowerDigest", () => {
       powersById,
       playersById,
       fixturesById: new Map(),
-      roundFirstKickoffAt: null,
+      roundRevealAt: null,
       now: new Date(),
     });
     assert.equal(items.length, 0);
