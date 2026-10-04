@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadSettings, setting } from "@/lib/settings";
-import { sendToUser, type PushPayload } from "./send";
-import { scheduleForAll, dayKey, type QuietHours } from "./schedule";
-import { readRules } from "./rules";
-import { isKindEnabledFor, type CatalogEntry, type PreferenceRow } from "./preferences";
+// Chemin relatif, comme `rules.ts` (son voisin direct) : garde ce fichier
+// exécutable par `node --test` seul, sans résolution d'alias de bundler.
+import { loadSettings, setting } from "../settings/index.ts";
+import { sendToUser, type PushPayload } from "./send.ts";
+import { scheduleForAll, dayKey, type QuietHours } from "./schedule.ts";
+import { readRules } from "./rules.ts";
+import { isKindEnabledFor, type CatalogEntry, type PreferenceRow } from "./preferences.ts";
 
 /**
  * Mise en file et envoi des notifications.

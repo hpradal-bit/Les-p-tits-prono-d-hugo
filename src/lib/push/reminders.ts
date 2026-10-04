@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSettings, setting } from "@/lib/settings";
 import { resolveLeagueForSeason } from "@/lib/leagues/queries.ts";
 import { enqueue } from "./notify";
+import { sweepPowerDeclaredNotifications } from "./power-sweep";
 import { dedupeKey, dayKey } from "./schedule";
 import {
   readLockReminderSlots,
@@ -21,6 +22,8 @@ import {
 export interface ReminderSummary {
   reminders: number;
   digests: number;
+  /** Pouvoirs (Duel/Sabotage) dont la cible vient d'être notifiée, journée désormais verrouillée. */
+  powerNotifications: number;
 }
 
 /**
@@ -167,5 +170,10 @@ export async function queueAll(admin: SupabaseClient): Promise<ReminderSummary> 
   return {
     reminders: await queueLockReminders(admin),
     digests: await queueRoundDigests(admin),
+    // Même cycle que les rappels de verrouillage : balaye les pouvoirs
+    // déclarés dont la cible attend encore sa notification (cf.
+    // `power-sweep.ts` pour les règles — journée entièrement verrouillée,
+    // jamais pour l'Espion).
+    powerNotifications: await sweepPowerDeclaredNotifications(admin),
   };
 }
