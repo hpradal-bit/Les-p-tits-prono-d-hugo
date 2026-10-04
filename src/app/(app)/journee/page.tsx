@@ -383,14 +383,6 @@ export default async function JourneePage({
     };
   });
 
-  // Uniquement pour les pastilles d'en-tête (points marqués sur la journée
-  // courante) — la répartition à jouer/verrouillés/en cours/terminés du
-  // contenu lui-même est désormais dans `RoundFixturesBlock`, par journée.
-  const done = board.fixtures.filter(
-    (f) => f.fixture.status === "finished" || f.fixture.status === "official",
-  );
-  const totalPoints = board.fixtures.reduce((sum, f) => sum + (f.score?.points ?? 0), 0);
-
   return (
     <div className="flex flex-col gap-3.5">
       {isTop14 && <CelebrationOverlay leagueId={leagueId} />}
@@ -437,18 +429,11 @@ export default async function JourneePage({
         mode={isTop14 ? "anchor" : "reload"}
       />
 
-      <div className="flex flex-wrap gap-2">
-        <span className="rounded-full bg-clay-soft px-3 py-1.5 text-[12px] font-semibold text-clay">
-          {board.fixtures.length} match{board.fixtures.length > 1 ? "s" : ""}
-          {board.hasProvisionalKickoffs && " · horaires provisoires"}
-        </span>
-        {board.nextLockAt && <Countdown targetIso={board.nextLockAt} />}
-        {done.length > 0 && (
-          <span className="rounded-full bg-winner-soft px-3 py-1.5 text-[12px] font-semibold text-winner">
-            {totalPoints} pt{totalPoints > 1 ? "s" : ""} marqué{totalPoints > 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
+      {board.nextLockAt && (
+        <div className="flex flex-wrap gap-2">
+          <Countdown targetIso={board.nextLockAt} />
+        </div>
+      )}
 
       {vapidKey && <NotificationPrompt vapidPublicKey={vapidKey} />}
 
