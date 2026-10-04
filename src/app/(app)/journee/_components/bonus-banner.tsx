@@ -229,76 +229,98 @@ export function BonusBanner({
   viewerId?: string | null;
   leagueId: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (items.length === 0 && revealed.length === 0) return null;
 
+  const unansweredCount = items.filter(({ myAnswer }) => !myAnswer).length;
+
   return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="text-[18px]">🎯</span>
-        <h2 className="text-[14px] font-bold text-ink">Questions bonus</h2>
-        <Link
-          href={`/questions?league=${leagueId}`}
-          className="ml-auto text-[12px] font-semibold text-clay hover:underline"
-        >
-          Tout voir
-        </Link>
-      </div>
+    <section className="rounded-2xl border border-line bg-surface">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+      >
+        <span className="text-[15px]" aria-hidden>🎯</span>
+        <span className="text-[12.5px] font-bold text-ink">Questions bonus</span>
+        <span className="rounded-full bg-clay-soft px-2 py-0.5 text-[10.5px] font-bold text-ink-muted">
+          {unansweredCount > 0
+            ? `${unansweredCount} à répondre`
+            : `${items.length + revealed.length} question${items.length + revealed.length > 1 ? "s" : ""}`}
+        </span>
+        <span aria-hidden className="ml-auto shrink-0 text-[11px] text-ink-faint">
+          {expanded ? "▲" : "▼"}
+        </span>
+      </button>
 
-      {items.map(({ question, myAnswer }) => {
-        const answered = !!myAnswer;
-        return (
-          <div
-            key={question.id}
-            className={`rounded-[var(--radius-card)] border bg-surface p-3 shadow-[var(--shadow-card)] ${
-              answered ? "border-winner/30" : "border-clay"
-            }`}
+      {expanded && (
+        <div className="flex flex-col gap-2.5 px-3.5 pb-3.5 pt-1">
+          <Link
+            href={`/questions?league=${leagueId}`}
+            className="self-end text-[12px] font-semibold text-clay hover:underline"
           >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-[14px] font-semibold text-ink">{question.prompt}</p>
-              {answered && (
-                <span className="shrink-0 rounded-full bg-winner-soft px-2 py-0.5 text-[10px] font-bold text-winner">
-                  Repondu
+            Tout voir
+          </Link>
+
+          {items.map(({ question, myAnswer }) => {
+            const answered = !!myAnswer;
+            return (
+              <div
+                key={question.id}
+                className={`rounded-[var(--radius-card)] border bg-surface p-3 shadow-[var(--shadow-card)] ${
+                  answered ? "border-winner/30" : "border-clay"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[14px] font-semibold text-ink">{question.prompt}</p>
+                  {answered && (
+                    <span className="shrink-0 rounded-full bg-winner-soft px-2 py-0.5 text-[10px] font-bold text-winner">
+                      Repondu
+                    </span>
+                  )}
+                </div>
+
+                {question.closesAt && (
+                  <p className="mt-1 text-[11px] text-ink-faint">
+                    Temps restant : <Countdown closesAt={question.closesAt} />
+                  </p>
+                )}
+
+                <div className="mt-2">
+                  <MiniAnswerForm item={{ question, myAnswer }} />
+                </div>
+              </div>
+            );
+          })}
+
+          {revealed.map((view) => (
+            <div
+              key={view.question.id}
+              className="rounded-[var(--radius-card)] border border-line bg-surface p-3 shadow-[var(--shadow-card)]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[14px] font-semibold text-ink">{view.question.prompt}</p>
+                <span className="shrink-0 rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-bold text-ink-faint">
+                  Terminée
                 </span>
-              )}
+              </div>
+              <div className="mt-2">
+                <BonusAnswers
+                  kind={view.question.kind}
+                  config={view.question.config}
+                  answers={view.answers}
+                  scores={view.scores}
+                  result={view.result}
+                  namesById={namesById}
+                  viewerId={viewerId}
+                />
+              </div>
             </div>
-
-            {question.closesAt && (
-              <p className="mt-1 text-[11px] text-ink-faint">
-                Temps restant : <Countdown closesAt={question.closesAt} />
-              </p>
-            )}
-
-            <div className="mt-2">
-              <MiniAnswerForm item={{ question, myAnswer }} />
-            </div>
-          </div>
-        );
-      })}
-
-      {revealed.map((view) => (
-        <div
-          key={view.question.id}
-          className="rounded-[var(--radius-card)] border border-line bg-surface p-3 shadow-[var(--shadow-card)]"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[14px] font-semibold text-ink">{view.question.prompt}</p>
-            <span className="shrink-0 rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-bold text-ink-faint">
-              Terminée
-            </span>
-          </div>
-          <div className="mt-2">
-            <BonusAnswers
-              kind={view.question.kind}
-              config={view.question.config}
-              answers={view.answers}
-              scores={view.scores}
-              result={view.result}
-              namesById={namesById}
-              viewerId={viewerId}
-            />
-          </div>
+          ))}
         </div>
-      ))}
+      )}
     </section>
   );
 }
