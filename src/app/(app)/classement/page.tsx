@@ -33,6 +33,7 @@ import { applyLivePreview } from "@/lib/standings/live-preview";
 import { FUN_REWARDS_LEAGUE_ID } from "@/lib/standings/season-rewards";
 import { loadPointsHistory } from "@/lib/standings/points-history";
 import { loadActivePowers, loadSeasonUsageByPlayer } from "@/lib/powers/queries.ts";
+import { loadFixtureBreakdowns, type FixtureBreakdown } from "@/lib/predictions/breakdowns";
 import { buildPowerCounters } from "@/lib/powers/counters.ts";
 import { FALLBACK_MAX_USES, quotaResetAt } from "@/lib/powers/quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
@@ -200,9 +201,25 @@ export default async function ClassementPage({
   );
 
   // Les matchs de la journée affichée : la porte d'entrée du Match Center.
+  // Le détail « qui a marqué quoi » par match (Hugo : "tu vois M en dessous,
+  // C en dessous... et pour chaque match le nombre de points que la personne
+  // a eu") vient de la même lecture que `journee`/`resultats` — jamais un
+  // second calcul, seulement un second affichage des mêmes points déjà écrits
+  // par le serveur (`prediction_scores`/`point_adjustments`).
   let fixtures: RoundFixture[] = [];
+  let fixtureBreakdowns = new Map<string, FixtureBreakdown>();
   if (effectiveVue === "journee" && referenceRound) {
     fixtures = await loadRoundFixtures(sb, referenceRound.id);
+    const namesById = new Map(data.players.map((p) => [p.userId, p.displayName]));
+    fixtureBreakdowns = await loadFixtureBreakdowns(
+      sb,
+      fixtures.map((f) => ({
+        id: f.id,
+        homeShortName: f.homeTeam.shortName,
+        awayShortName: f.awayTeam.shortName,
+      })),
+      namesById,
+    );
   }
 
   return (
@@ -341,7 +358,7 @@ export default async function ClassementPage({
       {fixtures.length > 0 && (
         <section className="flex flex-col gap-2">
           <Label>Les matchs de la journée</Label>
-          <RoundFixtures fixtures={fixtures} />
+          <RoundFixtures fixtures={fixtures} breakdowns={fixtureBreakdowns} />
         </section>
       )}
 
