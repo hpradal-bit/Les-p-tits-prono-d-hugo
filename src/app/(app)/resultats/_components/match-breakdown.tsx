@@ -16,6 +16,9 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { netPoints, type FixtureBreakdown } from "@/lib/predictions/breakdowns";
 import type { ScoreLevel } from "@/lib/types";
+import type { PlayerRef } from "@/lib/standings/engine";
+import type { ClubAvatar } from "@/lib/auth/avatars";
+import { PlayerAvatar } from "../../_components/player-avatar";
 
 const LEVEL_STYLE: Record<ScoreLevel, string> = {
   exact_score: "text-perfect",
@@ -24,12 +27,25 @@ const LEVEL_STYLE: Record<ScoreLevel, string> = {
   wrong: "text-ink-faint",
 };
 
+/** Même palette que la colonne de points du classement — un coup d'œil suffit. */
+const LEVEL_DOT: Record<ScoreLevel, string> = {
+  exact_score: "bg-perfect",
+  winner_and_margin: "bg-winner",
+  winner: "bg-sage",
+  wrong: "bg-ink-faint/30",
+};
+
 export function MatchBreakdown({
   breakdown,
   viewerId,
+  playersById = new Map(),
+  clubs = [],
 }: {
   breakdown: FixtureBreakdown;
   viewerId: string | null;
+  /** Pour l'avatar de chaque joueur — absent : la ligne reste lisible sans. */
+  playersById?: ReadonlyMap<string, PlayerRef>;
+  clubs?: readonly ClubAvatar[];
 }) {
   const [open, setOpen] = useState(false);
   const { players, powers } = breakdown;
@@ -52,43 +68,52 @@ export function MatchBreakdown({
 
       {open && (
         <div className="flex flex-col gap-1 rounded-2xl bg-surface-sunk/60 px-2.5 py-2">
-          {players.map((p) => (
-            <div
-              key={p.userId}
-              className={cn(
-                "flex items-baseline justify-between gap-2",
-                p.missing && "opacity-60",
-              )}
-            >
-              <span className="min-w-0 truncate text-[12px] leading-tight text-ink-muted">
-                <span
-                  className={cn(
-                    "font-semibold",
-                    p.userId === viewerId ? "text-clay" : "text-ink",
-                  )}
-                >
-                  {p.name}
-                </span>{" "}
-                {/* En italique : un état (« il n'a pas joué »), pas un pari. */}
-                <span className={cn(p.missing && "italic")}>{p.label}</span>
-                {p.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
-              </span>
-              <span className="flex shrink-0 items-baseline gap-1 font-mono text-[12px] font-bold">
-                {p.points !== null && p.pointAdjustment !== 0 && (
-                  <span className="text-ink-faint line-through" title="Point brut, avant le pouvoir">
-                    +{p.points}
-                  </span>
+          {players.map((p) => {
+            const ref = playersById.get(p.userId);
+            return (
+              <div
+                key={p.userId}
+                className={cn(
+                  "flex items-center justify-between gap-2",
+                  p.missing && "opacity-60",
                 )}
-                <span className={p.level ? LEVEL_STYLE[p.level] : "text-ink-faint"}>
-                  {(() => {
-                    const net = netPoints(p);
-                    if (net === null) return "—";
-                    return net < 0 ? net : `+${net}`;
-                  })()}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {ref && <PlayerAvatar player={ref} clubs={clubs} size={18} className="shrink-0" />}
+                  <span className="min-w-0 truncate text-[12px] leading-tight text-ink-muted">
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        p.userId === viewerId ? "text-clay" : "text-ink",
+                      )}
+                    >
+                      {p.name}
+                    </span>{" "}
+                    {/* En italique : un état (« il n'a pas joué »), pas un pari. */}
+                    <span className={cn(p.missing && "italic")}>{p.label}</span>
+                    {p.isAuto && <span title="Joué automatiquement au verrouillage"> 😴</span>}
+                  </span>
                 </span>
-              </span>
-            </div>
-          ))}
+                <span className="flex shrink-0 items-center gap-1.5 font-mono text-[12px] font-bold">
+                  {p.points !== null && p.pointAdjustment !== 0 && (
+                    <span className="text-ink-faint line-through" title="Point brut, avant le pouvoir">
+                      +{p.points}
+                    </span>
+                  )}
+                  <span className={p.level ? LEVEL_STYLE[p.level] : "text-ink-faint"}>
+                    {(() => {
+                      const net = netPoints(p);
+                      if (net === null) return "—";
+                      return net < 0 ? net : `+${net}`;
+                    })()}
+                  </span>
+                  {p.level && (
+                    <span className={cn("size-2 shrink-0 rounded-full", LEVEL_DOT[p.level])} aria-hidden />
+                  )}
+                </span>
+              </div>
+            );
+          })}
 
           {powers.length > 0 && (
             <div className="mt-0.5 flex flex-col gap-0.5 border-t border-line pt-1.5">

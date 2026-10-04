@@ -5,7 +5,8 @@ import { z } from "zod";
 import { Card, CompetitionLogo } from "@/components/ui";
 import { LeagueSwitcher } from "@/components/league-switcher";
 import { loadJourneyBoard } from "@/lib/predictions/queries";
-import { computeStandings } from "@/lib/standings/engine";
+import { computeStandings, type PlayerRef } from "@/lib/standings/engine";
+import type { ClubAvatar } from "@/lib/auth/avatars";
 import { loadStandingsData } from "@/lib/standings/queries";
 import { isInProgress } from "@/lib/standings/format";
 import { createClient } from "@/lib/supabase/server";
@@ -473,6 +474,8 @@ export default async function JourneePage({
                 powerAdjustments={powerAdjustments}
                 breakdowns={breakdowns}
                 viewerId={viewer.id}
+                playersById={playersById}
+                clubs={clubs}
               />
             </RoundSection>
           ))}
@@ -492,6 +495,8 @@ export default async function JourneePage({
           powerAdjustments={powerAdjustments}
           breakdowns={breakdowns}
           viewerId={viewer.id}
+          playersById={playersById}
+          clubs={clubs}
         />
       )}
 
@@ -531,6 +536,8 @@ function RoundFixturesBlock({
   powerAdjustments,
   breakdowns,
   viewerId,
+  playersById,
+  clubs,
 }: {
   fixtures: JourneyFixture[];
   ruleset: Ruleset;
@@ -542,6 +549,9 @@ function RoundFixturesBlock({
   /** Le détail du groupe, par match terminé. */
   breakdowns: Map<string, FixtureBreakdown>;
   viewerId: string;
+  /** Pour l'avatar de chaque joueur dans le détail d'un match terminé. */
+  playersById: ReadonlyMap<string, PlayerRef>;
+  clubs: readonly ClubAvatar[];
 }) {
   const toPlay = fixtures.filter(
     (f) => !f.isLocked && f.fixture.status !== "finished" && f.fixture.status !== "official",
@@ -601,7 +611,14 @@ function RoundFixturesBlock({
                   timeZone={timeZone}
                   powerAdjustment={powerAdjustments.get(item.fixture.id)}
                 />
-                {breakdown && <MatchBreakdown breakdown={breakdown} viewerId={viewerId} />}
+                {breakdown && (
+                  <MatchBreakdown
+                    breakdown={breakdown}
+                    viewerId={viewerId}
+                    playersById={playersById}
+                    clubs={clubs}
+                  />
+                )}
               </div>
             );
           })}
