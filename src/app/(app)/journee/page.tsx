@@ -21,6 +21,7 @@ import {
   loadRoundUsages,
   loadSpyReveal,
   loadPowerAdjustmentsByFixture,
+  loadRoundPointsSummary,
 } from "@/lib/powers/queries";
 import type { PowerAdjustment } from "@/lib/powers/queries";
 import { getPower } from "@/lib/powers/registry";
@@ -37,6 +38,7 @@ import { PredictionsBoard } from "./_components/predictions-board";
 import { BonusBanner } from "./_components/bonus-banner";
 import { PowerBanner } from "./_components/power-banner";
 import { PowerDigestBanner } from "./_components/power-digest-banner";
+import { RoundPointsSummary } from "./_components/round-points-summary";
 import { buildPowerDigest } from "@/lib/powers/digest";
 import { loadRoundRevealTime } from "@/lib/powers/round-lock";
 import { loadDuelBattle } from "@/lib/powers/battle-queries";
@@ -184,9 +186,9 @@ export default async function JourneePage({
     FALLBACK_MAX_USES,
   );
 
-  // Le détail des matchs et le quota restant : deux lectures indépendantes,
-  // menées de front — l'écran n'attend pas deux fois.
-  const [breakdowns, usageCounts] = await Promise.all([
+  // Le détail des matchs, le quota restant et le résumé de points du viewer
+  // sur la journée courante : trois lectures indépendantes, menées de front.
+  const [breakdowns, usageCounts, roundPointsSummary] = await Promise.all([
     loadFixtureBreakdowns(
       admin,
       finishedFixtures.map((f) => ({
@@ -197,6 +199,7 @@ export default async function JourneePage({
       new Map(standingsData.players.map((p) => [p.userId, p.displayName])),
     ),
     loadUsageCounts(admin, viewer.id, seasonId, quotaResetAt(appSettings)),
+    loadRoundPointsSummary(admin, viewer.id, currentRoundId),
   ]);
   const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
   const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
@@ -389,6 +392,7 @@ export default async function JourneePage({
       <LeagueSwitcher options={ligueOptions} current={leagueId} />
 
       <PowerDigestBanner roundId={currentRoundId} items={digestItems} />
+      <RoundPointsSummary summary={roundPointsSummary} />
 
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">

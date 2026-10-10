@@ -283,6 +283,112 @@ export async function loadRoundTotals(
   return totals;
 }
 
+export interface RoundPointsSummaryItem {
+  code: string;
+  emoji: string;
+  name: string;
+  /** Somme des ajustements de ce pouvoir sur la journée — peut être négative. */
+  delta: number;
+}
+
+export interface RoundPointsSummary {
+  /** Points bruts des pronostics déjà notés (matchs pas encore joués : rien à compter). */
+  basePoints: number;
+  /** Un pouvoir par ligne, même utilisé plusieurs fois — les montants s'additionnent. */
+  powerItems: RoundPointsSummaryItem[];
+  /** `basePoints` + la somme de `powerItems` : ce que le classement affiche réellement. */
+  total: number;
+}
+
+/**
+ * « Qu'est-ce qui a marqué, et qu'est-ce qui a été retiré » sur une journée,
+ * pour UN joueur — demandé par l'hôte pour l'afficher sur « Mes pronos ».
+ *
+ * Contrairement à `loadRoundTotals` (qui exclut `power:duel` parce qu'il sert
+ * à CALCULER le transfert d'un Duel en cours), ce résumé est un compte-rendu
+ * après coup : il inclut tous les ajustements `power:*`, Duel compris — c'est
+ * exactement ce que `total` doit valoir pour retomber sur le classement.
+ */
+export async function loadRoundPointsSummary(
+  sb: SupabaseClient,
+  userId: string,
+  roundId: string,
+): Promise<RoundPointsSummary> {
+  const { data: fixtures, error: fixturesError } = await sb
+    .from("fixtures")
+    .select("id")
+    .eq("round_id", roundId);
+  if (fixturesError) throw fixturesError;
+
+  const fixtureIds = ((fixtures ?? []) as Array<{ id: string }>).map((f) => f.id);
+
+  let basePoints = 0;
+  if (fixtureIds.length > 0) {
+    const { data: scores, error: scoresError } = await sb
+      .from("prediction_scores")
+      .select("points, predictions!inner(user_id, fixture_id)")
+      .eq("predictions.user_id", userId)
+      .in("predictions.fixture_id", fixtureIds);
+    if (scoresError) throw scoresError;
+    for (const row of (scores ?? []) as Array<{ points: number | null }>) {
+      basePoints += row.points ?? 0;
+    }
+  }
+
+  const { data: adjustments, error: adjError } = await sb
+    .from("point_adjustments")
+    .select("delta, source, source_id")
+    .eq("user_id", userId)
+    .eq("round_id", roundId)
+    .like("source", "power:%");
+  if (adjError) throw adjError;
+
+  const rows = (adjustments ?? []) as Array<{ delta: number; source: string; source_id: string | null }>;
+  const usageIds = [...new Set(rows.map((r) => r.source_id).filter((id): id is string => Boolean(id)))];
+
+  const powerByUsageId = new Map<string, { code: string; emoji: string; name: string }>();
+  if (usageIds.length > 0) {
+    const { data: usages, error: usagesError } = await sb
+      .from("power_usages")
+      .select("id, powers!inner(code, emoji, name)")
+      .in("id", usageIds);
+    if (usagesError) throw usagesError;
+    for (const u of (usages ?? []) as Array<Record<string, unknown>>) {
+      const powers = u.powers as
+        | { code: string; emoji: string; name: string }
+        | { code: string; emoji: string; name: string }[]
+        | null;
+      const power = Array.isArray(powers) ? powers[0] : powers;
+      if (power) powerByUsageId.set(u.id as string, power);
+    }
+  }
+
+  const itemsByCode = new Map<string, RoundPointsSummaryItem>();
+  for (const row of rows) {
+    const power = row.source_id ? powerByUsageId.get(row.source_id) : null;
+    // Pouvoir introuvable (ligne orpheline, ne devrait pas arriver) : on garde
+    // quand même le point — un total qui ne boucle pas vaut mieux qu'un
+    // montant silencieusement perdu — sous le code brut de la source.
+    const code = power?.code ?? row.source.replace(/^power:/, "");
+    const existing = itemsByCode.get(code);
+    if (existing) {
+      existing.delta += row.delta;
+    } else {
+      itemsByCode.set(code, {
+        code,
+        emoji: power?.emoji ?? "⚡",
+        name: power?.name ?? code,
+        delta: row.delta,
+      });
+    }
+  }
+
+  const powerItems = [...itemsByCode.values()].sort((a, b) => b.delta - a.delta);
+  const total = basePoints + powerItems.reduce((sum, i) => sum + i.delta, 0);
+
+  return { basePoints, powerItems, total };
+}
+
 /**
  * Combien de fois chaque pouvoir a déjà été utilisé par un joueur sur une
  * saison. Ne compte que les états consommateurs : une déclaration annulée n'a
