@@ -65,12 +65,38 @@ function pairKey(homeTeamId: string, awayTeamId: string): string {
   return `${homeTeamId}|${awayTeamId}`;
 }
 
+/**
+ * Diagnostic en prod le 10 octobre : une requête calendrier couvrant toute la
+ * saison (la plage par défaut jusqu'ici) renvoie une erreur HTTP 400 chez
+ * Highlightly ET ESPN — les deux fournisseurs promus devant TheSportsDB la
+ * veille après que celui-ci se soit révélé limité à 5-15 événements par appel
+ * depuis trois semaines (voir le commit précédent). Hypothèse la plus
+ * probable : une plage de ~300 jours dépasse ce que leurs points d'entrée
+ * calendrier acceptent (aucun des deux ne documente de limite, mais un rejet
+ * net en 400 plutôt qu'une réponse tronquée ou une erreur explicite pointe
+ * vers une requête rejetée en amont, pas vers une absence de données).
+ *
+ * Une compétition déjà peuplée (équipes connues) n'a besoin de voir que les
+ * prochaines semaines pour confirmer des horaires ou amorcer la phase
+ * suivante — jamais la saison entière en un seul appel. Seul l'amorçage d'une
+ * compétition toute neuve (`ctx.teams` vide, voir `calendar-bootstrap.test.ts`)
+ * a encore besoin de tout voir d'un coup, pour constituer l'effectif.
+ */
 function defaultRange(ctx: SyncContext): DateRange {
   const from = ctx.season.startsOn;
   const to =
     ctx.season.endsOn ??
     new Date(new Date(from).getTime() + 400 * 86_400_000).toISOString().slice(0, 10);
-  return { from, to };
+
+  if (ctx.teams.length === 0) return { from, to };
+
+  const now = Date.now();
+  const windowFrom = new Date(now - 14 * 86_400_000).toISOString().slice(0, 10);
+  const windowTo = new Date(now + 90 * 86_400_000).toISOString().slice(0, 10);
+  return {
+    from: windowFrom < from ? from : windowFrom,
+    to: windowTo > to ? to : windowTo,
+  };
 }
 
 export async function syncCalendar(
