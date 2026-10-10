@@ -83,7 +83,9 @@ export default async function VestiairePage({
     loadClubAvatars(sb),
     showResume ? loadLastDebrief(leagueId) : Promise.resolve(null),
     showResume ? loadFeed(leagueId, "jeu") : Promise.resolve([]),
-    showPowers ? loadPowerHistory(sb, leagueId, { playerId: joueur ?? null }) : Promise.resolve(null),
+    showPowers
+      ? loadPowerHistory(sb, leagueId, { playerId: joueur ?? null, viewerId: viewer.id })
+      : Promise.resolve(null),
     showChambrage ? loadChambrage(sb, leagueId, viewer.id) : Promise.resolve(null),
   ]);
 

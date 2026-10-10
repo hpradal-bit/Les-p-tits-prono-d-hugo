@@ -72,7 +72,7 @@ const one = <T,>(v: unknown): T | undefined => (Array.isArray(v) ? v[0] : v) as 
 export async function loadPowerHistory(
   sb: SupabaseClient,
   leagueId: Uuid,
-  options: { playerId?: Uuid | null } = {},
+  options: { playerId?: Uuid | null; viewerId?: Uuid | null } = {},
 ): Promise<PowerHistory> {
   // La compétition de la ligue borne tout le reste.
   const { data: league } = await sb
@@ -161,8 +161,15 @@ export async function loadPowerHistory(
   // ici comme dans le fil : l'écran Super-pouvoirs ne doit pas être le trou
   // de serrure que le Vestiaire n'est plus, et une riposte reste possible
   // tant qu'un seul match de la journée n'a pas fermé.
+  //
+  // Exception étroite : ses PROPRES déclarations restent visibles à leur
+  // auteur dès l'instant où il les joue — il les connaît déjà, rien ne fuite
+  // vers personne d'autre. Sans ça, un joueur ne voyait plus RIEN ici tant
+  // que sa propre journée en cours n'avait pas entièrement verrouillé, alors
+  // que « Mes pronos » (le bandeau de pouvoirs actifs) le lui montre déjà.
   const now = new Date();
   const revealed = kept.filter((r) => {
+    if (options.viewerId && r.initiator_id === options.viewerId) return true;
     const revealAt = revealTimes.get(r.round_id as string) ?? null;
     return isPowerPublic(revealAt, now);
   });
