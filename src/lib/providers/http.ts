@@ -53,7 +53,17 @@ export function createJsonFetcher(provider: string): JsonFetcher {
           throw new ProviderError(provider, `erreur serveur (HTTP ${res.status})`);
         }
         if (!res.ok) {
-          throw new ProviderError(provider, `réponse inattendue (HTTP ${res.status})`);
+          // Un simple « HTTP 400 » ne dit jamais POURQUOI le fournisseur a
+          // refusé — paramètre mal formé, clé invalide, plage rejetée... Le
+          // corps de la réponse (tronqué, les API d'erreur sont bavardes) est
+          // justement ce qui a manqué le 10 octobre pour diagnostiquer sans
+          // deviner une seconde fois : gardé ici, visible dans `sync_runs`.
+          const body = await res.text().catch(() => "");
+          const snippet = body.trim().slice(0, 300);
+          throw new ProviderError(
+            provider,
+            `réponse inattendue (HTTP ${res.status})${snippet ? ` — ${snippet}` : ""}`,
+          );
         }
 
         const text = await res.text();
