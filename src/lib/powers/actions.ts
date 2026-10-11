@@ -15,7 +15,6 @@ import {
   loadActivePowers,
   loadUsageCounts,
   loadRoundUsages,
-  loadPowerIdsUsedInRound,
 } from "./queries.ts";
 import { applyResolution } from "./resolve.ts";
 import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES, quotaResetAt, QUOTA_RESET_KEY } from "./quota.ts";
@@ -78,17 +77,6 @@ export async function declarePower(
   const quota = quotas.find((q) => q.powerId === power.id);
   const refusal = quotaRefusal(quota, power.name);
   if (refusal) return { ok: false, message: refusal };
-
-  // Règle demandée par l'hôte : des pouvoirs DIFFÉRENTS autant qu'on veut sur
-  // la même journée (Oracle, Joker ET Espion le même week-end, par exemple),
-  // mais jamais deux fois LE MÊME (deux Oracle, deux Sabotage...) — par-dessus
-  // le quota saisonnier ci-dessus, pas à sa place. Garanti aussi en base
-  // (index partiel `power_usages_one_per_power_per_round`, migration 0068) :
-  // ce refus donne juste le message lisible avant l'écriture.
-  const usedThisRound = await loadPowerIdsUsedInRound(admin, user.id, parsed.data.roundId);
-  if (usedThisRound.has(power.id)) {
-    return { ok: false, message: `Tu as déjà joué ${power.name} cette journée.` };
-  }
 
   // Un pouvoir ciblant un match ne peut plus être déclaré une fois ce match
   // verrouillé (ou déjà terminé) : au-delà, ce serait parier après coup — le
@@ -172,13 +160,15 @@ export async function declarePower(
     });
 
   if (usageErr) {
-    // 23505 ne peut plus venir que de l'index posé par la migration 0068
-    // (un même pouvoir deux fois sur la même journée) — le refus ci-dessus
-    // couvre déjà ce cas en le lisant avant d'écrire, donc n'arrive ici que
-    // sur une vraie course (double clic, double requête) : même message,
-    // cohérent avec ce que l'utilisateur vient de refaire.
+    // L'ancien index unique "une utilisation active par joueur et par
+    // journée" (migration 0038) a été retiré (migration 0066), tout comme
+    // celui "un même pouvoir par journée" (migration 0068, retiré par la
+    // 0069) : un joueur peut avoir plusieurs pouvoirs actifs à la fois, même
+    // pouvoir compris. Une violation d'unicité ici ne peut donc plus venir
+    // que d'une autre contrainte (ex. jeton), pas d'un double-clic sur
+    // « déclarer un pouvoir ».
     if (usageErr.code === "23505") {
-      return { ok: false, message: `Tu as déjà joué ${power.name} cette journée.` };
+      return { ok: false, message: "Cette déclaration a déjà été enregistrée." };
     }
     return { ok: false, message: usageErr.message };
   }

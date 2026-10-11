@@ -21,10 +21,6 @@ interface PowerOption {
   used: number;
   max: number;
   remaining: number;
-  /** Déjà joué cette journée — règle « un même pouvoir, une fois par journée »,
-   *  distincte du quota saisonnier ci-dessus (qui peut très bien être encore
-   *  disponible). */
-  usedThisRound: boolean;
   description: string | null;
   effect: string | null;
   rules: string | null;
@@ -89,7 +85,7 @@ function PowerModal({
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const affordable = power.remaining > 0 && !power.usedThisRound;
+  const affordable = power.remaining > 0;
   const missing = power.needsTarget && eligibleTargets.length === 0;
 
   async function handleDeclare(e: React.FormEvent) {
@@ -205,14 +201,9 @@ function PowerModal({
                 pending || !affordable || (power.needsFixture && !fixtureId) || (power.needsTarget && !targetId)
               }
             >
-              {pending ? "…" : power.usedThisRound ? "Déjà joué" : affordable ? "Utiliser" : "Épuisé"}
+              {pending ? "…" : affordable ? "Utiliser" : "Épuisé"}
             </Button>
           </div>
-          {power.usedThisRound && (
-            <p className="text-[12px] text-ink-faint">
-              {power.name} ne peut être joué qu&apos;une fois par journée — déjà fait sur celle-ci.
-            </p>
-          )}
         </form>
 
         {msg && <p className="text-[12px] font-semibold text-wrong">{msg}</p>}
@@ -377,19 +368,18 @@ export function PowerBanner({
           <h2 className="text-[12.5px] font-bold text-ink">Super-pouvoirs</h2>
         </div>
         <span className="rounded-full bg-clay-soft px-2.5 py-1 text-[11px] font-bold text-clay">
-          {powers.filter((p) => p.remaining > 0 && !p.usedThisRound).length} disponible
-          {powers.filter((p) => p.remaining > 0 && !p.usedThisRound).length > 1 ? "s" : ""}
+          {powers.filter((p) => p.remaining > 0).length} disponible
+          {powers.filter((p) => p.remaining > 0).length > 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Une pastille par pouvoir : le détail s'ouvre dans une fenêtre au clic
           plutôt que de pousser le reste de l'écran. La grille reste affichée
-          même avec des usages actifs ci-dessus — le quota propre à chaque
-          pouvoir (`remaining`) ET la règle « une fois par journée »
-          (`usedThisRound`) décident s'il est encore utilisable. */}
+          même avec des usages actifs ci-dessus — seul le quota propre à
+          chaque pouvoir (`remaining`) décide s'il est encore utilisable. */}
       <div className="scrollbar-none -mx-1 flex gap-3 overflow-x-auto px-1 pb-0.5">
         {powers.map((p) => {
-          const affordable = p.remaining > 0 && !p.usedThisRound;
+          const affordable = p.remaining > 0;
           return (
             <button
               key={p.code}
@@ -410,7 +400,7 @@ export function PowerBanner({
                     affordable ? "bg-surface text-ink" : "bg-wrong-soft text-wrong",
                   )}
                 >
-                  {p.usedThisRound ? "fait" : `${p.remaining}/${p.max}`}
+                  {p.remaining}/{p.max}
                 </span>
               </span>
               <span className="w-full truncate text-center text-[10.5px] font-semibold text-ink">

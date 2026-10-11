@@ -419,33 +419,6 @@ export async function loadUsageCounts(
 }
 
 /**
- * Lesquels, parmi les pouvoirs d'un joueur, sont déjà joués sur CETTE
- * journée — règle demandée par l'hôte : des pouvoirs différents autant qu'on
- * veut le même week-end, mais jamais deux fois le même (deux Oracle, deux
- * Sabotage...). Même états consommateurs que le quota saisonnier
- * (`CONSUMING_STATES`) : une déclaration annulée n'a jamais eu lieu, elle ne
- * bloque rien.
- *
- * Garanti en base par l'index partiel `power_usages_one_per_power_per_round`
- * (migration 0068) : cette fonction sert le message d'erreur lisible avant
- * l'écriture, pas la garantie elle-même.
- */
-export async function loadPowerIdsUsedInRound(
-  sb: SupabaseClient,
-  userId: string,
-  roundId: string,
-): Promise<Set<string>> {
-  const { data, error } = await sb
-    .from("power_usages")
-    .select("power_id")
-    .eq("initiator_id", userId)
-    .eq("round_id", roundId)
-    .in("state", [...CONSUMING_STATES]);
-  if (error) throw error;
-  return new Set((data ?? []).map((r) => (r as { power_id: string }).power_id));
-}
-
-/**
  * Le même décompte, mais pour tous les joueurs d'un coup — la matière des
  * compteurs affichés au bas du classement. Une seule requête : à six joueurs
  * et cinq pouvoirs, filtrer par joueur n'apporterait rien.
