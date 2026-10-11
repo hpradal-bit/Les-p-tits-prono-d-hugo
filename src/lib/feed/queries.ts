@@ -94,6 +94,13 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
   if (error && error.code !== "23505") throw error;
 }
 
+/** Code du pouvoir porté par un événement `power_declared`. */
+function powerCodeOf(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const code = (payload as Record<string, unknown>).power_code;
+  return typeof code === "string" ? code : null;
+}
+
 /**
  * Écarte les `power_declared` dont la JOURNÉE ENTIÈRE (tous ses matchs,
  * `round_id`) n'a pas encore verrouillé.
@@ -101,18 +108,25 @@ async function projectEvents(leagueId: Uuid, competitionId: Uuid): Promise<void>
  * Savoir qu'un joueur a posé un Sabotage sur un match avant que celui-ci se
  * joue renseignerait les autres au moment de pronostiquer : le fil deviendrait
  * un canal de renseignement. Pire : révéler un pouvoir dès le coup d'envoi de
- * SON PROPRE match (ou, pour un pouvoir sans match comme le Duel, dès le
- * premier coup d'envoi de la journée) laisse une fenêtre de riposte ouverte
- * sur tout AUTRE match de la même journée pas encore verrouillé — d'où le
- * passage au dernier verrouillage de la journée (`round-lock.ts`), pour tous
- * les pouvoirs, qu'ils visent un match précis ou aucun. Les autres
- * événements passent sans condition.
+ * SON PROPRE match laisse une fenêtre de riposte ouverte sur tout AUTRE match
+ * de la même journée pas encore verrouillé — d'où le passage au dernier
+ * verrouillage de la journée (`round-lock.ts`). Les autres événements passent
+ * sans condition.
+ *
+ * Exception demandée par l'hôte : le Duel sort immédiatement, jamais retenu
+ * par le verrouillage. Il ne vise aucun match précis (il compare le total de
+ * la journée une fois réglée) et les deux joueurs engagés le voient déjà
+ * l'un l'autre dès la déclaration (bandeau « Mes pronos ») — l'annoncer au
+ * Fil ne renseigne personne sur un match encore ouvert, contrairement au
+ * Sabotage ou à l'Espion.
  */
 async function withoutUnstartedPowers(
   admin: ReturnType<typeof createAdminClient>,
   events: Array<Record<string, unknown>>,
 ): Promise<Array<Record<string, unknown>>> {
-  const powerEvents = events.filter((e) => e.kind === "power_declared");
+  const powerEvents = events.filter(
+    (e) => e.kind === "power_declared" && powerCodeOf(e.payload) !== "duel",
+  );
   if (powerEvents.length === 0) return events;
 
   const roundIds = [
@@ -127,7 +141,7 @@ async function withoutUnstartedPowers(
 
   const now = new Date();
   return events.filter((e) => {
-    if (e.kind !== "power_declared") return true;
+    if (e.kind !== "power_declared" || powerCodeOf(e.payload) === "duel") return true;
     const revealAt = revealTimes.get(e.round_id as string) ?? null;
     return isPowerPublic(revealAt, now);
   });
@@ -138,6 +152,7 @@ async function withoutUnstartedPowers(
  *
  * Jumelle de `withoutUnstartedPowers`, mais côté lecture : elle regarde des
  * publications déjà créées, là où l'autre regarde des événements à créer.
+ * Même exception pour le Duel — cf. le commentaire là-bas.
  */
 async function keepStartedPowerPosts(
   sb: Awaited<ReturnType<typeof createClient>>,
@@ -146,9 +161,10 @@ async function keepStartedPowerPosts(
 ): Promise<Array<Record<string, unknown>>> {
   type EventShape = { kind?: string; payload?: unknown; round_id?: string };
 
-  const powerPosts = posts.filter(
-    (p) => one<EventShape>(p.event)?.kind === "power_declared",
-  );
+  const powerPosts = posts.filter((p) => {
+    const event = one<EventShape>(p.event);
+    return event?.kind === "power_declared" && powerCodeOf(event.payload) !== "duel";
+  });
   if (powerPosts.length === 0) return posts;
 
   const roundIds = new Set<string>();
@@ -165,7 +181,7 @@ async function keepStartedPowerPosts(
   const now = new Date();
   return posts.filter((p) => {
     const event = one<EventShape>(p.event);
-    if (event?.kind !== "power_declared") return true;
+    if (event?.kind !== "power_declared" || powerCodeOf(event.payload) === "duel") return true;
     const revealAt = revealTimes.get(event.round_id ?? "") ?? null;
     return isPowerPublic(revealAt, now);
   });
