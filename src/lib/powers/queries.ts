@@ -419,6 +419,35 @@ export async function loadUsageCounts(
 }
 
 /**
+ * Un même pouvoir visant un match peut se jouer plusieurs fois sur une même
+ * journée (deux Oracle le même week-end, chacun sur un match différent) —
+ * mais jamais deux fois SUR LE MÊME MATCH. `snapshot_before->>'fixtureId'`
+ * porte le match visé (pas de colonne dédiée, cf. `declarePower`). Même
+ * états consommateurs que le quota saisonnier.
+ *
+ * Garanti en base par l'index partiel `power_usages_one_per_power_per_fixture`
+ * (migration 0070) : cette fonction sert le message d'erreur lisible avant
+ * l'écriture, pas la garantie elle-même.
+ */
+export async function hasUsedPowerOnFixture(
+  sb: SupabaseClient,
+  userId: string,
+  powerId: string,
+  fixtureId: string,
+): Promise<boolean> {
+  const { data, error } = await sb
+    .from("power_usages")
+    .select("id")
+    .eq("initiator_id", userId)
+    .eq("power_id", powerId)
+    .eq("snapshot_before->>fixtureId", fixtureId)
+    .in("state", [...CONSUMING_STATES])
+    .limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+/**
  * Le même décompte, mais pour tous les joueurs d'un coup — la matière des
  * compteurs affichés au bas du classement. Une seule requête : à six joueurs
  * et cinq pouvoirs, filtrer par joueur n'apporterait rien.

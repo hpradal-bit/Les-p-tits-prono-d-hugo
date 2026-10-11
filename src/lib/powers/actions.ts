@@ -15,6 +15,7 @@ import {
   loadActivePowers,
   loadUsageCounts,
   loadRoundUsages,
+  hasUsedPowerOnFixture,
 } from "./queries.ts";
 import { applyResolution } from "./resolve.ts";
 import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES, quotaResetAt, QUOTA_RESET_KEY } from "./quota.ts";
@@ -60,13 +61,17 @@ export async function declarePower(
 
   // Plus de plafond "un seul pouvoir actif par journée" : un joueur peut
   // activer autant de pouvoirs DIFFÉRENTS qu'il veut sur la même journée (et
-  // même le même pouvoir plusieurs fois, par ex. Oracle sur deux matchs),
-  // tant qu'il respecte le quota propre à CHAQUE pouvoir (3 crédits par
-  // pouvoir et par saison, vérifié juste après via `loadUsageCounts` /
-  // `buildQuotas` / `quotaRefusal`). Demande explicite de l'hôte : Hugo était
-  // bloqué pour tenter un second pouvoir contre le Duel de Pierre alors qu'il
-  // avait encore du crédit sur un autre pouvoir. L'ancien index unique en
-  // base (migration 0038) est retiré dans la même série (migration 0066).
+  // même le même pouvoir plusieurs fois, par ex. Oracle sur deux matchs
+  // différents — jamais deux fois sur le MÊME match, cf. plus bas), tant
+  // qu'il respecte le quota propre à CHAQUE pouvoir (3 crédits par pouvoir et
+  // par saison, vérifié juste après via `loadUsageCounts` / `buildQuotas` /
+  // `quotaRefusal`). Demande explicite de l'hôte : Hugo était bloqué pour
+  // tenter un second pouvoir contre le Duel de Pierre alors qu'il avait
+  // encore du crédit sur un autre pouvoir. L'ancien index unique en base
+  // (migration 0038) est retiré dans la même série (migration 0066) ; une
+  // règle plus stricte "un même pouvoir, une fois par journée" a été
+  // essayée puis retirée le jour même (migrations 0068/0069, trop large —
+  // l'hôte voulait seulement bloquer la répétition sur un même match).
 
   const settings = await loadSettings(admin);
   const fallbackMax = setting<number>(settings, "powers.max_uses_per_player", FALLBACK_MAX_USES);
@@ -94,6 +99,20 @@ export async function declarePower(
       (fixture.status as string) !== "scheduled";
     if (fixtureLocked) {
       return { ok: false, message: "Ce match est déjà verrouillé ou terminé." };
+    }
+
+    // Même pouvoir, plusieurs fois sur la même journée : autorisé (ex. deux
+    // Oracle le même week-end) — mais jamais deux fois SUR LE MÊME MATCH.
+    // Demande de l'hôte, précisée après une première règle plus large (« une
+    // fois par journée », migrations 0068/0069) qui bloquait trop.
+    const alreadyOnThisFixture = await hasUsedPowerOnFixture(
+      admin,
+      user.id,
+      power.id,
+      parsed.data.fixtureId,
+    );
+    if (alreadyOnThisFixture) {
+      return { ok: false, message: `Tu as déjà joué ${power.name} sur ce match.` };
     }
   }
 
@@ -160,15 +179,15 @@ export async function declarePower(
     });
 
   if (usageErr) {
-    // L'ancien index unique "une utilisation active par joueur et par
-    // journée" (migration 0038) a été retiré (migration 0066), tout comme
-    // celui "un même pouvoir par journée" (migration 0068, retiré par la
-    // 0069) : un joueur peut avoir plusieurs pouvoirs actifs à la fois, même
-    // pouvoir compris. Une violation d'unicité ici ne peut donc plus venir
-    // que d'une autre contrainte (ex. jeton), pas d'un double-clic sur
-    // « déclarer un pouvoir ».
+    // 23505 ne peut venir que de l'index posé par la migration 0070 (un même
+    // pouvoir deux fois sur le même match — le refus ci-dessus couvre déjà
+    // ce cas en le lisant avant d'écrire, donc n'arrive ici que sur une
+    // vraie course, double clic ou double requête) ou d'une autre contrainte
+    // (ex. jeton) : les anciens index "une utilisation active par journée"
+    // (migration 0038) et "un même pouvoir par journée" (migration 0068)
+    // ont tous deux été retirés (migrations 0066 et 0069).
     if (usageErr.code === "23505") {
-      return { ok: false, message: "Cette déclaration a déjà été enregistrée." };
+      return { ok: false, message: `Tu as déjà joué ${power.name} sur ce match.` };
     }
     return { ok: false, message: usageErr.message };
   }

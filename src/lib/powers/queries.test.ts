@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadRoundPointsSummary } from "./queries.ts";
+import { loadRoundPointsSummary, hasUsedPowerOnFixture } from "./queries.ts";
 
 /**
  * Faux client minimal pour `loadRoundPointsSummary` : chaque table un
@@ -22,9 +22,18 @@ function makeDb() {
   };
 }
 
-/** Lit `"predictions.user_id"` sur une ligne déjà enrichie par `embed`. */
+/**
+ * Lit `"predictions.user_id"` sur une ligne déjà enrichie par `embed`, ou
+ * `"snapshot_before->>fixtureId"` (l'opérateur JSON de PostgREST) sur une
+ * colonne `jsonb` brute.
+ */
 function valueAt(row: Row, col: string): unknown {
   if (col in row) return row[col];
+  if (col.includes("->>")) {
+    const [jsonCol, key] = col.split("->>");
+    const obj = row[jsonCol];
+    return obj && typeof obj === "object" ? (obj as Row)[key] : undefined;
+  }
   const [head, ...rest] = col.split(".");
   if (rest.length === 0) return undefined;
   const nested = row[head];
@@ -57,6 +66,9 @@ function fakeClient(db: ReturnType<typeof makeDb>): SupabaseClient {
           const v = valueAt(r, col);
           return typeof v === "string" && v.startsWith(prefix);
         });
+        return builder;
+      },
+      limit() {
         return builder;
       },
       then(resolveFn: (v: unknown) => void, rejectFn?: (e: unknown) => void) {
@@ -171,5 +183,61 @@ describe("loadRoundPointsSummary", () => {
     assert.equal(summary.basePoints, 0);
     assert.equal(summary.powerItems.length, 0);
     assert.equal(summary.total, 0);
+  });
+});
+
+describe("hasUsedPowerOnFixture — même pouvoir, jamais deux fois sur le même match", () => {
+  it("vrai si ce pouvoir a déjà été joué sur ce match précis", async () => {
+    const db = makeDb();
+    db.power_usages.push({
+      initiator_id: "hugo",
+      power_id: "power-oracle",
+      state: "declared",
+      snapshot_before: { fixtureId: "fx-toulouse-bayonne" },
+    });
+
+    const sb = fakeClient(db);
+    const used = await hasUsedPowerOnFixture(sb, "hugo", "power-oracle", "fx-toulouse-bayonne");
+    assert.equal(used, true);
+  });
+
+  it("faux sur un AUTRE match : Oracle deux fois la même journée reste permis", async () => {
+    const db = makeDb();
+    db.power_usages.push({
+      initiator_id: "hugo",
+      power_id: "power-oracle",
+      state: "declared",
+      snapshot_before: { fixtureId: "fx-castres-toulouse" },
+    });
+
+    const sb = fakeClient(db);
+    const used = await hasUsedPowerOnFixture(sb, "hugo", "power-oracle", "fx-toulouse-bayonne");
+    assert.equal(used, false);
+  });
+
+  it("faux pour un autre joueur ou un autre pouvoir sur le même match", async () => {
+    const db = makeDb();
+    db.power_usages.push(
+      { initiator_id: "pierre", power_id: "power-oracle", state: "declared", snapshot_before: { fixtureId: "fx-1" } },
+      { initiator_id: "hugo", power_id: "power-sabotage", state: "declared", snapshot_before: { fixtureId: "fx-1" } },
+    );
+
+    const sb = fakeClient(db);
+    const used = await hasUsedPowerOnFixture(sb, "hugo", "power-oracle", "fx-1");
+    assert.equal(used, false);
+  });
+
+  it("une déclaration annulée ne bloque rien", async () => {
+    const db = makeDb();
+    db.power_usages.push({
+      initiator_id: "hugo",
+      power_id: "power-oracle",
+      state: "cancelled",
+      snapshot_before: { fixtureId: "fx-1" },
+    });
+
+    const sb = fakeClient(db);
+    const used = await hasUsedPowerOnFixture(sb, "hugo", "power-oracle", "fx-1");
+    assert.equal(used, false);
   });
 });
