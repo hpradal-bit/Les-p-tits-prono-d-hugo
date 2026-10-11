@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadRoundPointsSummary } from "./queries.ts";
+import { loadRoundPointsSummary, loadPowerIdsUsedInRound } from "./queries.ts";
 
 /**
  * Faux client minimal pour `loadRoundPointsSummary` : chaque table un
@@ -171,5 +171,33 @@ describe("loadRoundPointsSummary", () => {
     assert.equal(summary.basePoints, 0);
     assert.equal(summary.powerItems.length, 0);
     assert.equal(summary.total, 0);
+  });
+});
+
+describe("loadPowerIdsUsedInRound — un même pouvoir une fois par journée", () => {
+  it("renvoie les pouvoirs déjà joués cette journée, pas ceux d'une autre", async () => {
+    const db = makeDb();
+    db.power_usages.push(
+      { initiator_id: "hugo", round_id: "round-6", state: "declared", power_id: "power-oracle" },
+      { initiator_id: "hugo", round_id: "round-6", state: "resolved", power_id: "power-joker" },
+      // Autre journée : ne doit pas compter.
+      { initiator_id: "hugo", round_id: "round-5", state: "declared", power_id: "power-sabotage" },
+      // Autre joueur, même journée : ne doit pas compter.
+      { initiator_id: "pierre", round_id: "round-6", state: "declared", power_id: "power-spy" },
+      // Annulée : n'a jamais eu lieu, ne doit pas compter.
+      { initiator_id: "hugo", round_id: "round-6", state: "cancelled", power_id: "power-duel" },
+    );
+
+    const sb = fakeClient(db);
+    const used = await loadPowerIdsUsedInRound(sb, "hugo", "round-6");
+
+    assert.deepEqual([...used].sort(), ["power-joker", "power-oracle"]);
+  });
+
+  it("ensemble vide quand rien n'a été joué cette journée", async () => {
+    const db = makeDb();
+    const sb = fakeClient(db);
+    const used = await loadPowerIdsUsedInRound(sb, "hugo", "round-vide");
+    assert.equal(used.size, 0);
   });
 });

@@ -204,6 +204,14 @@ export default async function JourneePage({
   const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
   const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
 
+  // Un même pouvoir ne se joue qu'une fois par journée (règle de l'hôte,
+  // par-dessus le quota saisonnier ci-dessus) — `roundUsages` ne porte déjà
+  // que les états consommateurs (`loadRoundUsages`), donc tout usage du
+  // viewer ici compte, quel que soit son état.
+  const usedPowerIdsThisRound = new Set(
+    roundUsages.filter((u) => u.initiatorId === viewer.id).map((u) => u.powerId),
+  );
+
   const powerOptions = activePowers.map((p) => {
     const pk = getPower(p.code);
     return {
@@ -221,6 +229,7 @@ export default async function JourneePage({
       used: quotaByPowerId.get(p.id)?.used ?? 0,
       max: quotaByPowerId.get(p.id)?.max ?? fallbackMax,
       remaining: quotaByPowerId.get(p.id)?.remaining ?? fallbackMax,
+      usedThisRound: usedPowerIdsThisRound.has(p.id),
       description: p.description,
       effect: powerEffect(p),
       rules: powerRules(p),
