@@ -21,6 +21,7 @@ import { applyResolution } from "./resolve.ts";
 import { buildQuotas, quotaRefusal, FALLBACK_MAX_USES, quotaResetAt, QUOTA_RESET_KEY } from "./quota.ts";
 import { loadSettings, setting } from "@/lib/settings";
 import { isLockedAt } from "@/lib/predictions/lock";
+import { loadRoundFirstLockTime } from "./round-lock.ts";
 import type { AdminActionState } from "@/lib/admin/types";
 
 const declareSchema = z.object({
@@ -58,6 +59,21 @@ export async function declarePower(
   // La saison vient de la journée elle-même, jamais « la » saison courante :
   // plusieurs compétitions peuvent vivre en même temps (règle n° 5).
   const seasonId = round.season_id as string;
+
+  // Règle demandée par l'hôte : TOUS les super-pouvoirs doivent être posés
+  // avant le verrouillage du PREMIER match de la journée — jamais après,
+  // même pour un pouvoir visant un match qui, lui, n'a pas encore commencé
+  // (ex. un Oracle sur le match du dimanche soir, posé le dimanche après-midi
+  // une fois tous les matchs du samedi déjà verrouillés). S'applique aussi
+  // au Duel, qui ne vise aucun match précis et n'avait jusqu'ici aucune
+  // limite de temps propre au-delà du statut de la journée.
+  const firstLockAt = await loadRoundFirstLockTime(admin, parsed.data.roundId);
+  if (firstLockAt && isLockedAt(firstLockAt)) {
+    return {
+      ok: false,
+      message: "Les super-pouvoirs doivent être posés avant le premier match de la journée.",
+    };
+  }
 
   // Plus de plafond "un seul pouvoir actif par journée" : un joueur peut
   // activer autant de pouvoirs DIFFÉRENTS qu'il veut sur la même journée (et

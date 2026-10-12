@@ -58,3 +58,41 @@ export async function loadRoundRevealTime(
   const map = await loadRoundRevealTimes(sb, [roundId]);
   return map.get(roundId) ?? null;
 }
+
+/**
+ * Le PREMIER verrouillage d'une journée — demande de l'hôte, distincte de
+ * `loadRoundRevealTimes` (le DERNIER) : passé ce premier match, plus aucun
+ * super-pouvoir ne peut être posé sur cette journée, quel que soit le match
+ * visé. Avant ce correctif, un pouvoir ciblant un match du dimanche soir
+ * pouvait encore être déclaré après que tous les matchs du samedi aient
+ * commencé — ce que cette fonction ferme.
+ */
+export async function loadRoundFirstLockTimes(
+  sb: SupabaseClient,
+  roundIds: readonly string[],
+): Promise<Map<string, string | null>> {
+  const ids = [...new Set(roundIds)];
+  const result = new Map<string, string | null>();
+  if (ids.length === 0) return result;
+
+  const { data, error } = await sb
+    .from("fixtures")
+    .select("round_id, locks_at")
+    .in("round_id", ids);
+  if (error) throw error;
+
+  for (const f of (data ?? []) as Array<{ round_id: string; locks_at: string }>) {
+    const current = result.get(f.round_id);
+    if (!current || f.locks_at < current) result.set(f.round_id, f.locks_at);
+  }
+  return result;
+}
+
+/** Même chose pour une seule journée — confort d'appel. */
+export async function loadRoundFirstLockTime(
+  sb: SupabaseClient,
+  roundId: string,
+): Promise<string | null> {
+  const map = await loadRoundFirstLockTimes(sb, [roundId]);
+  return map.get(roundId) ?? null;
+}
