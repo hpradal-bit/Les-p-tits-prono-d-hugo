@@ -55,16 +55,3 @@ export function seasonRewardFor(position: number, totalPlayers: number): SeasonR
       return null;
   }
 }
-
-export type SeasonZone = "demi" | "barrages";
-
-/** La zone "façon Top 14" d'une position, pour une ligue de 6 joueurs exactement. */
-export function seasonZoneFor(position: number, totalPlayers: number): SeasonZone | null {
-  if (totalPlayers !== 6) return null;
-  return position <= 2 ? "demi" : "barrages";
-}
-
-export const SEASON_ZONE_LABEL: Record<SeasonZone, string> = {
-  demi: "Demi-finale directe",
-  barrages: "Barrages",
-};

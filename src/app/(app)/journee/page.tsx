@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Card, CompetitionLogo } from "@/components/ui";
 import { LeagueSwitcher } from "@/components/league-switcher";
-import { loadJourneyBoard } from "@/lib/predictions/queries";
+import { loadJourneyBoard, loadMissingPredictionsByFixture } from "@/lib/predictions/queries";
 import { computeStandings, type PlayerRef } from "@/lib/standings/engine";
 import type { ClubAvatar } from "@/lib/auth/avatars";
 import { loadStandingsData } from "@/lib/standings/queries";
@@ -188,7 +188,9 @@ export default async function JourneePage({
 
   // Le détail des matchs, le quota restant et le résumé de points du viewer
   // sur la journée courante : trois lectures indépendantes, menées de front.
-  const [breakdowns, usageCounts, roundPointsSummary] = await Promise.all([
+  const openFixtures = board.fixtures.filter((f) => !f.isLocked);
+
+  const [breakdowns, usageCounts, roundPointsSummary, missingByFixture] = await Promise.all([
     loadFixtureBreakdowns(
       admin,
       finishedFixtures.map((f) => ({
@@ -200,6 +202,15 @@ export default async function JourneePage({
     ),
     loadUsageCounts(admin, viewer.id, seasonId, quotaResetAt(appSettings)),
     loadRoundPointsSummary(admin, viewer.id, currentRoundId),
+    loadMissingPredictionsByFixture(
+      admin,
+      leagueId,
+      openFixtures.map((f) => ({
+        id: f.fixture.id,
+        homeShortName: f.fixture.homeTeam.shortName,
+        awayShortName: f.fixture.awayTeam.shortName,
+      })),
+    ),
   ]);
   const quotas = buildQuotas(activePowers, usageCounts, fallbackMax);
   const quotaByPowerId = new Map(quotas.map((q) => [q.powerId, q]));
@@ -512,12 +523,23 @@ export default async function JourneePage({
       )}
 
       {board.participation.length > 1 && (
-        <p className="px-1 text-center text-[12.5px] text-ink-faint">
-          {board.participation
-            .filter((p) => p.userId !== viewer.id && p.missing > 0)
-            .map((p) => `${p.firstName} : ${p.missing} à jouer`)
-            .join(" · ") || "Tout le monde a joué."}
-        </p>
+        <Card className="p-4">
+          <h2 className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+            Qui n&apos;a pas encore parié
+          </h2>
+          {missingByFixture.length > 0 ? (
+            <ul className="flex flex-col gap-1.5">
+              {missingByFixture.map((f) => (
+                <li key={f.fixtureId} className="text-[13px] text-ink-muted">
+                  <span className="font-semibold text-ink">{f.label}</span> ·{" "}
+                  {f.missing.map((m) => m.firstName).join(", ")}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-ink-faint">Tout le monde a joué.</p>
+          )}
+        </Card>
       )}
     </div>
   );

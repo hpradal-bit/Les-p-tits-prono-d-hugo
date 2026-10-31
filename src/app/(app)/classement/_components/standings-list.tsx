@@ -10,12 +10,7 @@ import { PlayerAvatar } from "../../_components/player-avatar";
 import { Movement, RowStats } from "./bits";
 import type { ClubAvatar } from "@/lib/auth/avatars";
 import type { StandingsRow } from "@/lib/standings/engine";
-import { seasonRewardFor, seasonZoneFor, SEASON_ZONE_LABEL } from "@/lib/standings/season-rewards";
-
-const ZONE_BORDER_CLASS: Record<"demi" | "barrages", string> = {
-  demi: "border-l-winner",
-  barrages: "border-l-clay",
-};
+import { seasonRewardFor } from "@/lib/standings/season-rewards";
 
 const REWARD_TONE_CLASS: Record<"gain" | "due" | "neutral", string> = {
   gain: "border-winner/40 bg-winner-soft/60 text-winner",
@@ -40,8 +35,8 @@ export function StandingsList({
    */
   livePreviewByUser?: Record<string, number>;
   /**
-   * Règle maison de "Prono des copains" (gages de fin de saison + zones façon
-   * Top 14) — n'affiche jamais rien ailleurs. Voir `lib/standings/season-rewards.ts`.
+   * Règle maison de "Prono des copains" (gages de fin de saison) — n'affiche
+   * jamais rien ailleurs. Voir `lib/standings/season-rewards.ts`.
    */
   seasonRewards?: boolean;
 }) {
@@ -58,29 +53,14 @@ export function StandingsList({
       <ol className="divide-y divide-line">
         {rows.map((row) => {
           const isViewer = row.player.userId === viewerId;
-          const zone = seasonRewards ? seasonZoneFor(row.position, rows.length) : null;
           const reward = seasonRewards ? seasonRewardFor(row.position, rows.length) : null;
-          // La frontière de zone façon Top 14 (1-2 demi-finale, 3-6 barrages
-          // pour une ligue à 6 joueurs) : un bandeau juste avant la première
-          // ligne d'une nouvelle zone, jamais répété ensuite.
-          const previousZone =
-            seasonRewards && row.position > 1
-              ? seasonZoneFor(row.position - 1, rows.length)
-              : null;
-          const isZoneStart = zone !== null && zone !== previousZone;
           return (
             <li key={row.player.userId}>
-              {isZoneStart && zone && (
-                <p className="bg-surface-sunk px-3.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint sm:px-4">
-                  {SEASON_ZONE_LABEL[zone]}
-                </p>
-              )}
               <Link
                 href={isViewer ? "/profil" : `/profil/${row.player.userId}`}
                 className={cn(
                   "flex items-center gap-3 border-l-4 border-l-transparent px-3 py-3 transition hover:bg-surface-sunk sm:px-4",
                   isViewer && "bg-clay-soft/60",
-                  zone && ZONE_BORDER_CLASS[zone],
                 )}
               >
               <span

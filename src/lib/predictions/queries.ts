@@ -373,3 +373,68 @@ export async function loadJourneyBoard(opts: LoadJourneyOptions): Promise<Journe
     serverNow: now.toISOString(),
   };
 }
+
+/** Un joueur de la ligue qui n'a pas encore pronostiqué un match donné. */
+export interface MissingPrediction {
+  userId: Uuid;
+  firstName: string;
+}
+
+/** Un match encore ouvert, avec qui n'a pas encore parié dessus. */
+export interface FixtureMissing {
+  fixtureId: Uuid;
+  label: string;
+  missing: MissingPrediction[];
+}
+
+interface LeagueMemberRow {
+  user_id: string;
+  profiles: { first_name: string; is_active: boolean } | { first_name: string; is_active: boolean }[] | null;
+}
+
+/**
+ * Pour chaque match encore ouvert, qui dans la ligue n'a pas encore posé de
+ * pronostic — pour pouvoir relancer précisément le bon joueur sur le bon
+ * match, pas juste savoir qu'il « lui en manque ». Lecture admin (bypasse
+ * RLS) : il faut voir les pronos de tout le monde, pas seulement les siens.
+ */
+export async function loadMissingPredictionsByFixture(
+  admin: SupabaseClient,
+  leagueId: Uuid,
+  fixtures: Array<{ id: Uuid; homeShortName: string; awayShortName: string }>,
+): Promise<FixtureMissing[]> {
+  if (fixtures.length === 0) return [];
+  const fixtureIds = fixtures.map((f) => f.id);
+
+  const [{ data: memberRows }, { data: predictionRows }] = await Promise.all([
+    admin
+      .from("league_members")
+      .select("user_id, profiles:user_id!inner(first_name, is_active)")
+      .eq("league_id", leagueId),
+    admin.from("predictions").select("user_id, fixture_id").in("fixture_id", fixtureIds),
+  ]);
+
+  const members = ((memberRows ?? []) as LeagueMemberRow[])
+    .map((r) => {
+      const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+      return { userId: r.user_id as Uuid, firstName: p?.first_name ?? "", isActive: p?.is_active ?? true };
+    })
+    .filter((m) => m.isActive);
+
+  const predictedByFixture = new Map<string, Set<string>>();
+  for (const p of (predictionRows ?? []) as Array<{ user_id: string; fixture_id: string }>) {
+    const set = predictedByFixture.get(p.fixture_id) ?? new Set<string>();
+    set.add(p.user_id);
+    predictedByFixture.set(p.fixture_id, set);
+  }
+
+  return fixtures
+    .map((f) => {
+      const predicted = predictedByFixture.get(f.id) ?? new Set<string>();
+      const missing = members
+        .filter((m) => !predicted.has(m.userId))
+        .map((m) => ({ userId: m.userId, firstName: m.firstName }));
+      return { fixtureId: f.id, label: `${f.homeShortName} - ${f.awayShortName}`, missing };
+    })
+    .filter((f) => f.missing.length > 0);
+}
