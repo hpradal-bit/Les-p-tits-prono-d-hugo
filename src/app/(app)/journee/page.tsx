@@ -40,7 +40,8 @@ import { PowerBanner } from "./_components/power-banner";
 import { PowerDigestBanner } from "./_components/power-digest-banner";
 import { RoundPointsSummary } from "./_components/round-points-summary";
 import { buildPowerDigest } from "@/lib/powers/digest";
-import { loadRoundRevealTime } from "@/lib/powers/round-lock";
+import { loadRoundRevealTime, loadRoundFirstLockTime } from "@/lib/powers/round-lock";
+import { isLockedAt } from "@/lib/predictions/lock";
 import { loadDuelBattle } from "@/lib/powers/battle-queries";
 import { RoundNav } from "./_components/round-nav";
 import { RoundBanner } from "../_components/round-banner";
@@ -274,6 +275,11 @@ export default async function JourneePage({
   // parmi tous les matchs de `currentRoundId`), jamais au premier coup
   // d'envoi ni au seul match visé : cf. `round-lock.ts`.
   const roundRevealAt = await loadRoundRevealTime(admin, currentRoundId);
+  // Au-delà du premier verrouillage de la journée, plus aucune annulation :
+  // c'est le même instant où `declarePower` refuse toute nouvelle déclaration
+  // (cf. `actions.ts`).
+  const roundFirstLockAt = await loadRoundFirstLockTime(admin, currentRoundId);
+  const canCancelPowers = !roundFirstLockAt || !isLockedAt(roundFirstLockAt);
   const digestItemsWithoutScore = buildPowerDigest({
     usages: roundUsages,
     powersById,
@@ -373,6 +379,10 @@ export default async function JourneePage({
       powerEmoji: activePowers.find((p) => p.id === usage.powerId)?.emoji ?? "⚡",
       powerName: activePowers.find((p) => p.id === usage.powerId)?.name ?? usage.powerCode,
       role,
+      // Annulable seulement par son auteur, tant que ce n'est pas déjà
+      // accepté/résolu, et tant que le premier match de la journée n'a pas
+      // commencé (cf. `cancelPowerUsage`, même règle vérifiée côté serveur).
+      canCancel: role === "initiator" && usage.state === "declared" && canCancelPowers,
       // La cible si je suis l'auteur, l'auteur si je suis la cible.
       otherName:
         role === "initiator"

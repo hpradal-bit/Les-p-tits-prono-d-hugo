@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
-import { declarePower } from "@/lib/powers/actions";
+import { declarePower, cancelPowerUsage } from "@/lib/powers/actions";
 import { DuelBattleModal } from "./duel-battle-modal";
 
 interface PowerOption {
@@ -59,6 +59,8 @@ interface ActiveUsage {
   maxUses: number | null;
   /** Jamais rempli côté cible : l'Espion ne révèle qu'à son auteur (secret du pouvoir). */
   spyReveal?: SpyReveal | null;
+  /** Annulable tant que le premier match de la journée n'a pas commencé — jamais côté cible. */
+  canCancel: boolean;
 }
 
 /**
@@ -226,6 +228,7 @@ function ActiveUsageCard({
   activeUsage: ActiveUsage;
   onOpenBattle: () => void;
 }) {
+  const [cancelling, setCancelling] = useState(false);
   const isTarget = activeUsage.role === "target";
   // Le Duel est le seul pouvoir à offrir un vrai « match en direct » — voir
   // `DuelBattleModal`. Cliquable des deux côtés : la cible en a au moins
@@ -250,9 +253,25 @@ function ActiveUsageCard({
             {isTarget ? "CONTRE TOI" : "ACTIF"}
           </span>
         </span>
-        {/* Un pouvoir acheté est définitif : pas de bouton "Annuler", pour
-            qu'aucun joueur ne puisse regarder puis se retirer selon ce qu'il
-            a vu (l'Espion, en particulier). */}
+        {/* Annulable seulement avant le premier match de la journée : à ce
+            stade, rien n'a encore été révélé à la cible ni dans le Fil, donc
+            aucun risque de « regarder puis se retirer » (l'Espion compris).
+            Passé ce moment, plus de bouton — cf. `cancelPowerUsage`. */}
+        {activeUsage.canCancel && (
+          <button
+            type="button"
+            disabled={cancelling}
+            onClick={async (e) => {
+              e.stopPropagation();
+              setCancelling(true);
+              await cancelPowerUsage({ usageId: activeUsage.id });
+              setCancelling(false);
+            }}
+            className="shrink-0 font-mono text-[10px] font-bold uppercase text-ink-faint underline"
+          >
+            {cancelling ? "…" : "Annuler"}
+          </button>
+        )}
       </div>
 
       <p className="text-[11.5px] text-ink-muted">

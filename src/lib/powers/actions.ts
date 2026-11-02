@@ -177,6 +177,35 @@ export async function declarePower(
   if (parsed.data.fixtureId) snapshotBefore.fixtureId = parsed.data.fixtureId;
   if (parsed.data.targetId) snapshotBefore.targetId = parsed.data.targetId;
 
+  // L'événement du Fil est créé D'ABORD : son id voyage avec la ligne
+  // `power_usages` (`event_id`, migration 0071) pour qu'une annulation
+  // ultérieure (`cancelPowerUsage`) puisse retirer exactement ce post, sans
+  // deviner lequel parmi d'éventuelles autres déclarations du même pouvoir
+  // contre la même cible.
+  const effect = powerEffect(power);
+  const { data: insertedEvent } = await admin
+    .from("events")
+    .insert({
+      kind: "power_declared",
+      season_id: seasonId,
+      round_id: parsed.data.roundId,
+      actor_id: user.id,
+      target_id: parsed.data.targetId ?? null,
+      payload: {
+        power_code: power.code,
+        power_emoji: power.emoji,
+        power_name: power.name,
+        ...(effect ? { power_effect: effect } : {}),
+        use_index: (quota?.used ?? 0) + 1,
+        max_uses: quota?.max ?? fallbackMax,
+        // Le match visé voyage avec l'événement : c'est lui qui décide du moment
+        // où le fil a le droit de raconter ce pouvoir (cf. `visibility.ts`).
+        fixture_id: parsed.data.fixtureId ?? null,
+      },
+    })
+    .select("id")
+    .single();
+
   // La ligne elle-même porte tout ce qu'il faut pour la notification
   // différée à la cible (qui, quel pouvoir, quelle journée) : plus besoin de
   // garder son id ici, `power-sweep.ts` la retrouvera par son état et
@@ -192,9 +221,17 @@ export async function declarePower(
       round_id: parsed.data.roundId,
       state: "declared",
       snapshot_before: snapshotBefore,
+      event_id: insertedEvent?.id ?? null,
     });
 
   if (usageErr) {
+    // L'événement du Fil a déjà été écrit juste avant (il faut son id pour
+    // la ligne `power_usages`) : si celle-ci échoue, il resterait orphelin
+    // — un post dans le Fil sans aucun usage derrière lui — donc on le
+    // retire avant de répondre.
+    if (insertedEvent?.id) {
+      await admin.from("events").delete().eq("id", insertedEvent.id);
+    }
     // 23505 ne peut venir que de l'index posé par la migration 0070 (un même
     // pouvoir deux fois sur le même match — le refus ci-dessus couvre déjà
     // ce cas en le lisant avant d'écrire, donc n'arrive ici que sur une
@@ -207,35 +244,6 @@ export async function declarePower(
     }
     return { ok: false, message: usageErr.message };
   }
-
-  // L'effet est recopié ici, au moment même de la déclaration, plutôt que
-  // relu en direct depuis `powers.config` au moment de l'affichage : c'est la
-  // même convention que `bonus_question` avec son `prompt` (cf.
-  // `src/lib/bonus/actions.ts`). Aucun écran d'admin ne permet aujourd'hui de
-  // modifier ce texte après coup (`setPowerMaxUses` ne touche que
-  // `max_uses_per_player`), mais si ça change un jour, le fil continuera de
-  // raconter l'effet tel qu'il se lisait au moment où le pouvoir a vraiment
-  // été joué — jamais réécrit après coup.
-  const effect = powerEffect(power);
-
-  await admin.from("events").insert({
-    kind: "power_declared",
-    season_id: seasonId,
-    round_id: parsed.data.roundId,
-    actor_id: user.id,
-    target_id: parsed.data.targetId ?? null,
-    payload: {
-      power_code: power.code,
-      power_emoji: power.emoji,
-      power_name: power.name,
-      ...(effect ? { power_effect: effect } : {}),
-      use_index: (quota?.used ?? 0) + 1,
-      max_uses: quota?.max ?? fallbackMax,
-      // Le match visé voyage avec l'événement : c'est lui qui décide du moment
-      // où le fil a le droit de raconter ce pouvoir (cf. `visibility.ts`).
-      fixture_id: parsed.data.fixtureId ?? null,
-    },
-  });
 
   // La notification poussée à la cible ne part PAS ici, à la déclaration.
   //
@@ -267,6 +275,82 @@ export async function declarePower(
       `${power.emoji} ${power.name} activé !` +
       (quota ? ` Il t'en reste ${quota.remaining - 1} sur ${quota.max}.` : ""),
   };
+}
+
+const cancelSchema = z.object({ usageId: z.string().uuid() });
+
+/**
+ * Annuler un super-pouvoir qu'on vient de déclarer soi-même — tant que le
+ * premier match de la journée n'a pas commencé (demande de l'hôte le 2
+ * novembre : Hugo n'arrivait pas à retirer un Duel posé par erreur contre
+ * Marc). Passé ce même instant, plus aucune annulation : c'est aussi celui
+ * où `declarePower` cesse d'accepter de nouvelles déclarations, et celui à
+ * partir duquel la cible commence à être notifiée (`power-sweep.ts`) — avant
+ * lui, rien n'est encore visible ni pour la cible ni dans le Fil, donc annuler
+ * ici ne permet jamais de « regarder puis se retirer » (cf. l'ancien refus
+ * dans `power-banner.tsx`, levé pour cette seule fenêtre de temps).
+ *
+ * Un pouvoir déjà `accepted`/`resolved` ne peut plus être annulé : l'état
+ * `cancelled` est déjà exclu du quota (`CONSUMING_STATES`, `quota.ts`) et du
+ * Fil/Vestiaire (`history.ts`) — rien d'autre à faire ici que de poser cet
+ * état et de retirer le post qui allait avec.
+ */
+export async function cancelPowerUsage(
+  input: unknown,
+): Promise<{ ok: boolean; message: string }> {
+  const parsed = cancelSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Données invalides." };
+
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return { ok: false, message: "Session expirée." };
+
+  const admin = createAdminClient();
+
+  const { data: usage } = await admin
+    .from("power_usages")
+    .select("id, initiator_id, round_id, state, event_id, powers:power_id(name)")
+    .eq("id", parsed.data.usageId)
+    .maybeSingle();
+  if (!usage) return { ok: false, message: "Introuvable." };
+  if (usage.initiator_id !== user.id) {
+    return { ok: false, message: "Ce n'est pas ton pouvoir." };
+  }
+  if (usage.state !== "declared") {
+    return { ok: false, message: "Ce pouvoir ne peut plus être annulé." };
+  }
+
+  const firstLockAt = await loadRoundFirstLockTime(admin, usage.round_id as string);
+  if (firstLockAt && isLockedAt(firstLockAt)) {
+    return {
+      ok: false,
+      message: "Trop tard : le premier match de la journée a déjà commencé.",
+    };
+  }
+
+  // Garde anti-course : si deux requêtes se chevauchent (double clic), seule
+  // la première trouve encore l'état "declared" et gagne l'annulation.
+  const { error, data: cancelled } = await admin
+    .from("power_usages")
+    .update({ state: "cancelled" })
+    .eq("id", usage.id)
+    .eq("state", "declared")
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, message: error.message };
+  if (!cancelled) return { ok: false, message: "Ce pouvoir ne peut plus être annulé." };
+
+  if (usage.event_id) {
+    await admin.from("feed_posts").delete().eq("event_id", usage.event_id);
+    await admin.from("events").delete().eq("id", usage.event_id);
+  }
+
+  const powerName = (Array.isArray(usage.powers) ? usage.powers[0] : usage.powers)?.name ?? "Pouvoir";
+
+  revalidatePath("/journee");
+  revalidatePath("/vestiaire");
+  revalidatePath("/classement");
+  return { ok: true, message: `${powerName} annulé.` };
 }
 
 export async function resolveRoundPowers(
