@@ -296,14 +296,23 @@ export function createHighlightlyProvider(options: HighlightlyOptions): SportsDa
     dailyQuota: options.dailyQuota ?? HIGHLIGHTLY_FREE_QUOTA,
 
     async getFixtures(seasonExternalId: string, range: DateRange) {
+      // `fromDate`/`toDate` sont rejetés depuis une évolution de l'API
+      // Highlightly (HTTP 400 : « property fromDate should not exist » —
+      // constaté en prod le 2 novembre) : `matches` ne filtre plus que par
+      // `leagueId`/`season`. On récupère donc la saison entière — un seul
+      // appel, dans le quota gratuit — et on filtre nous-mêmes sur la plage
+      // demandée, comme `thesportsdb.ts` le fait déjà pour la même raison.
       const { leagueId, season } = splitSeasonRef(seasonExternalId);
-      const payload = await fetchApi("matches", {
-        leagueId,
-        season,
-        fromDate: range.from,
-        toDate: range.to,
+      const payload = await fetchApi("matches", { leagueId, season });
+      const { fixtures: all, warnings } = parseHighlightlyMatches(payload);
+
+      const from = new Date(`${range.from}T00:00:00Z`).getTime();
+      const to = new Date(`${range.to}T23:59:59.999Z`).getTime();
+      const fixtures = all.filter((f) => {
+        const t = new Date(f.kickoffAt).getTime();
+        return t >= from && t <= to;
       });
-      const { fixtures, warnings } = parseHighlightlyMatches(payload);
+
       return { provider: HIGHLIGHTLY, data: fixtures, requestsUsed: 1, warnings };
     },
 

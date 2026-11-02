@@ -1,9 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  createHighlightlyProvider,
   parseHighlightlyMatches,
   parseHighlightlyStandings,
 } from "./highlightly.ts";
+
+// --- getFixtures : plus de fromDate/toDate (HTTP 400 en prod le 2 novembre) --
+
+test("getFixtures : n'envoie plus fromDate/toDate, filtre la plage lui-même", async () => {
+  let requestedUrl = "";
+  const fetchJson = async (url: string) => {
+    requestedUrl = url;
+    return {
+      matches: [
+        { id: "1", date: "2026-10-20T14:00:00Z", homeTeam: "A", awayTeam: "B" },
+        { id: "2", date: "2026-11-07T14:00:00Z", homeTeam: "C", awayTeam: "D" },
+        { id: "3", date: "2026-12-01T14:00:00Z", homeTeam: "E", awayTeam: "F" },
+      ],
+    };
+  };
+  const provider = createHighlightlyProvider({ apiKey: "k", fetchJson });
+
+  const result = await provider.getFixtures("270559:2026", {
+    from: "2026-11-01",
+    to: "2026-11-09",
+  });
+
+  assert.ok(!requestedUrl.includes("fromDate"));
+  assert.ok(!requestedUrl.includes("toDate"));
+  assert.deepEqual(result.data.map((f) => f.externalId), ["2"]);
+});
 
 // --- Parsing des matchs ------------------------------------------------------
 
