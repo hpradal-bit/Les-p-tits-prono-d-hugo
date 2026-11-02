@@ -4,18 +4,24 @@
  *
  * `declarePower` (`src/lib/powers/actions.ts`) insère la ligne
  * `power_usages` à la déclaration, mais n'envoie plus rien à cet instant :
- * avant le coup d'envoi — pire, avant que la journée entière ait verrouillé
- * — la cible notifiée aurait pu riposter avant que l'auteur n'ait lui-même
- * couru le moindre risque (rapport de l'hôte, cf. migration 0067). Ce
- * balayage, appelé par `/api/push/dispatch` au même rythme que les rappels de
- * verrouillage (cron Cloudflare toutes les 2 minutes, `worker/wrangler.toml`),
- * rattrape l'envoi, TOUJOURS, pour TOUS les pouvoirs sans exception (y
- * compris l'Espion — demande explicite de l'hôte : après coup, savoir qu'on a
- * été observé est amusant, pas un risque, puisque le pronostic visé est déjà
- * public une fois son match verrouillé) :
+ * avant le coup d'envoi du PREMIER match de la journée, la cible notifiée
+ * aurait pu riposter avant que l'auteur n'ait lui-même couru le moindre
+ * risque (rapport de l'hôte, cf. migration 0067). Ce balayage, appelé par
+ * `/api/push/dispatch` au même rythme que les rappels de verrouillage (cron
+ * Cloudflare toutes les 2 minutes, `worker/wrangler.toml`), rattrape l'envoi,
+ * TOUJOURS, pour TOUS les pouvoirs sans exception (y compris l'Espion —
+ * demande explicite de l'hôte : après coup, savoir qu'on a été observé est
+ * amusant, pas un risque, puisque le pronostic visé est déjà public une fois
+ * son match verrouillé) :
  *
- *   - jamais avant que TOUS les matchs de la journée (`round_id`) aient
- *     verrouillé (`round-lock.ts`, pas seulement le match visé) ;
+ *   - jamais avant que le PREMIER match de la journée (`round_id`) ait
+ *     verrouillé (`round-lock.ts`) — demande explicite de l'hôte le 2
+ *     novembre, après qu'une cible ait été notifiée d'un Duel alors que la
+ *     journée visée n'avait même pas commencé. Plus aucun pouvoir ne peut
+ *     être déclaré après ce même instant (`declarePower`), donc la cible ne
+ *     peut plus rien riposter de nouveau une fois notifiée — seulement
+ *     changer ses pronostics restants, un risque que l'hôte accepte
+ *     désormais pour que la notification arrive à temps ;
  *   - toujours une fois ce moment passé — aucun pouvoir ne reste muet.
  *
  * Idempotent et rejouable sans effet de bord : chaque ligne est RÉCLAMÉE par
@@ -31,7 +37,7 @@ import { buildPowerDeclaredNotification } from "./powers.ts";
 // Chemins relatifs, pas l'alias `@/...` : ce fichier doit rester exécutable
 // par `node --test` seul (sans résolution de bundler), comme ses voisins.
 import { isPowerPublic } from "../powers/visibility.ts";
-import { loadRoundRevealTimes } from "../powers/round-lock.ts";
+import { loadRoundFirstLockTimes } from "../powers/round-lock.ts";
 
 interface CandidateRow {
   id: string;
@@ -64,7 +70,7 @@ export async function sweepPowerDeclaredNotifications(admin: SupabaseClient): Pr
   if (eligible.length === 0) return 0;
 
   const roundIds = [...new Set(eligible.map((r) => r.round_id))];
-  const revealTimes = await loadRoundRevealTimes(admin, roundIds);
+  const revealTimes = await loadRoundFirstLockTimes(admin, roundIds);
   const now = new Date();
 
   let sent = 0;

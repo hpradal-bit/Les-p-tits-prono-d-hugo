@@ -133,7 +133,7 @@ function seed(db: ReturnType<typeof makeDb>) {
   });
 }
 
-describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous les pouvoirs", () => {
+describe("sweepPowerDeclaredNotifications — différé jusqu'au PREMIER verrouillage, pour tous les pouvoirs", () => {
   let db: ReturnType<typeof makeDb>;
 
   beforeEach(() => {
@@ -141,14 +141,14 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous l
     seed(db);
   });
 
-  it("un Sabotage déclaré pendant que la journée a encore un autre match ouvert n'est PAS balayé", async () => {
+  it("un Sabotage déclaré avant que le PREMIER match de la journée ait verrouillé n'est PAS balayé", async () => {
     db.power_usages.push({
       id: "usage-1", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
       state: "declared", power_id: "power-sabotage", target_notified_at: null,
     });
-    // Un match de la journée a déjà verrouillé, un autre ferme loin dans le futur.
+    // Aucun match de la journée n'a encore verrouillé.
     db.fixtures.push(
-      { round_id: "round-1", locks_at: PAST },
+      { round_id: "round-1", locks_at: FAR_FUTURE },
       { round_id: "round-1", locks_at: FAR_FUTURE },
     );
 
@@ -161,13 +161,16 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous l
     assert.equal(db.power_usages[0].target_notified_at, null);
   });
 
-  it("une fois TOUTE la journée verrouillée, le Sabotage est balayé et notifié, une seule fois même après un second passage", async () => {
+  it("dès que le PREMIER match de la journée a verrouillé, le Sabotage est balayé et notifié, une seule fois même après un second passage", async () => {
     db.power_usages.push({
       id: "usage-2", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
       state: "declared", power_id: "power-sabotage", target_notified_at: null,
     });
+    // Le premier match a verrouillé ; un autre de la même journée reste ouvert
+    // (plus bloquant depuis la demande de l'hôte du 2 novembre).
     db.fixtures.push(
-      { round_id: "round-1", locks_at: PAST }, // tous les matchs de la journée ont verrouillé
+      { round_id: "round-1", locks_at: PAST },
+      { round_id: "round-1", locks_at: FAR_FUTURE },
     );
 
     const sb = fakeClient(db);
@@ -184,12 +187,11 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous l
     assert.equal(db.notifications.length, 1);
   });
 
-  it("l'Espion est balayé et notifié comme n'importe quel pouvoir, une fois la journée verrouillée", async () => {
+  it("l'Espion est balayé et notifié comme n'importe quel pouvoir, dès le premier verrouillage", async () => {
     db.power_usages.push({
       id: "usage-3", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
       state: "declared", power_id: "power-spy", target_notified_at: null,
     });
-    // Journée entièrement verrouillée, largement.
     db.fixtures.push({ round_id: "round-1", locks_at: PAST });
 
     const sb = fakeClient(db);
@@ -202,13 +204,13 @@ describe("sweepPowerDeclaredNotifications — différé, round-safe, pour tous l
     assert.notEqual(db.power_usages[0].target_notified_at, null);
   });
 
-  it("l'Espion n'est PAS balayé tant que la journée n'a pas entièrement verrouillé", async () => {
+  it("l'Espion n'est PAS balayé tant qu'aucun match de la journée n'a verrouillé", async () => {
     db.power_usages.push({
       id: "usage-3b", initiator_id: "hugo", target_id: "pierre", round_id: "round-1",
       state: "declared", power_id: "power-spy", target_notified_at: null,
     });
     db.fixtures.push(
-      { round_id: "round-1", locks_at: PAST },
+      { round_id: "round-1", locks_at: FAR_FUTURE },
       { round_id: "round-1", locks_at: FAR_FUTURE },
     );
 
